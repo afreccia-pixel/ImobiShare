@@ -1,0 +1,6 @@
+{
+  "name": "ImobiShare",
+  "description": "Plataforma mobile rápida e intuitiva para corretores de imóveis cadastrarem, buscarem e compartilharem imóveis em parceria via WhatsApp.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
