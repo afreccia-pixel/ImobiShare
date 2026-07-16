@@ -1,0 +1,9 @@
+{
+	"appId": "com.portalcamboriu.imobishare",
+	"appName": "ImobiShare",
+	"webDir": "dist",
+	"server": {
+		"androidScheme": "https"
+	},
+	"packageClassList": []
+}

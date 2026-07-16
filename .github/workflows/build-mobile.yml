@@ -1,0 +1,282 @@
+name: Build Mobile App (Android & iOS)
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  release:
+    types: [ created ]
+
+permissions:
+  contents: write
+  discussions: write
+
+jobs:
+  lint-and-validate:
+    name: Code Quality & Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Lint / Type Check
+        run: npm run lint
+
+      - name: Validate Web Build
+        run: npm run build
+
+  build-android:
+    name: Build Android (APK & AAB)
+    needs: lint-and-validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'zulu'
+          cache: 'gradle'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Web Application
+        run: npm run build
+
+      - name: Sync Capacitor Android
+        run: npx cap sync android
+
+      - name: Decode Android Keystore
+        id: decode_keystore
+        run: |
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "Keystore secret detected. Decoding..."
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/release.keystore
+            echo "has_keystore=true" >> $GITHUB_OUTPUT
+          else
+            echo "No keystore secret detected. Build will proceed unsigned."
+            echo "has_keystore=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build Android Release (AAB & APK)
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ "${{ steps.decode_keystore.outputs.has_keystore }}" = "true" ]; then
+            echo "Compiling signed production builds..."
+            ./gradlew bundleRelease assembleRelease
+          else
+            echo "Compiling unsigned builds..."
+            ./gradlew assembleRelease
+            # If no keystore is decoded, we still want to bundle an unsigned AAB
+            ./gradlew bundleRelease || echo "Unsigned AAB bundle skipped or failed, proceeding with APK."
+          fi
+
+      - name: Collect Android Artifacts
+        run: |
+          mkdir -p build-artifacts
+          
+          # Search for APK files and copy
+          APK_FILE=$(find android/app/build/outputs/ -name "*release*.apk" | head -n 1)
+          if [ -n "$APK_FILE" ]; then
+            cp "$APK_FILE" build-artifacts/app-release.apk
+            echo "Copied APK: $APK_FILE"
+          else
+            echo "No Release APK found."
+          fi
+          
+          # Search for AAB files and copy
+          AAB_FILE=$(find android/app/build/outputs/ -name "*release*.aab" | head -n 1)
+          if [ -n "$AAB_FILE" ]; then
+            cp "$AAB_FILE" build-artifacts/app-release.aab
+            echo "Copied AAB: $AAB_FILE"
+          else
+            echo "No Release AAB found."
+          fi
+
+      - name: Upload Android APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: build-artifacts/app-release.apk
+          if-no-files-found: ignore
+
+      - name: Upload Android AAB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-aab
+          path: build-artifacts/app-release.aab
+          if-no-files-found: ignore
+
+  build-ios:
+    name: Build iOS (IPA)
+    needs: lint-and-validate
+    runs-on: macos-14
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Web Application
+        run: npm run build
+
+      - name: Sync Capacitor iOS
+        run: npx cap sync ios
+
+      - name: Setup Apple Certificates & Provisioning Profiles (If Available)
+        id: setup_ios_signing
+        run: |
+          if [ -n "${{ secrets.IOS_CERTIFICATE_BASE64 }}" ] && [ -n "${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}" ]; then
+            echo "IOS_CERTIFICATE_BASE64 and IOS_PROVISIONING_PROFILE_BASE64 detected. Setting up keychain..."
+            
+            # Create temporary variables
+            KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+            KEYCHAIN_PASSWORD=$(openssl rand -base64 21)
+            
+            # Create keychain
+            security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+            security default-keychain -s "$KEYCHAIN_PATH"
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+            security set-keychain-settings -t 3600 -u "$KEYCHAIN_PATH"
+            
+            # Decode certificate
+            CERT_PATH=$RUNNER_TEMP/certificate.p12
+            echo "${{ secrets.IOS_CERTIFICATE_BASE64 }}" | base64 --decode > "$CERT_PATH"
+            
+            # Import certificate to keychain
+            security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "${{ secrets.IOS_CERTIFICATE_PASSWORD }}" -A -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+            
+            # Decode provisioning profile
+            UUID=$(uuidgen)
+            PROFILE_PATH="$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
+            mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+            echo "${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}" | base64 --decode > "$PROFILE_PATH"
+            
+            # Export Options configuration
+            echo "${{ secrets.IOS_EXPORT_OPTIONS_PLIST }}" | base64 --decode > ios/App/ExportOptions.plist
+            
+            echo "has_signing=true" >> $GITHUB_OUTPUT
+            echo "keychain_path=$KEYCHAIN_PATH" >> $GITHUB_OUTPUT
+          else
+            echo "Apple build secrets missing. Proceeding with verification-only compilation (no-sign)."
+            echo "has_signing=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build iOS Workspace (Archive)
+        working-directory: ios/App
+        run: |
+          if [ "${{ steps.setup_ios_signing.outputs.has_signing }}" = "true" ]; then
+            echo "Building signed iOS Archive..."
+            xcodebuild -workspace App.xcworkspace -scheme App -sdk iphoneos -configuration Release -archivePath build/App.xcarchive archive
+          else
+            echo "Building verification-only unsigned iOS Archive..."
+            xcodebuild -workspace App.xcworkspace -scheme App -sdk iphoneos -configuration Release -archivePath build/App.xcarchive archive CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+          fi
+
+      - name: Export iOS IPA
+        working-directory: ios/App
+        run: |
+          if [ "${{ steps.setup_ios_signing.outputs.has_signing }}" = "true" ]; then
+            echo "Exporting signed IPA..."
+            xcodebuild -exportArchive -archivePath build/App.xcarchive -exportPath build/output -exportOptionsPlist ExportOptions.plist
+            
+            mkdir -p ../../build-artifacts
+            cp build/output/*.ipa ../../build-artifacts/app-release.ipa
+          else
+            echo "Export options not set. Unsigned archives cannot be exported to .ipa via CLI without standard signature."
+            echo "To obtain an unsigned test package for simulators, archiving was successfully verified."
+            
+            # Package as a payload zip manually so users can at least download the App binary artifact!
+            echo "Packaging App bundle as .ipa payload for simulator/manual installation..."
+            mkdir -p Payload
+            cp -r build/App.xcarchive/Products/Applications/App.app Payload/
+            zip -r ../../build-artifacts/app-release.ipa Payload
+            rm -rf Payload
+          fi
+
+      - name: Upload iOS IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-ipa
+          path: build-artifacts/app-release.ipa
+          if-no-files-found: ignore
+
+  publish-releases:
+    name: Publish Artifacts to GitHub Releases
+    needs: [build-android, build-ios]
+    if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download Android APK
+        uses: actions/download-artifact@v4
+        with:
+          name: app-release-apk
+          path: artifacts/
+
+      - name: Download Android AAB
+        uses: actions/download-artifact@v4
+        with:
+          name: app-release-aab
+          path: artifacts/
+
+      - name: Download iOS IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: app-release-ipa
+          path: artifacts/
+
+      - name: Get Version/Tag Name
+        id: get_version
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.get_version.outputs.tag }}
+          name: Release ${{ steps.get_version.outputs.tag }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            artifacts/app-release.apk
+            artifacts/app-release.aab
+            artifacts/app-release.ipa
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

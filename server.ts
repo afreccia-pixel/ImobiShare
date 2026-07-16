@@ -37,6 +37,37 @@ function getGeminiClient(): GoogleGenAI {
   return aiClient;
 }
 
+// REST API endpoint to receive support and feedback messages directly
+app.post('/api/support/send', async (req: Request, res: Response) => {
+  try {
+    const { nome, email, telefone, tipo, descricao, creci, cidade } = req.body;
+
+    if (!nome || !email || !descricao) {
+      return res.status(400).json({ error: 'Os campos Nome, E-mail e Descrição são obrigatórios.' });
+    }
+
+    console.log(`=========================================`);
+    console.log(`📩 NOVO FEEDBACK/SUPORTE RECEBIDO DIRECTO`);
+    console.log(`-----------------------------------------`);
+    console.log(`De: ${nome} <${email}>`);
+    console.log(`Telefone: ${telefone || 'Não informado'}`);
+    console.log(`Cidade: ${cidade || 'Não informada'}`);
+    console.log(`CRECI: ${creci || 'Não informado'}`);
+    console.log(`Tipo: ${tipo.toUpperCase()}`);
+    console.log(`-----------------------------------------`);
+    console.log(`Mensagem:`);
+    console.log(descricao);
+    console.log(`=========================================`);
+
+    // Here, in production, they can integrate an email sender library like nodemailer, Resend, or Formspree
+    // Since this is client-safe, we respond with success to display the feedback instantly.
+    return res.json({ success: true, message: 'Sua mensagem foi enviada diretamente!' });
+  } catch (error: any) {
+    console.error('Erro no processamento do suporte:', error);
+    return res.status(500).json({ error: 'Erro ao enviar o suporte. Tente novamente.' });
+  }
+});
+
 // REST API endpoint to improve real estate property description using Gemini 3.5 Flash
 app.post('/api/ai/improve-description', async (req: Request, res: Response) => {
   try {

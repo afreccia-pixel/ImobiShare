@@ -4,6 +4,7 @@
  */
 
 import React, { useState } from 'react';
+import logoImg from '../assets/images/imobishare_logo_1784239677798.jpg';
 import { Imovel } from '../types';
 import { MOCK_CORRETORES } from '../data';
 import { MapPin, Phone, MessageCircle, Building2, Check, ArrowLeft, Home, Bed, Car, Maximize } from 'lucide-react';
@@ -51,8 +52,13 @@ export function PublicView({ imovel, onExit }: PublicViewProps) {
       {/* Brand logo bar */}
       <div className="bg-white border-b border-slate-100 px-4 py-3 flex justify-between items-center">
         <div className="flex items-center gap-1.5 text-[#003366] font-bold text-sm">
-          <Home size={18} />
-          <span>ImobiPortal</span>
+          <img
+            src={logoImg}
+            alt="ImobiShare Logo"
+            className="w-5 h-5 object-contain rounded-md"
+            referrerPolicy="no-referrer"
+          />
+          <span className="font-extrabold text-[#003366] tracking-tight">ImobiShare</span>
         </div>
         <div className="text-[10px] bg-emerald-50 text-emerald-800 font-bold px-2 py-1 rounded-full uppercase">
           Anúncio Ativo

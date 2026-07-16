@@ -14,6 +14,8 @@ export interface Corretor {
   cidade: string;
   qtdImoveis?: number;
   qtdLocacoes?: number;
+  restringirParceiros?: boolean;
+  parceirosEmails?: string[];
 }
 
 export interface Imovel {

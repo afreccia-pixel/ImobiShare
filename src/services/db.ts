@@ -40,6 +40,21 @@ export class DbService {
     localStorage.setItem(STORAGE_KEYS.ACTIVE_CORRETOR, JSON.stringify(corretor));
   }
 
+  // Save or update a broker's profile
+  static saveCorretor(corretor: Corretor): void {
+    const corretores = this.getCorretores();
+    const index = corretores.findIndex(c => c.id === corretor.id);
+    if (index !== -1) {
+      corretores[index] = corretor;
+      localStorage.setItem(STORAGE_KEYS.CORRETORES, JSON.stringify(corretores));
+    }
+    // Also update active corretor if they are the active one
+    const active = this.getActiveCorretor();
+    if (active.id === corretor.id) {
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_CORRETOR, JSON.stringify(corretor));
+    }
+  }
+
   // Get all properties
   static getImoveis(): Imovel[] {
     const data = localStorage.getItem(STORAGE_KEYS.IMOVEIS);

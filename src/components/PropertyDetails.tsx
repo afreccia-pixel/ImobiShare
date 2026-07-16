@@ -29,17 +29,22 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
     }).format(value);
   };
 
-  // Generate public link format
-  const publicLink = `${window.location.origin}/imovel/${imovel.id}`;
+  // Generate public link format using query parameters for 100% platform and mobile compatibility
+  const publicLink = `${window.location.origin}/?imovel=${imovel.id.replace('imovel-', '')}`;
 
   const handleSendWhatsApp = () => {
-    // Build elegant copy text
-    const messageText = `🏠 *${imovel.titulo}*
-💰 *Valor:* ${formatPrice(imovel.valor)}${imovel.tipo === 'locação' ? '/mês' : ''}
-📍 *Localização:* ${imovel.localizacao}
-📝 *Descrição:* ${imovel.descricao}
+    // Build extremely clean and light WhatsApp text for maximum readability
+    const location = imovel.nomeEdificio?.trim() ? `${imovel.nomeEdificio} (${imovel.bairro})` : imovel.bairro;
+    const tipoLabel = imovel.tipo === 'venda' ? 'Venda' : 'Aluguel';
+    const preco = formatPrice(imovel.valor) + (imovel.tipo === 'locação' ? '/mês' : '');
+    const caracteristicas = `${imovel.dormitorios ?? 0} dorms • ${imovel.vagas ?? 0} vagas • ${imovel.metragem ?? 0}m²`;
 
-🔗 *Veja fotos e mais detalhes no link:* ${publicLink}`;
+    const messageText = `🏠 \`\`\`${location}\`\`\`
+💰 \`\`\`${preco} (${tipoLabel})\`\`\`
+✨ \`\`\`${caracteristicas}\`\`\`
+
+Toque abaixo para ver fotos e todos os detalhes:
+👉 ${publicLink}`;
 
     // Generate WhatsApp URL
     const encodedMessage = encodeURIComponent(messageText);

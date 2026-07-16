@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Imovel } from '../types';
 import { DbService } from '../services/db';
 import { Sparkles, MapPin, Search, Plus, Trash2, Check, ArrowLeft, Image } from 'lucide-react';
@@ -39,7 +39,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
   const [favorito, setFavorito] = useState(false);
   const [compartilhar, setCompartilhar] = useState(true); // marked by default
   const [fotos, setFotos] = useState<string[]>([]);
-  const [customPhotoUrl, setCustomPhotoUrl] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [dormitorios, setDormitorios] = useState<number | ''>(3);
   const [vagas, setVagas] = useState<number | ''>(2);
@@ -161,12 +161,89 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
     }
   };
 
-  const handleAddCustomPhoto = () => {
-    if (!customPhotoUrl.trim()) return;
-    if (!fotos.includes(customPhotoUrl)) {
-      setFotos([...fotos, customPhotoUrl]);
+  // Helper function to compress large camera / gallery images on the client-side
+  const compressImage = (file: File, maxWidth: number = 1000, maxHeight: number = 1000, quality: number = 0.7): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = window.Image ? new window.Image() : document.createElement('img');
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          let width = img.width;
+          let height = img.height;
+
+          // Maintain aspect ratio while limiting maximum dimensions
+          if (width > height) {
+            if (width > maxWidth) {
+              height = Math.round((height * maxWidth) / width);
+              width = maxWidth;
+            }
+          } else {
+            if (height > maxHeight) {
+              width = Math.round((width * maxHeight) / height);
+              height = maxHeight;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(event.target?.result as string);
+            return;
+          }
+
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          // Export as compressed JPEG to dramatically decrease byte size (from MBs to ~80-120KB)
+          const dataUrl = canvas.toDataURL('image/jpeg', quality);
+          resolve(dataUrl);
+        };
+        img.onerror = (err) => reject(err);
+      };
+      reader.onerror = (err) => reject(err);
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      try {
+        // Compress image before adding it to the property list to ensure top performance and fast loading
+        const compressedBase64 = await compressImage(file, 1024, 1024, 0.75);
+        setFotos((prev) => {
+          if (!prev.includes(compressedBase64)) {
+            return [...prev, compressedBase64];
+          }
+          return prev;
+        });
+      } catch (error) {
+        console.error('Error compressing image:', error);
+        // Fallback to reading raw file if compression fails
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (typeof reader.result === 'string') {
+            const resultStr = reader.result;
+            setFotos((prev) => {
+              if (!prev.includes(resultStr)) {
+                return [...prev, resultStr];
+              }
+              return prev;
+            });
+          }
+        };
+        reader.readAsDataURL(file);
+      }
     }
-    setCustomPhotoUrl('');
+    
+    // Reset file input so same file can be chosen again
+    e.target.value = '';
   };
 
   const handleRemovePhoto = (index: number) => {
@@ -270,6 +347,26 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
             )}
           </div>
 
+          {/* Local File Selector Input */}
+          <div className="pt-1">
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={handleFileChange}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center justify-center gap-2 w-full py-3 px-4 border border-[#003366] bg-[#003366]/5 hover:bg-[#003366]/10 rounded-xl cursor-pointer text-xs font-bold text-[#003366] transition-all text-center shadow-xs"
+            >
+              <Image size={16} />
+              <span>Adicionar Fotos do Celular / Galeria</span>
+            </button>
+          </div>
+
           {/* Quick preset gallery picker */}
           <div className="space-y-1.5 pt-1.5">
             <span className="text-[11px] text-slate-400 font-medium block">Galeria Modelo (Toque para adicionar/remover)</span>
@@ -296,23 +393,6 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
             </div>
           </div>
 
-          {/* Custom URL */}
-          <div className="flex gap-2 pt-2">
-            <input
-              type="text"
-              placeholder="Ou cole uma URL externa de foto..."
-              value={customPhotoUrl}
-              onChange={(e) => setCustomPhotoUrl(e.target.value)}
-              className="flex-grow text-xs px-3 py-2 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50"
-            />
-            <button
-              type="button"
-              onClick={handleAddCustomPhoto}
-              className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-lg text-xs font-semibold flex items-center transition-colors"
-            >
-              <Plus size={14} className="mr-1" /> Add
-            </button>
-          </div>
         </div>
 
         {/* Basic fields */}

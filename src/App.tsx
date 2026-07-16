@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import logoImg from './assets/images/imobishare_logo_1784239677798.jpg';
 import { Imovel, Corretor } from './types';
 import { DbService } from './services/db';
 import { StoryBubble } from './components/StoryBubble';
@@ -12,6 +13,7 @@ import { PropertyForm } from './components/PropertyForm';
 import { PropertyDetails } from './components/PropertyDetails';
 import { UserProfile } from './components/UserProfile';
 import { PublicView } from './components/PublicView';
+import { SupportForm } from './components/SupportForm';
 import {
   Home as HomeIcon,
   Building,
@@ -39,7 +41,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-type TabType = 'home' | 'my-properties' | 'profile';
+type TabType = 'home' | 'my-properties' | 'profile' | 'support';
 
 export default function App() {
   // Authentication state
@@ -97,11 +99,27 @@ export default function App() {
     if (allImoveis.length === 0) return;
 
     const path = window.location.pathname;
+    const params = new URLSearchParams(window.location.search);
+    const hash = window.location.hash;
 
-    // 1. Check for single imovel path: /imovel/:id
-    const imovelMatch = path.match(/^\/imovel\/([^/]+)/);
-    if (imovelMatch) {
-      const imovelId = imovelMatch[1];
+    // A. Check for single imovel via query param (?imovel=id), hash (#/imovel/id) or pathname (/imovel/id)
+    let imovelId = params.get('imovel');
+    
+    if (!imovelId) {
+      const imovelMatch = path.match(/^\/imovel\/([^/]+)/);
+      if (imovelMatch) {
+        imovelId = imovelMatch[1];
+      }
+    }
+    
+    if (!imovelId) {
+      const hashMatch = hash.match(/^#\/imovel\/([^/]+)/);
+      if (hashMatch) {
+        imovelId = hashMatch[1];
+      }
+    }
+
+    if (imovelId) {
       const found = allImoveis.find(i => 
         i.id === imovelId || 
         i.id === `imovel-${imovelId}` || 
@@ -113,19 +131,26 @@ export default function App() {
       return;
     }
 
-    // 2. Check for multi imoveis selection path: /selecao
-    if (path === '/selecao') {
-      const params = new URLSearchParams(window.location.search);
-      const imoveisParam = params.get('imoveis');
-      if (imoveisParam) {
-        const ids = imoveisParam.split(',').map(id => id.trim());
-        const selectedList = allImoveis.filter(i => 
-          ids.includes(i.id) || 
-          ids.includes(i.id.replace('imovel-', ''))
-        );
-        if (selectedList.length > 0) {
-          setPublicSelectionImoveis(selectedList);
-        }
+    // B. Check for multi imoveis selection via query param (?selecao=id1,id2), pathname (/selecao?imoveis=...) or hash (#/selecao?...)
+    let imoveisRaw = params.get('selecao') || params.get('imoveis');
+    
+    if (!imoveisRaw && path === '/selecao') {
+      imoveisRaw = params.get('imoveis');
+    }
+    
+    if (!imoveisRaw && hash.startsWith('#/selecao')) {
+      const hashParams = new URLSearchParams(hash.split('?')[1] || '');
+      imoveisRaw = hashParams.get('selecao') || hashParams.get('imoveis');
+    }
+
+    if (imoveisRaw) {
+      const ids = imoveisRaw.split(',').map(id => id.trim());
+      const selectedList = allImoveis.filter(i => 
+        ids.includes(i.id) || 
+        ids.includes(i.id.replace('imovel-', ''))
+      );
+      if (selectedList.length > 0) {
+        setPublicSelectionImoveis(selectedList);
       }
     }
   }, [allImoveis]);
@@ -253,6 +278,20 @@ export default function App() {
         if (!filterOutrosCorretores) return false;
         // Also must be SHARED to be visible to others
         if (!imovel.compartilhar) return false;
+
+        // --- PARTNER GROUP EXCLUSIVITY RESTRICTION ---
+        // Find owner broker's settings
+        const owner = DbService.getCorretores().find(c => c.id === imovel.corretorId);
+        if (owner && owner.restringirParceiros) {
+          const partners = owner.parceirosEmails || [];
+          if (partners.length > 0) {
+            const activeEmail = (activeCorretor.email || '').toLowerCase().trim();
+            const hasAccess = partners.some(p => p.toLowerCase().trim() === activeEmail);
+            if (!hasAccess) {
+              return false;
+            }
+          }
+        }
       }
 
       return true;
@@ -263,7 +302,21 @@ export default function App() {
   const getStoryImoveis = () => {
     return allImoveis.filter((imovel) => {
       const hours = (Date.now() - new Date(imovel.dataCadastro).getTime()) / (1000 * 60 * 60);
-      return hours <= 24 && imovel.corretorId !== activeCorretor.id && imovel.compartilhar;
+      const isEligible = hours <= 24 && imovel.corretorId !== activeCorretor.id && imovel.compartilhar;
+      if (!isEligible) return false;
+
+      // Check partner restriction
+      const owner = DbService.getCorretores().find(c => c.id === imovel.corretorId);
+      if (owner && owner.restringirParceiros) {
+        const partners = owner.parceirosEmails || [];
+        if (partners.length > 0) {
+          const activeEmail = (activeCorretor.email || '').toLowerCase().trim();
+          const hasAccess = partners.some(p => p.toLowerCase().trim() === activeEmail);
+          if (!hasAccess) return false;
+        }
+      }
+
+      return true;
     });
   };
 
@@ -277,7 +330,20 @@ export default function App() {
 
       const isMine = imovel.corretorId === activeCorretor.id;
       if (isMine) return true;
-      return imovel.compartilhar;
+      if (!imovel.compartilhar) return false;
+
+      // Check partner restriction
+      const owner = DbService.getCorretores().find(c => c.id === imovel.corretorId);
+      if (owner && owner.restringirParceiros) {
+        const partners = owner.parceirosEmails || [];
+        if (partners.length > 0) {
+          const activeEmail = (activeCorretor.email || '').toLowerCase().trim();
+          const hasAccess = partners.some(p => p.toLowerCase().trim() === activeEmail);
+          if (!hasAccess) return false;
+        }
+      }
+
+      return true;
     });
   };
 
@@ -296,18 +362,26 @@ export default function App() {
     if (selectedPropertyIds.length === 0) return;
     
     const selectedList = allImoveis.filter(i => selectedPropertyIds.includes(i.id));
-    const titles = selectedList.map(i => `• ${i.titulo} (${i.tipo === 'venda' ? 'Venda' : 'Locação'}: R$ ${i.valor.toLocaleString('pt-BR')})`).join('\n');
+    const listItems = selectedList.map(i => {
+      const location = i.nomeEdificio?.trim() ? `${i.nomeEdificio} (${i.bairro})` : i.bairro;
+      const preco = i.valor.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + (i.tipo === 'locação' ? '/mês' : '');
+      const tipo = i.tipo === 'venda' ? 'Venda' : 'Aluguel';
+      return `• \`\`\`${location} - R$ ${preco} (${tipo})\`\`\``;
+    }).join('\n\n');
+    
     const idsJoined = selectedPropertyIds.map(id => id.replace('imovel-', '')).join(',');
     
-    // Create shared multi-link simulated address
-    const multiLink = `${window.location.origin}/selecao?imoveis=${idsJoined}`;
+    // Create shared multi-link simulated address using query parameters for 100% compatibility
+    const multiLink = `${window.location.origin}/?selecao=${idsJoined}`;
 
-    const textMessage = `💼 *Imóveis Selecionados para Você*
-Olá! Preparei uma seleção especial de imóveis que combinam com seu perfil:
+    const textMessage = `💼 *Seleção de Imóveis para Você*
 
-${titles}
+Selecionei estes imóveis especiais que combinam com seu perfil:
 
-🔗 *Veja fotos e detalhes completos de todos os imóveis no link único:* ${multiLink}`;
+${listItems}
+
+Toque abaixo para ver fotos e todos os detalhes:
+👉 ${multiLink}`;
 
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(textMessage)}`, '_blank', 'noopener,noreferrer');
     triggerToast('Compartilhando seleção múltipla via WhatsApp!');
@@ -435,9 +509,12 @@ ${titles}
       <div className="bg-[#0F172A] min-h-screen flex flex-col justify-center items-center px-4 font-sans select-none" id="auth-screen">
         <div className="w-full max-w-sm bg-white rounded-[32px] p-8 shadow-2xl space-y-6 border border-gray-100">
           <div className="text-center space-y-2">
-            <div className="mx-auto w-14 h-14 bg-[#003366] text-white rounded-[20px] flex items-center justify-center font-black text-2xl shadow-lg">
-              IS
-            </div>
+            <img
+              src={logoImg}
+              alt="ImobiShare Logo"
+              className="mx-auto w-16 h-16 object-contain rounded-2xl border border-slate-100 shadow-sm"
+              referrerPolicy="no-referrer"
+            />
             <h1 className="text-2xl font-black text-[#003366] tracking-tight uppercase">ImobiShare</h1>
             <p className="text-xs text-slate-400 font-semibold uppercase tracking-widest">Acelere suas parcerias imobiliárias</p>
           </div>
@@ -569,7 +646,15 @@ ${titles}
                 <div className="space-y-4" id="home-tab-view">
                   {/* Instagram-inspired Top Bar with Artistic Flair styles */}
                   <div className="px-5 pt-6 pb-4 bg-white flex justify-between items-center border-b border-gray-100 sticky top-0 z-10">
-                    <h1 className="text-[#003366] text-lg font-black tracking-tight uppercase">ImobiShare</h1>
+                    <div className="flex items-center gap-2">
+                      <img
+                        src={logoImg}
+                        alt="ImobiShare Logo"
+                        className="w-7 h-7 object-contain rounded-lg border border-slate-100/50 shadow-xs"
+                        referrerPolicy="no-referrer"
+                      />
+                      <h1 className="text-[#003366] text-base font-black tracking-tight uppercase leading-none">ImobiShare</h1>
+                    </div>
                     <div className="flex gap-2.5 items-center">
                       <div className="w-8 h-8 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-xs shadow-xs" title="Notificações ativas">
                         🔔
@@ -875,6 +960,14 @@ ${titles}
                   </div>
                 </div>
               )}
+
+              {activeTab === 'support' && (
+                <SupportForm
+                  activeCorretor={activeCorretor}
+                  onBack={() => setActiveTab('home')}
+                  triggerToast={triggerToast}
+                />
+              )}
             </>
           )}
 
@@ -939,14 +1032,23 @@ ${titles}
 
         {/* BOTTOM NAVIGATION TABS MENU (Similar to native mobile tabs bar) */}
         {!isAddingProperty && !selectedPropertyId && (
-          <div className="absolute bottom-0 left-0 right-0 h-16 bg-white border-t border-slate-100 flex items-center justify-around px-4 z-20">
+          <div className="absolute bottom-0 left-0 right-0 h-16 bg-white border-t border-slate-100 flex items-center justify-around px-2 z-20">
             <button
               onClick={() => setActiveTab('home')}
-              className={`flex flex-col items-center gap-1 p-2 ${activeTab === 'home' ? 'text-[#003366]' : 'text-slate-400 hover:text-slate-600'}`}
+              className={`flex flex-col items-center gap-1 p-1 ${activeTab === 'home' ? 'text-[#003366]' : 'text-slate-400 hover:text-slate-600'}`}
               id="tab-home"
             >
-              <HomeIcon size={20} className={activeTab === 'home' ? 'stroke-[2.5px]' : 'stroke-2'} />
-              <span className="text-[9px] font-bold uppercase tracking-widest">Início</span>
+              <HomeIcon size={18} className={activeTab === 'home' ? 'stroke-[2.5px]' : 'stroke-2'} />
+              <span className="text-[8px] font-extrabold uppercase tracking-wider">Início</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('my-properties')}
+              className={`flex flex-col items-center gap-1 p-1 ${activeTab === 'my-properties' ? 'text-[#003366]' : 'text-slate-400 hover:text-slate-600'}`}
+              id="tab-my-properties"
+            >
+              <Building size={18} className={activeTab === 'my-properties' ? 'stroke-[2.5px]' : 'stroke-2'} />
+              <span className="text-[8px] font-extrabold uppercase tracking-wider">Imóveis</span>
             </button>
 
             {/* Quick floating central add property button (+) */}
@@ -955,29 +1057,29 @@ ${titles}
                 setEditingPropertyId(null);
                 setIsAddingProperty(true);
               }}
-              className="flex flex-col items-center justify-center -mt-6 bg-[#003366] text-white w-12 h-12 rounded-full shadow-lg hover:bg-[#002244] hover:scale-105 active:scale-95 transition-all z-30"
+              className="flex flex-col items-center justify-center -mt-6 bg-[#003366] text-white w-11 h-11 rounded-full shadow-lg hover:bg-[#002244] hover:scale-105 active:scale-95 transition-all z-30"
               id="btn-add-property"
               title="Cadastrar Novo Imóvel"
             >
-              <PlusCircle size={24} className="stroke-[2.5px]" />
+              <PlusCircle size={22} className="stroke-[2.5px]" />
             </button>
 
             <button
-              onClick={() => setActiveTab('my-properties')}
-              className={`flex flex-col items-center gap-1 p-2 ${activeTab === 'my-properties' ? 'text-[#003366]' : 'text-slate-400 hover:text-slate-600'}`}
-              id="tab-my-properties"
+              onClick={() => setActiveTab('support')}
+              className={`flex flex-col items-center gap-1 p-1 ${activeTab === 'support' ? 'text-[#003366]' : 'text-slate-400 hover:text-slate-600'}`}
+              id="tab-support"
             >
-              <Building size={20} className={activeTab === 'my-properties' ? 'stroke-[2.5px]' : 'stroke-2'} />
-              <span className="text-[9px] font-bold uppercase tracking-widest">Imóveis</span>
+              <MessageCircle size={18} className={activeTab === 'support' ? 'stroke-[2.5px]' : 'stroke-2'} />
+              <span className="text-[8px] font-extrabold uppercase tracking-wider">Suporte</span>
             </button>
 
             <button
               onClick={() => setActiveTab('profile')}
-              className={`flex flex-col items-center gap-1 p-2 ${activeTab === 'profile' ? 'text-[#003366]' : 'text-slate-400 hover:text-slate-600'}`}
+              className={`flex flex-col items-center gap-1 p-1 ${activeTab === 'profile' ? 'text-[#003366]' : 'text-slate-400 hover:text-slate-600'}`}
               id="tab-profile"
             >
-              <User size={20} className={activeTab === 'profile' ? 'stroke-[2.5px]' : 'stroke-2'} />
-              <span className="text-[9px] font-bold uppercase tracking-widest">Perfil</span>
+              <User size={18} className={activeTab === 'profile' ? 'stroke-[2.5px]' : 'stroke-2'} />
+              <span className="text-[8px] font-extrabold uppercase tracking-wider">Perfil</span>
             </button>
           </div>
         )}

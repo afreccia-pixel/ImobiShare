@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { Corretor } from '../types';
 import { DbService } from '../services/db';
-import { User, Phone, Mail, MapPin, Award, Check, RefreshCw, LogOut, CheckCircle2 } from 'lucide-react';
+import { User, Phone, Mail, MapPin, Award, Check, RefreshCw, LogOut, CheckCircle2, Users, Plus, Trash2 } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface UserProfileProps {
@@ -19,10 +19,93 @@ export function UserProfile({ corretor, onProfileSwitched }: UserProfileProps) {
   const [stats, setStats] = useState({ qtdImoveis: 0, qtdLocacoes: 0, qtdVendas: 0 });
   const [successMsg, setSuccessMsg] = useState('');
 
+  // Partner broker sharing states
+  const [restringir, setRestringir] = useState(corretor.restringirParceiros || false);
+  const [parceiros, setParceiros] = useState<string[]>(corretor.parceirosEmails || []);
+  const [newEmail, setNewEmail] = useState('');
+  const [inputError, setInputError] = useState('');
+
   useEffect(() => {
     setAllCorretores(DbService.getCorretores());
     setStats(DbService.getBrokerStats(corretor.id));
+    
+    // Sync partner states when corretor changes
+    setRestringir(corretor.restringirParceiros || false);
+    setParceiros(corretor.parceirosEmails || []);
+    setNewEmail('');
+    setInputError('');
   }, [corretor]);
+
+  const handleToggleRestringir = (checked: boolean) => {
+    setRestringir(checked);
+    const updatedCorretor = {
+      ...corretor,
+      restringirParceiros: checked,
+      parceirosEmails: parceiros
+    };
+    DbService.saveCorretor(updatedCorretor);
+    onProfileSwitched(updatedCorretor);
+    setSuccessMsg(checked ? 'Restrição de visualização ativada!' : 'Seus imóveis agora estão visíveis para todos os parceiros.');
+    setTimeout(() => setSuccessMsg(''), 3000);
+  };
+
+  const handleAddPartner = (e: React.FormEvent) => {
+    e.preventDefault();
+    setInputError('');
+
+    const emailTrimmed = newEmail.trim().toLowerCase();
+    if (!emailTrimmed) return;
+
+    // basic regex check
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(emailTrimmed)) {
+      setInputError('E-mail inválido.');
+      return;
+    }
+
+    if (emailTrimmed === corretor.email.toLowerCase().trim()) {
+      setInputError('Você não pode adicionar seu próprio e-mail.');
+      return;
+    }
+
+    if (parceiros.some(p => p.toLowerCase() === emailTrimmed)) {
+      setInputError('Este corretor já está cadastrado no seu grupo.');
+      return;
+    }
+
+    const updatedParceiros = [...parceiros, emailTrimmed];
+    setParceiros(updatedParceiros);
+    setNewEmail('');
+
+    const updatedCorretor = {
+      ...corretor,
+      restringirParceiros: restringir,
+      parceirosEmails: updatedParceiros
+    };
+    DbService.saveCorretor(updatedCorretor);
+    onProfileSwitched(updatedCorretor);
+    setSuccessMsg('Corretor parceiro adicionado com sucesso!');
+    setTimeout(() => setSuccessMsg(''), 3000);
+  };
+
+  const handleDeletePartner = (emailToDelete: string) => {
+    const updatedParceiros = parceiros.filter(email => email !== emailToDelete);
+    setParceiros(updatedParceiros);
+
+    const updatedCorretor = {
+      ...corretor,
+      restringirParceiros: restringir,
+      parceirosEmails: updatedParceiros
+    };
+    DbService.saveCorretor(updatedCorretor);
+    onProfileSwitched(updatedCorretor);
+    setSuccessMsg('Parceiro removido do grupo.');
+    setTimeout(() => setSuccessMsg(''), 3000);
+  };
+
+  const findBrokerByEmail = (email: string) => {
+    return allCorretores.find(c => c.email.toLowerCase().trim() === email.toLowerCase().trim());
+  };
 
   const handleSwitchBroker = (broker: Corretor) => {
     DbService.setActiveCorretor(broker);
@@ -108,6 +191,130 @@ export function UserProfile({ corretor, onProfileSwitched }: UserProfileProps) {
               <span className="text-[10px] text-slate-400 block">Cidade Principal:</span>
               <span className="font-medium text-slate-800">{corretor.cidade}</span>
             </div>
+          </div>
+        </div>
+
+        {/* Grupo de Corretores Parceiros Panel */}
+        <div className="bg-white border border-slate-100 rounded-xl p-4 shadow-xs space-y-4" id="grupo-parceiros-card">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Grupo de Corretores Parceiros</h3>
+            <span className="bg-[#003366]/10 text-[#003366] text-[10px] font-extrabold px-2 py-0.5 rounded-full">
+              {parceiros.length} {parceiros.length === 1 ? 'Parceiro' : 'Parceiros'}
+            </span>
+          </div>
+
+          {/* Toggle Restriction */}
+          <div className="flex items-start gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100/50">
+            <input
+              type="checkbox"
+              id="restringir-parceiros-toggle"
+              checked={restringir}
+              onChange={(e) => handleToggleRestringir(e.target.checked)}
+              className="mt-0.5 w-4 h-4 text-[#003366] accent-[#003366] border-slate-300 rounded focus:ring-[#003366] cursor-pointer"
+            />
+            <div className="flex-grow space-y-1">
+              <label htmlFor="restringir-parceiros-toggle" className="text-xs font-bold text-slate-700 cursor-pointer block">
+                Limitar meus imóveis ao Grupo
+              </label>
+              <p className="text-[10px] text-slate-400 leading-normal">
+                Ao ativar, seus imóveis só serão visíveis para os corretores parceiros cadastrados por você abaixo. Se não tiver nenhum parceiro cadastrado, o sistema entende que está compartilhado com todos.
+              </p>
+            </div>
+          </div>
+
+          {/* Form to add partner by email */}
+          <form onSubmit={handleAddPartner} className="space-y-2">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Cadastrar Corretor Parceiro (E-mail)</label>
+            <div className="flex gap-2">
+              <input
+                type="email"
+                placeholder="Ex: mariana.costa@realtor.com"
+                value={newEmail}
+                onChange={(e) => {
+                  setNewEmail(e.target.value);
+                  if (inputError) setInputError('');
+                }}
+                className="flex-grow text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-[#003366] focus:ring-1 focus:ring-[#003366]/20 font-medium text-slate-800"
+              />
+              <button
+                type="submit"
+                className="bg-[#003366] hover:bg-[#002244] text-white px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1 transition-all uppercase tracking-wider text-[10px]"
+              >
+                <Plus size={12} />
+                Adicionar
+              </button>
+            </div>
+            {inputError && (
+              <p className="text-[10px] text-red-500 font-semibold">{inputError}</p>
+            )}
+          </form>
+
+          {/* List of Partner Brokers */}
+          <div className="space-y-2 pt-2 border-t border-slate-100">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+              Lista de Corretores Parceiros do meu Grupo
+            </span>
+
+            {parceiros.length === 0 ? (
+              <div className="text-center py-6 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                <p className="text-[10px] text-slate-400 font-medium">Nenhum parceiro cadastrado.</p>
+                <p className="text-[9px] text-slate-400 mt-0.5 leading-normal max-w-xs mx-auto">
+                  Insira o e-mail do corretor parceiro para restringir o compartilhamento ao seu grupo exclusivo.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                {parceiros.map((email) => {
+                  const partnerBroker = findBrokerByEmail(email);
+                  return (
+                    <div
+                      key={email}
+                      className="flex items-center justify-between p-2 bg-slate-50 rounded-xl border border-slate-100 text-xs hover:border-slate-200 transition-all"
+                    >
+                      <div className="flex items-center gap-2">
+                        {partnerBroker ? (
+                          <>
+                            <img
+                              src={partnerBroker.foto}
+                              alt=""
+                              className="w-7 h-7 rounded-full object-cover border border-slate-200"
+                              referrerPolicy="no-referrer"
+                            />
+                            <div>
+                              <span className="font-bold text-slate-800 block">{partnerBroker.nome}</span>
+                              <span className="text-[9px] text-slate-400 block leading-tight">
+                                {partnerBroker.creci} • {email}
+                              </span>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 font-bold text-[10px]">
+                              @
+                            </div>
+                            <div>
+                              <span className="font-bold text-slate-700 block truncate max-w-[160px]">{email}</span>
+                              <span className="text-[9px] text-amber-500 font-medium block leading-tight">
+                                Convidado (Não simulado)
+                              </span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeletePartner(email)}
+                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Excluir parceiro"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
