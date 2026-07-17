@@ -58,7 +58,8 @@ jobs:
           cache: 'npm'
 
       - name: Install Dependencies
-        run: npm ci
+        run:  npm ci
+              npm install rollup --save-dev
 
       - name: Build Web Application
         run: npm run build
@@ -147,7 +148,9 @@ jobs:
           cache: 'npm'
 
       - name: Install Dependencies
-        run: npm ci
+        run: |
+          npm ci || npm install
+          npm install @rollup/rollup-darwin-arm64 @esbuild/darwin-arm64 --no-save
 
       - name: Build Web Application
         run: npm run build
