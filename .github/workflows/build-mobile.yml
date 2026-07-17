@@ -67,6 +67,16 @@ jobs:
       - name: Sync Capacitor Android
         run: npx cap sync android
 
+      - name: Validate and Repair Gradle Wrapper
+        run: |
+          if ! unzip -t android/gradle/wrapper/gradle-wrapper.jar >/dev/null 2>&1; then
+            echo "⚠️ gradle-wrapper.jar is corrupt or invalid. Fetching a fresh, official Gradle Wrapper jar..."
+            mkdir -p android/gradle/wrapper
+            curl -sL https://raw.githubusercontent.com/gradle/gradle/master/gradle/wrapper/gradle-wrapper.jar -o android/gradle/wrapper/gradle-wrapper.jar
+          else
+            echo "✅ gradle-wrapper.jar is fully valid."
+          fi
+
       - name: Decode Android Keystore
         id: decode_keystore
         run: |
