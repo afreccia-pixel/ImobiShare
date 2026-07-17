@@ -48,6 +48,30 @@ function getGeminiClient() {
   }
   return aiClient;
 }
+app.post("/api/support/send", async (req, res) => {
+  try {
+    const { nome, email, telefone, tipo, descricao, creci, cidade } = req.body;
+    if (!nome || !email || !descricao) {
+      return res.status(400).json({ error: "Os campos Nome, E-mail e Descri\xE7\xE3o s\xE3o obrigat\xF3rios." });
+    }
+    console.log(`=========================================`);
+    console.log(`\u{1F4E9} NOVO FEEDBACK/SUPORTE RECEBIDO DIRECTO`);
+    console.log(`-----------------------------------------`);
+    console.log(`De: ${nome} <${email}>`);
+    console.log(`Telefone: ${telefone || "N\xE3o informado"}`);
+    console.log(`Cidade: ${cidade || "N\xE3o informada"}`);
+    console.log(`CRECI: ${creci || "N\xE3o informado"}`);
+    console.log(`Tipo: ${tipo.toUpperCase()}`);
+    console.log(`-----------------------------------------`);
+    console.log(`Mensagem:`);
+    console.log(descricao);
+    console.log(`=========================================`);
+    return res.json({ success: true, message: "Sua mensagem foi enviada diretamente!" });
+  } catch (error) {
+    console.error("Erro no processamento do suporte:", error);
+    return res.status(500).json({ error: "Erro ao enviar o suporte. Tente novamente." });
+  }
+});
 app.post("/api/ai/improve-description", async (req, res) => {
   try {
     const { text, type, titulo, localizacao } = req.body;
