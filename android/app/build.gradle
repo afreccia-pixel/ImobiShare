@@ -16,27 +16,10 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
-    signingConfigs {
-        release {
-            // Load keystore password and keys from environment variables for CI/CD safety
-            def keystoreFile = file("release.keystore")
-            storeFile keystoreFile.exists() ? keystoreFile : null
-            storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: ""
-            keyAlias System.getenv("ANDROID_KEY_ALIAS") ?: "imobishare"
-            keyPassword System.getenv("ANDROID_KEY_PASSWORD") ?: ""
-        }
-    }
-
     buildTypes {
         release {
-            minifyEnabled true
-            shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            
-            // Apply signing configuration only if keystore exists to prevent local compilation failures
-            if (file("release.keystore").exists()) {
-                signingConfig signingConfigs.release
-            }
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
 }
