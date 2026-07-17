@@ -78,6 +78,11 @@ jobs:
             echo "has_keystore=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Regenerate Gradle Wrapper
+        working-directory: android
+        run: |
+          gradle wrapper --gradle-version 8.7
+
       - name: Build Android Release (AAB & APK)
         working-directory: android
         env:
