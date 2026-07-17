@@ -77,9 +77,7 @@ jobs:
             echo "No keystore secret detected. Build will proceed unsigned."
             echo "has_keystore=false" >> $GITHUB_OUTPUT
           fi
-      - name: Grant execute permission for gradlew
-        working-directory: android
-        run: chmod +x gradlew
+
       - name: Build Android Release (AAB & APK)
         working-directory: android
         env:
@@ -87,6 +85,7 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          chmod +x gradlew
           if [ "${{ steps.decode_keystore.outputs.has_keystore }}" = "true" ]; then
             echo "Compiling signed production builds..."
             ./gradlew bundleRelease assembleRelease
@@ -195,9 +194,7 @@ jobs:
             echo "Apple build secrets missing. Proceeding with verification-only compilation (no-sign)."
             echo "has_signing=false" >> $GITHUB_OUTPUT
           fi
-      - name: Grant execute permission for build scripts
-        working-directory: ios/App
-        run: chmod +x *.sh || echo "No custom shell scripts found"
+
       - name: Build iOS Workspace (Archive)
         working-directory: ios/App
         run: |
