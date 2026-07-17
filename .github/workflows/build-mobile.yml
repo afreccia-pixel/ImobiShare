@@ -78,18 +78,6 @@ jobs:
             echo "has_keystore=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Regenerate Gradle Wrapper
-        working-directory: android
-        run: |
-          rm -f gradle/wrapper/gradle-wrapper.jar
-          if ! gradle wrapper --gradle-version 8.7; then
-            echo "Global gradle command not available. Downloading and extracting valid wrapper jar directly..."
-            wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip
-            unzip -jo gradle-8.7-bin.zip "gradle-8.7/lib/plugins/gradle-wrapper-8.7.jar" -d .
-            unzip -p gradle-wrapper-8.7.jar gradle-wrapper.jar > gradle/wrapper/gradle-wrapper.jar
-            rm -f gradle-8.7-bin.zip gradle-wrapper-8.7.jar
-          fi
-
       - name: Build Android Release (AAB & APK)
         working-directory: android
         env:
