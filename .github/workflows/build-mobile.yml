@@ -195,7 +195,9 @@ jobs:
             echo "Apple build secrets missing. Proceeding with verification-only compilation (no-sign)."
             echo "has_signing=false" >> $GITHUB_OUTPUT
           fi
-
+      - name: Grant execute permission for build scripts
+        working-directory: ios/App
+        run: chmod +x *.sh || echo "No custom shell scripts found"
       - name: Build iOS Workspace (Archive)
         working-directory: ios/App
         run: |
