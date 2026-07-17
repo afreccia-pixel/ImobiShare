@@ -1,0 +1,19 @@
+# Ensure binary files are treated as such and not modified by line ending normalization
+*.jar binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.mp3 binary
+*.mp4 binary
+*.wav binary
+
+# Ensure shell scripts have LF line endings
+*.sh text eol=lf
+gradlew text eol=lf
