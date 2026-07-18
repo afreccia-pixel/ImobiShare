@@ -160,7 +160,7 @@ jobs:
       - name: Install Dependencies
         run: |
           npm ci || npm install
-          npm install @rollup/rollup-darwin-arm64 @esbuild/darwin-arm64 lightningcss-darwin-arm64 --no-save
+          npm install @rollup/rollup-darwin-arm64 @esbuild/darwin-arm64 lightningcss-darwin-arm64 @tailwindcss/oxide-darwin-arm64 --no-save
 
       - name: Build Web Application
         run: npm run build
