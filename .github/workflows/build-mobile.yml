@@ -223,9 +223,11 @@ jobs:
             -scheme App \
             -sdk iphoneos \
             -configuration Release \
+            -destination 'generic/platform=iOS' \
             -archivePath ios/App/build/App.xcarchive \
-            archive CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
-            -destination 'generic/platform=iOS'
+            archive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
 
       - name: Export iOS IPA
         working-directory: ios/App
