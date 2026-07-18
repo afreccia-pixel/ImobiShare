@@ -211,12 +211,19 @@ jobs:
       - name: Build iOS Workspace (Archive)
         working-directory: ios/App
         run: |
+          # Determine if we should build using workspace or project (SPM support)
+          BUILD_TARGET_FLAG="-workspace App.xcworkspace"
+          if [ ! -d "App.xcworkspace" ]; then
+            echo "App.xcworkspace not found. Project is likely SPM-based. Using App.xcodeproj."
+            BUILD_TARGET_FLAG="-project App.xcodeproj"
+          fi
+
           if [ "${{ steps.setup_ios_signing.outputs.has_signing }}" = "true" ]; then
             echo "Building signed iOS Archive..."
-            xcodebuild -workspace App.xcworkspace -scheme App -sdk iphoneos -configuration Release -archivePath build/App.xcarchive archive
+            xcodebuild $BUILD_TARGET_FLAG -scheme App -sdk iphoneos -configuration Release -archivePath build/App.xcarchive archive
           else
             echo "Building verification-only unsigned iOS Archive..."
-            xcodebuild -workspace App.xcworkspace -scheme App -sdk iphoneos -configuration Release -archivePath build/App.xcarchive archive CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+            xcodebuild $BUILD_TARGET_FLAG -scheme App -sdk iphoneos -configuration Release -archivePath build/App.xcarchive archive CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
           fi
 
       - name: Export iOS IPA
