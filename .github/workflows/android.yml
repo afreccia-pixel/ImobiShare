@@ -38,6 +38,11 @@ jobs:
       - name: Sync Capacitor Android
         run: npx cap sync android
 
+      - name: Download fresh gradle-wrapper.jar
+        run: |
+          mkdir -p android/gradle/wrapper
+          curl -sL https://raw.githubusercontent.com/gradle/gradle/v8.8.0/gradle/wrapper/gradle-wrapper.jar -o android/gradle/wrapper/gradle-wrapper.jar
+
       - name: Grant Execute Permission to Gradlew
         run: chmod +x android/gradlew
 
