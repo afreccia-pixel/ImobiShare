@@ -220,10 +220,10 @@ jobs:
 
           if [ "${{ steps.setup_ios_signing.outputs.has_signing }}" = "true" ]; then
             echo "Building signed iOS Archive..."
-            xcodebuild $BUILD_TARGET_FLAG -scheme App -sdk iphoneos -configuration Release -archivePath build/App.xcarchive archive
+            xcodebuild $BUILD_TARGET_FLAG -scheme App -sdk iphoneos -configuration Release -archivePath build/App.xcarchive -destination 'generic/platform=iOS' archive
           else
             echo "Building verification-only unsigned iOS Archive..."
-            xcodebuild $BUILD_TARGET_FLAG -scheme App -sdk iphoneos -configuration Release -archivePath build/App.xcarchive archive CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+            xcodebuild $BUILD_TARGET_FLAG -scheme App -sdk iphoneos -configuration Release -archivePath build/App.xcarchive -destination 'generic/platform=iOS' archive CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
           fi
 
       - name: Export iOS IPA
