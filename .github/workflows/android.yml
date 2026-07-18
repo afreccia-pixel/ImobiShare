@@ -41,6 +41,12 @@ jobs:
       - name: Grant Execute Permission to Gradlew
         run: chmod +x android/gradlew
 
+      - name: Setup Gradle Wrapper
+        working-directory: android
+        run: |
+        rm -rf ~/.gradle/wrapper/dists
+        gradle wrapper --gradle-version 8.14.3 --distribution-type all
+
       - name: Build Android Release (APK & AAB)
         working-directory: android
         run: |
