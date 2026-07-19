@@ -779,13 +779,28 @@ Toque abaixo para ver fotos e todos os detalhes:
                       </div>
                     </div>
 
-                    {/* Valor Slider range */}
-                    <div className="space-y-3.5 pt-1">
+                    {/* Valor Slider range - Side by Side */}
+                    <div className="grid grid-cols-2 gap-4 pt-1">
                       {/* Valor Mínimo */}
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-[11px]">
-                          <span className="font-bold text-slate-400 uppercase tracking-widest text-[9px]">Valor Mínimo</span>
-                          <span className="text-[#003366] font-extrabold">{formatPriceBRL(filterValorMin)}</span>
+                      <div className="space-y-1.5">
+                        <div className="flex flex-col gap-1">
+                          <span className="font-bold text-slate-400 uppercase tracking-widest text-[9px]">Mínimo</span>
+                          <div className="relative flex items-center">
+                            <span className="absolute left-2 text-[10px] sm:text-xs font-bold text-[#003366] pointer-events-none">R$</span>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={filterValorMin === 0 ? '' : new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(filterValorMin)}
+                              onChange={(e) => {
+                                const rawValue = e.target.value;
+                                const cleanValue = rawValue.replace(/\D/g, '');
+                                const valNum = cleanValue === '' ? 0 : Number(cleanValue);
+                                setFilterValorMin(valNum);
+                              }}
+                              placeholder="0"
+                              className="w-full text-xs font-extrabold text-[#003366] pl-7 pr-1.5 py-1 bg-slate-50 border border-slate-200 rounded-md focus:outline-hidden focus:border-[#003366] shadow-2xs"
+                            />
+                          </div>
                         </div>
                         <input
                           type="range"
@@ -799,10 +814,25 @@ Toque abaixo para ver fotos e todos os detalhes:
                       </div>
 
                       {/* Valor Máximo */}
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-[11px]">
-                          <span className="font-bold text-slate-400 uppercase tracking-widest text-[9px]">Valor Máximo</span>
-                          <span className="text-[#003366] font-extrabold">{formatPriceBRL(filterValorMax)}</span>
+                      <div className="space-y-1.5">
+                        <div className="flex flex-col gap-1">
+                          <span className="font-bold text-slate-400 uppercase tracking-widest text-[9px]">Máximo</span>
+                          <div className="relative flex items-center">
+                            <span className="absolute left-2 text-[10px] sm:text-xs font-bold text-[#003366] pointer-events-none">R$</span>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={filterValorMax === 0 ? '' : new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(filterValorMax)}
+                              onChange={(e) => {
+                                const rawValue = e.target.value;
+                                const cleanValue = rawValue.replace(/\D/g, '');
+                                const valNum = cleanValue === '' ? 0 : Number(cleanValue);
+                                setFilterValorMax(valNum);
+                              }}
+                              placeholder="15.000.000"
+                              className="w-full text-xs font-extrabold text-[#003366] pl-7 pr-1.5 py-1 bg-slate-50 border border-slate-200 rounded-md focus:outline-hidden focus:border-[#003366] shadow-2xs"
+                            />
+                          </div>
                         </div>
                         <input
                           type="range"

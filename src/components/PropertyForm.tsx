@@ -15,7 +15,7 @@ interface PropertyFormProps {
   onCancel: () => void;
 }
 
-// Preset luxury images for quick assignment
+  // Preset luxury images for quick assignment
 const PRESET_GALLERY = [
   'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=600&auto=format&fit=crop&q=80',
   'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=600&auto=format&fit=crop&q=80',
@@ -24,6 +24,14 @@ const PRESET_GALLERY = [
   'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=600&auto=format&fit=crop&q=80',
   'https://images.unsplash.com/photo-1513694203232-719a280e022f?w=600&auto=format&fit=crop&q=80'
 ];
+
+// Helper to format the number as a Portuguese thousands separator string
+const formatNumberWithSeparators = (val: number | '') => {
+  if (val === '') return '';
+  return new Intl.NumberFormat('pt-BR', {
+    maximumFractionDigits: 0
+  }).format(val);
+};
 
 export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) {
   const [titulo, setTitulo] = useState('');
@@ -429,10 +437,15 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
                 Valor {tipo === 'locação' ? '(mês)' : ''}
               </label>
               <input
-                type="number"
+                type="text"
+                inputMode="numeric"
                 placeholder="R$ Valor"
-                value={valor}
-                onChange={(e) => setValor(e.target.value === '' ? '' : Number(e.target.value))}
+                value={formatNumberWithSeparators(valor)}
+                onChange={(e) => {
+                  const rawValue = e.target.value;
+                  const cleanValue = rawValue.replace(/\D/g, '');
+                  setValor(cleanValue === '' ? '' : Number(cleanValue));
+                }}
                 className="w-full text-xs px-3 py-2 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366]"
               />
             </div>

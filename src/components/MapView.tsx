@@ -259,8 +259,8 @@ export function MapView({ imoveis, selectedIds, onSelectToggle, onViewDetails }:
       />
       {/* Mini Helper Overlay */}
       <div className="absolute bottom-2 left-2 bg-slate-900/90 backdrop-blur-xs text-white text-[9px] font-bold px-2 py-1 rounded-md z-10 shadow-xs flex items-center gap-2">
-        <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[#003366]" /> Rede</span>
-        <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-500" /> Integração</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#003366]" /> Rede</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> Integração</span>
       </div>
     </div>
   );
