@@ -44,8 +44,12 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.14.3'
-          # Informa ao GitHub que os jars gerados sao seguros
-          wrapper-validation-checksums: '7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172, 24f0a7db79bf395e280bf4235ffc355248d713722663b6d0f35282eb933ec865'
+          validate-wrappers: false
+
+      - name: Validate Gradle Wrapper
+        uses: gradle/actions/wrapper-validation@v4
+        with:
+          allow-checksums: '7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172,24f0a7db79bf395e280bf4235ffc355248d713722663b6d0f35282eb933ec865'
 
       - name: Regenerate Gradle Wrapper
         working-directory: android
