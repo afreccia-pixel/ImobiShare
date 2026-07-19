@@ -46,22 +46,13 @@ jobs:
           gradle-version: '8.14.3'
           validate-wrappers: false
 
-      - name: Validate Gradle Wrapper
-        uses: gradle/actions/wrapper-validation@v4
-        with:
-          allow-checksums: '7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172,24f0a7db79bf395e280bf4235ffc355248d713722663b6d0f35282eb933ec865'
-
-      - name: Regenerate Gradle Wrapper
-        working-directory: android
-        run: gradle wrapper --gradle-version 8.14.3 --distribution-type all
-
       - name: Grant Execute Permission to Gradlew
         run: chmod +x android/gradlew
 
       - name: Build Android Release (APK & AAB)
         working-directory: android
         run: |
-          ./gradlew clean assembleRelease bundleRelease
+          ./gradlew clean assembleRelease bundleRelease --stacktrace
 
       - name: Collect Android Artifacts
         run: |

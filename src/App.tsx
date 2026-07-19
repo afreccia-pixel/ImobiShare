@@ -622,7 +622,11 @@ Toque abaixo para ver fotos e todos os detalhes:
         </AnimatePresence>
 
         {/* Dynamic Inner screens navigation */}
-        <div className={`flex-grow overflow-y-auto ${activeTab === 'home' && !isAddingProperty && !selectedPropertyId ? 'pb-32' : 'pb-20'}`}>
+        <div className={`flex-grow overflow-y-auto ${
+          activeTab === 'home' && !isAddingProperty && !selectedPropertyId 
+            ? (selectedPropertyIds.length > 0 ? 'pb-40' : 'pb-32') 
+            : 'pb-20'
+        }`}>
           
           {isAddingProperty ? (
             /* ADD / EDIT PROPERTY FORM */
@@ -1086,8 +1090,8 @@ Toque abaixo para ver fotos e todos os detalhes:
 
 
         {/* Floating Premium View mode switcher matching attached image */}
-        {activeTab === 'home' && !selectedPropertyId && !isAddingProperty && (
-          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
+        {activeTab === 'home' && !selectedPropertyId && !isAddingProperty && selectedPropertyIds.length === 0 && (
+          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 pointer-events-auto transition-all duration-300">
             <div className="bg-white p-1 rounded-[22px] flex items-center gap-1 shadow-[0_8px_30px_rgba(0,0,0,0.12)] border border-slate-100/80">
               <button
                 type="button"

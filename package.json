@@ -7,8 +7,15 @@
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
-    "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "clean": "rm -rf dist && (cd android && ./gradlew clean || true)",
+    "android": "npx cap open android",
+    "sync": "npx cap sync android",
+    "copy": "npx cap copy android",
+    "doctor": "npx cap doctor android",
+    "lint": "tsc --noEmit",
+    "release": "npm run build && npx cap sync android && cd android && ./gradlew assembleRelease bundleRelease",
+    "assemble": "cd android && ./gradlew assembleRelease",
+    "bundle": "cd android && ./gradlew bundleRelease"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",
