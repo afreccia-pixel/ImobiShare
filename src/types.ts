@@ -39,6 +39,10 @@ export interface Imovel {
   dormitorios?: number;
   vagas?: number;
   metragem?: number;
+  integrado?: boolean;
+  integracaoOrigem?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface Favorito {

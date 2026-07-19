@@ -4,7 +4,7 @@
  */
 
 import { Imovel, Corretor, Favorito } from '../types';
-import { INITIAL_IMOVEIS, MOCK_CORRETORES } from '../data';
+import { INITIAL_IMOVEIS, INTEGRATED_IMOVEIS, MOCK_CORRETORES } from '../data';
 
 const STORAGE_KEYS = {
   IMOVEIS: 'imobishare_imoveis',
@@ -59,10 +59,45 @@ export class DbService {
   static getImoveis(): Imovel[] {
     const data = localStorage.getItem(STORAGE_KEYS.IMOVEIS);
     if (!data) {
-      localStorage.setItem(STORAGE_KEYS.IMOVEIS, JSON.stringify(INITIAL_IMOVEIS));
-      return INITIAL_IMOVEIS;
+      const allInitial = [...INITIAL_IMOVEIS, ...INTEGRATED_IMOVEIS];
+      localStorage.setItem(STORAGE_KEYS.IMOVEIS, JSON.stringify(allInitial));
+      return allInitial;
     }
-    return JSON.parse(data);
+    
+    let parsed: Imovel[] = [];
+    try {
+      parsed = JSON.parse(data);
+    } catch (e) {
+      console.error("Error parsing stored properties, resetting:", e);
+      const allInitial = [...INITIAL_IMOVEIS, ...INTEGRATED_IMOVEIS];
+      localStorage.setItem(STORAGE_KEYS.IMOVEIS, JSON.stringify(allInitial));
+      return allInitial;
+    }
+    
+    // Ensure existing items have their latitudes/longitudes updated, and integrated ones are present
+    let changed = false;
+    parsed = parsed.map(p => {
+      const initMatch = INITIAL_IMOVEIS.find(init => init.id === p.id);
+      if (initMatch && (p.latitude === undefined || p.longitude === undefined)) {
+        changed = true;
+        return { ...p, latitude: initMatch.latitude, longitude: initMatch.longitude };
+      }
+      return p;
+    });
+
+    // Check if integrated properties are in the parsed array, if not, add them
+    for (const integ of INTEGRATED_IMOVEIS) {
+      if (!parsed.some(p => p.id === integ.id)) {
+        parsed.push(integ);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      localStorage.setItem(STORAGE_KEYS.IMOVEIS, JSON.stringify(parsed));
+    }
+
+    return parsed;
   }
 
   // Get favorites for current broker

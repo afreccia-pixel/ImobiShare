@@ -69,7 +69,9 @@ export const INITIAL_IMOVEIS: Imovel[] = [
     corretorNome: 'Mariana Costa',
     dormitorios: 4,
     vagas: 4,
-    metragem: 380
+    metragem: 380,
+    latitude: -27.0042,
+    longitude: -48.6185
   },
   {
     id: 'imovel-2',
@@ -94,7 +96,9 @@ export const INITIAL_IMOVEIS: Imovel[] = [
     corretorNome: 'Carlos Eduardo',
     dormitorios: 3,
     vagas: 3,
-    metragem: 180
+    metragem: 180,
+    latitude: -26.9924,
+    longitude: -48.6341
   },
   {
     id: 'imovel-3',
@@ -119,7 +123,9 @@ export const INITIAL_IMOVEIS: Imovel[] = [
     corretorNome: 'Mariana Costa',
     dormitorios: 4,
     vagas: 3,
-    metragem: 450
+    metragem: 450,
+    latitude: -26.9785,
+    longitude: -48.6481
   },
   {
     id: 'imovel-4',
@@ -144,7 +150,9 @@ export const INITIAL_IMOVEIS: Imovel[] = [
     corretorNome: 'Rodrigo Silva',
     dormitorios: 1,
     vagas: 1,
-    metragem: 55
+    metragem: 55,
+    latitude: -26.9962,
+    longitude: -48.6241
   },
   {
     id: 'imovel-5',
@@ -168,7 +176,9 @@ export const INITIAL_IMOVEIS: Imovel[] = [
     corretorNome: 'Rodrigo Silva',
     dormitorios: 2,
     vagas: 1,
-    metragem: 75
+    metragem: 75,
+    latitude: -26.9904,
+    longitude: -48.6322
   },
   {
     id: 'imovel-6',
@@ -192,7 +202,127 @@ export const INITIAL_IMOVEIS: Imovel[] = [
     corretorNome: 'Carlos Eduardo',
     dormitorios: 3,
     vagas: 2,
-    metragem: 135
+    metragem: 135,
+    latitude: -27.1351,
+    longitude: -48.6082
+  }
+];
+
+export const INTEGRATED_IMOVEIS: Imovel[] = [
+  {
+    id: 'integ-1',
+    titulo: 'Apartamento de Luxo Integrado - Av. Atlântica',
+    descricao: 'Imóvel importado via integração XML ZapImóveis. Apartamento amplo na quadra do mar com vista lateral definitiva, finamente mobiliado, 3 suítes, sacada com churrasqueira e 2 vagas privativas.',
+    valor: 4200000,
+    tipo: 'venda',
+    cidade: 'Balneário Camboriú',
+    bairro: 'Centro',
+    localizacao: 'Avenida Atlântica, Centro - Balneário Camboriú - SC',
+    nomeEdificio: 'Residencial Splendia',
+    nomeProprietario: 'Integração ZapImóveis',
+    telefoneProprietario: '',
+    favorito: false,
+    compartilhar: true,
+    fotos: [
+      'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&auto=format&fit=crop&q=80'
+    ],
+    dataCadastro: new Date(Date.now() - 4 * 3600 * 1000).toISOString(),
+    corretorId: 'integracao',
+    corretorNome: 'Integração ZapImóveis',
+    dormitorios: 3,
+    vagas: 2,
+    metragem: 145,
+    integrado: true,
+    integracaoOrigem: 'ZapImóveis',
+    latitude: -26.9934,
+    longitude: -48.6312
+  },
+  {
+    id: 'integ-2',
+    titulo: 'Cobertura Duplex Integrada - Meia Praia Itapema',
+    descricao: 'Imóvel importado via integração VivaReal. Cobertura duplex com piscina privativa, churrasqueira, 4 suítes e linda vista para o mar de Itapema. Totalmente mobiliado e decorado.',
+    valor: 3100000,
+    tipo: 'venda',
+    cidade: 'Itapema',
+    bairro: 'Meia Praia',
+    localizacao: 'Av. Nereu Ramos, Meia Praia - Itapema - SC',
+    nomeEdificio: 'Residencial Meia Praia Exclusive',
+    nomeProprietario: 'Integração VivaReal',
+    telefoneProprietario: '',
+    favorito: false,
+    compartilhar: true,
+    fotos: [
+      'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&auto=format&fit=crop&q=80'
+    ],
+    dataCadastro: new Date(Date.now() - 10 * 3600 * 1000).toISOString(),
+    corretorId: 'integracao',
+    corretorNome: 'Integração VivaReal',
+    dormitorios: 4,
+    vagas: 3,
+    metragem: 240,
+    integrado: true,
+    integracaoOrigem: 'VivaReal',
+    latitude: -27.1325,
+    longitude: -48.6045
+  },
+  {
+    id: 'integ-3',
+    titulo: 'Studio Moderno Integrado - Viva Real',
+    descricao: 'Imóvel ideal para investidores ou aluguel de temporada. Studio contemporâneo completamente equipado a poucos metros da praia no Centro de Balneário Camboriú.',
+    valor: 980000,
+    tipo: 'venda',
+    cidade: 'Balneário Camboriú',
+    bairro: 'Centro',
+    localizacao: 'Rua 3300, Centro - Balneário Camboriú - SC',
+    nomeEdificio: 'Vibe Smart Studio',
+    nomeProprietario: 'Integração VivaReal',
+    telefoneProprietario: '',
+    favorito: false,
+    compartilhar: true,
+    fotos: [
+      'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1513694203232-719a280e022f?w=800&auto=format&fit=crop&q=80'
+    ],
+    dataCadastro: new Date(Date.now() - 15 * 3600 * 1000).toISOString(),
+    corretorId: 'integracao',
+    corretorNome: 'Integração VivaReal',
+    dormitorios: 1,
+    vagas: 1,
+    metragem: 45,
+    integrado: true,
+    integracaoOrigem: 'VivaReal',
+    latitude: -26.9998,
+    longitude: -48.6278
+  },
+  {
+    id: 'integ-4',
+    titulo: 'Apartamento de Temporada Integrado Centro',
+    descricao: 'Locação anual ou temporada. Mobiliado e decorado na melhor região de Balneário Camboriú. Quadra mar com sacada integrada.',
+    valor: 5000,
+    tipo: 'locação',
+    cidade: 'Balneário Camboriú',
+    bairro: 'Centro',
+    localizacao: 'Avenida Brasil, Centro - Balneário Camboriú - SC',
+    nomeEdificio: 'Edifício Royal Park',
+    nomeProprietario: 'Integração XML Imóveis',
+    telefoneProprietario: '',
+    favorito: false,
+    compartilhar: true,
+    fotos: [
+      'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&auto=format&fit=crop&q=80'
+    ],
+    dataCadastro: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+    corretorId: 'integracao',
+    corretorNome: 'Integração XML Imóveis',
+    dormitorios: 2,
+    vagas: 1,
+    metragem: 80,
+    integrado: true,
+    integracaoOrigem: 'XML Imóveis',
+    latitude: -26.9882,
+    longitude: -48.6354
   }
 ];
 

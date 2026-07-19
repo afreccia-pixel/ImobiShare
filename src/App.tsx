@@ -9,6 +9,8 @@ import { Imovel, Corretor } from './types';
 import { DbService } from './services/db';
 import { StoryBubble } from './components/StoryBubble';
 import { PropertyCard } from './components/PropertyCard';
+import { CompactPropertyRow } from './components/CompactPropertyRow';
+import { MapView } from './components/MapView';
 import { PropertyForm } from './components/PropertyForm';
 import { PropertyDetails } from './components/PropertyDetails';
 import { UserProfile } from './components/UserProfile';
@@ -73,6 +75,8 @@ export default function App() {
   const [filterValorMax, setFilterValorMax] = useState<number>(15000000);
   const [filterMeusImoveis, setFilterMeusImoveis] = useState(true);
   const [filterOutrosCorretores, setFilterOutrosCorretores] = useState(true);
+  const [filterIntegracao, setFilterIntegracao] = useState(true);
+  const [searchViewMode, setSearchViewMode] = useState<'como_esta_hoje' | 'lista' | 'mapa'>('como_esta_hoje');
 
   // Multiple selection state
   const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>([]);
@@ -267,10 +271,13 @@ export default function App() {
       // 4. Value Slider range
       if (imovel.valor < filterValorMin || imovel.valor > filterValorMax) return false;
 
-      // 5. Broker Ownership Filter
+      // 5. Broker Ownership / Integration Filter
       const isMine = imovel.corretorId === activeCorretor.id;
-      
-      if (isMine) {
+      const isIntegrated = imovel.integrado === true;
+
+      if (isIntegrated) {
+        if (!filterIntegracao) return false;
+      } else if (isMine) {
         // If it's mine, check "Meus imóveis" switch
         if (!filterMeusImoveis) return false;
       } else {
@@ -615,7 +622,7 @@ Toque abaixo para ver fotos e todos os detalhes:
         </AnimatePresence>
 
         {/* Dynamic Inner screens navigation */}
-        <div className="flex-grow overflow-y-auto pb-20">
+        <div className={`flex-grow overflow-y-auto ${activeTab === 'home' && !isAddingProperty && !selectedPropertyId ? 'pb-32' : 'pb-20'}`}>
           
           {isAddingProperty ? (
             /* ADD / EDIT PROPERTY FORM */
@@ -809,31 +816,44 @@ Toque abaixo para ver fotos e todos os detalhes:
                       </div>
                     </div>
 
-                    {/* Meus Imóveis and Outros Corretores Checkbox switches */}
-                    <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                      <div className="flex items-center gap-2">
+                    {/* Meus Imóveis, Parcerias and Integração Checkbox switches */}
+                    <div className="flex items-center justify-between gap-1.5 sm:gap-3 pt-3 border-t border-gray-100 text-[10px] sm:text-xs">
+                      <div className="flex items-center gap-1 min-w-0">
                         <input
                           type="checkbox"
                           id="chk-meus-imoveis"
                           checked={filterMeusImoveis}
                           onChange={(e) => setFilterMeusImoveis(e.target.checked)}
-                          className="w-4 h-4 text-[#003366] accent-[#003366] border-slate-300 rounded focus:ring-[#003366] cursor-pointer"
+                          className="w-3.5 h-3.5 text-[#003366] accent-[#003366] border-slate-300 rounded focus:ring-[#003366] cursor-pointer flex-shrink-0"
                         />
-                        <label htmlFor="chk-meus-imoveis" className="text-xs font-bold text-slate-700 cursor-pointer">
+                        <label htmlFor="chk-meus-imoveis" className="font-bold text-slate-700 cursor-pointer truncate">
                           Meus imóveis
                         </label>
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1 min-w-0">
                         <input
                           type="checkbox"
                           id="chk-outros-corretores"
                           checked={filterOutrosCorretores}
                           onChange={(e) => setFilterOutrosCorretores(e.target.checked)}
-                          className="w-4 h-4 text-[#003366] accent-[#003366] border-slate-300 rounded focus:ring-[#003366] cursor-pointer"
+                          className="w-3.5 h-3.5 text-[#003366] accent-[#003366] border-slate-300 rounded focus:ring-[#003366] cursor-pointer flex-shrink-0"
                         />
-                        <label htmlFor="chk-outros-corretores" className="text-xs font-bold text-slate-700 cursor-pointer">
-                          Outros corretores
+                        <label htmlFor="chk-outros-corretores" className="font-bold text-slate-700 cursor-pointer truncate">
+                          Parcerias
+                        </label>
+                      </div>
+
+                      <div className="flex items-center gap-1 min-w-0">
+                        <input
+                          type="checkbox"
+                          id="chk-integracoes"
+                          checked={filterIntegracao}
+                          onChange={(e) => setFilterIntegracao(e.target.checked)}
+                          className="w-3.5 h-3.5 text-amber-500 accent-amber-500 border-slate-300 rounded focus:ring-amber-500 cursor-pointer flex-shrink-0"
+                        />
+                        <label htmlFor="chk-integracoes" className="font-bold text-slate-700 cursor-pointer truncate">
+                          Integração
                         </label>
                       </div>
                     </div>
@@ -853,27 +873,54 @@ Toque abaixo para ver fotos e todos os detalhes:
                       )}
                     </div>
 
-                    <div className="space-y-3">
-                      {getFilteredImoveis().map((imovel) => {
-                        const isMine = imovel.corretorId === activeCorretor.id;
-                        const isFav = favoritos.includes(imovel.id);
-                        const isSel = selectedPropertyIds.includes(imovel.id);
 
-                        return (
-                          <PropertyCard
-                            key={imovel.id}
-                            imovel={imovel}
-                            isMyProperty={isMine}
-                            isFavorite={isFav}
-                            isSelected={isSel}
-                            showCheckbox={true}
-                            onSelectToggle={() => handleSelectToggle(imovel.id)}
-                            onFavoriteToggle={() => handleFavoriteToggle(imovel.id)}
-                            onShareToggle={() => handleShareToggle(imovel.id)}
-                            onClick={() => setSelectedPropertyId(imovel.id)}
-                          />
-                        );
-                      })}
+
+                    <div className="space-y-3">
+                      {/* Render based on selected searchViewMode */}
+                      {searchViewMode === 'mapa' && getFilteredImoveis().length > 0 ? (
+                        <MapView
+                          imoveis={getFilteredImoveis()}
+                          selectedIds={selectedPropertyIds}
+                          onSelectToggle={handleSelectToggle}
+                          onViewDetails={setSelectedPropertyId}
+                        />
+                      ) : (
+                        getFilteredImoveis().map((imovel) => {
+                          const isMine = imovel.corretorId === activeCorretor.id;
+                          const isFav = favoritos.includes(imovel.id);
+                          const isSel = selectedPropertyIds.includes(imovel.id);
+
+                          if (searchViewMode === 'lista') {
+                            return (
+                              <CompactPropertyRow
+                                key={imovel.id}
+                                imovel={imovel}
+                                isMyProperty={isMine}
+                                isFavorite={isFav}
+                                isSelected={isSel}
+                                onSelectToggle={() => handleSelectToggle(imovel.id)}
+                                onFavoriteToggle={() => handleFavoriteToggle(imovel.id)}
+                                onClick={() => setSelectedPropertyId(imovel.id)}
+                              />
+                            );
+                          }
+
+                          return (
+                            <PropertyCard
+                              key={imovel.id}
+                              imovel={imovel}
+                              isMyProperty={isMine}
+                              isFavorite={isFav}
+                              isSelected={isSel}
+                              showCheckbox={true}
+                              onSelectToggle={() => handleSelectToggle(imovel.id)}
+                              onFavoriteToggle={() => handleFavoriteToggle(imovel.id)}
+                              onShareToggle={() => handleShareToggle(imovel.id)}
+                              onClick={() => setSelectedPropertyId(imovel.id)}
+                            />
+                          );
+                        })
+                      )}
 
                       {getFilteredImoveis().length === 0 && (
                         <div className="text-center py-10 bg-white border border-slate-100 rounded-xl">
@@ -1006,27 +1053,62 @@ Toque abaixo para ver fotos e todos os detalhes:
           )}
         </AnimatePresence>
 
-        {/* Dynamic Simulation Quick-Link footer card for Public Mode */}
+
+
+        {/* Floating Premium View mode switcher matching attached image */}
         {activeTab === 'home' && !selectedPropertyId && !isAddingProperty && (
-          <div className="absolute bottom-16 left-0 right-0 p-3 bg-[#0F172A] border-t border-slate-800 text-slate-200 z-10 flex items-center justify-between text-xs">
-            <div className="flex items-center gap-1.5 pl-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#003366] animate-pulse border border-[#003366]/40" />
-              <span className="text-[11px] font-semibold text-slate-300">Testar o <b>Link do Cliente</b>?</span>
+          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
+            <div className="bg-white p-1 rounded-[22px] flex items-center gap-1 shadow-[0_8px_30px_rgba(0,0,0,0.12)] border border-slate-100/80">
+              <button
+                type="button"
+                onClick={() => setSearchViewMode('como_esta_hoje')}
+                className={`w-11 h-11 rounded-[18px] flex items-center justify-center transition-all ${
+                  searchViewMode === 'como_esta_hoje'
+                    ? 'bg-[#FF5A36] text-white shadow-xs'
+                    : 'bg-transparent text-slate-900 hover:bg-slate-50'
+                }`}
+                title="Como está hoje"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                  <line x1="4" y1="5" x2="20" y2="5" />
+                  <rect x="4" y="9" width="16" height="6" rx="1.5" />
+                  <line x1="4" y1="19" x2="20" y2="19" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSearchViewMode('lista')}
+                className={`w-11 h-11 rounded-[18px] flex items-center justify-center transition-all ${
+                  searchViewMode === 'lista'
+                    ? 'bg-[#FF5A36] text-white shadow-xs'
+                    : 'bg-transparent text-slate-900 hover:bg-slate-50'
+                }`}
+                title="Em lista"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                  <rect x="3" y="3" width="18" height="18" rx="4" />
+                  <line x1="3" y1="10" x2="21" y2="10" />
+                  <line x1="3" y1="15" x2="21" y2="15" />
+                  <line x1="12" y1="3" x2="12" y2="21" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSearchViewMode('mapa')}
+                className={`w-11 h-11 rounded-[18px] flex items-center justify-center transition-all ${
+                  searchViewMode === 'mapa'
+                    ? 'bg-[#FF5A36] text-white shadow-xs'
+                    : 'bg-transparent text-slate-900 hover:bg-slate-50'
+                }`}
+                title="No mapa"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                  <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21" />
+                  <line x1="9" y1="3" x2="9" y2="18" />
+                  <line x1="15" y1="6" x2="15" y2="21" />
+                </svg>
+              </button>
             </div>
-            <button
-              onClick={() => {
-                // Pre-open the first available property in public mode
-                const target = getFilteredImoveis()[0] || allImoveis[0];
-                if (target) {
-                  setPublicViewProperty(target);
-                } else {
-                  triggerToast('Adicione um imóvel para testar o link público.');
-                }
-              }}
-              className="bg-[#003366] hover:bg-[#002244] text-white font-bold px-3 py-1.5 rounded-lg text-[10px] transition-colors uppercase tracking-wider"
-            >
-              Link Público
-            </button>
           </div>
         )}
 
