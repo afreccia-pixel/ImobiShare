@@ -43,8 +43,13 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.14.3'
+          gradle-version: '9.0.2'
           validate-wrappers: false
+
+      - name: Install Android Platform 36 & Build Tools 36
+        run: |
+          echo "y" | sdkmanager --install "platforms;android-36" "build-tools;36.0.0" || \
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
 
       - name: Grant Execute Permission to Gradlew
         run: chmod +x android/gradlew
