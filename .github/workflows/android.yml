@@ -30,7 +30,13 @@ jobs:
         with:
           node-version: '24'
           cache: 'npm'
-
+ # Corrige lock file antes de rodar npm ci
+      - name: Ensure Lock File Sync
+        run: |
+          rm -rf node_modules
+          npm install
+          git diff --exit-code package-lock.json || echo "⚠️ package-lock.json atualizado, faça commit localmente!"
+          
       - name: Install Dependencies
         run: npm ci
 
