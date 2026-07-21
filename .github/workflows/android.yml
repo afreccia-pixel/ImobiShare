@@ -1,10 +1,12 @@
 name: Build Android App
-##
+
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   pull_request:
-    branches: [ main ]
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -37,51 +39,50 @@ jobs:
 
       - name: Sync Capacitor Android
         run: npx cap sync android
-   
+
       - name: Install ImageMagick
         run: |
           sudo apt-get update
           sudo apt-get install -y imagemagick
 
-    - name: Generate splash screens
-  run: |
-    echo "🗑️  Deletando splash antigos..."
-    find android/app/src/main/res/drawable-* -name "splash.png" -delete 2>/dev/null || true
+      - name: Generate splash screens
+        run: |
+          echo "🗑️ Deletando splash antigos..."
+          find android/app/src/main/res/drawable-* -name "splash.png" -delete 2>/dev/null || true
 
-    echo "🎨 Gerando imagem base do splash..."
-    convert -size 1024x1024 xc:"#2196F3" \
-      -pointsize 120 -fill white -gravity center -annotate +0+0 "iMobi" \
-      /tmp/splash.png
+          echo "🎨 Gerando imagem base do splash..."
+          convert -size 1024x1024 xc:"#2196F3" \
+            -pointsize 120 -fill white -gravity center -annotate +0+0 "iMobi" \
+            /tmp/splash.png
 
-    echo "📱 Convertendo splash para todas densidades..."
-    convert /tmp/splash.png -resize 320x480 android/app/src/main/res/drawable-port-mdpi/splash.png
-    convert /tmp/splash.png -resize 480x800 android/app/src/main/res/drawable-port-hdpi/splash.png
-    convert /tmp/splash.png -resize 800x1280 android/app/src/main/res/drawable-port-xhdpi/splash.png
-    convert /tmp/splash.png -resize 1080x1920 android/app/src/main/res/drawable-port-xxhdpi/splash.png
-    convert /tmp/splash.png -resize 1440x2560 android/app/src/main/res/drawable-port-xxxhdpi/splash.png
+          echo "📱 Convertendo splash para todas densidades..."
+          convert /tmp/splash.png -resize 320x480 android/app/src/main/res/drawable-port-mdpi/splash.png
+          convert /tmp/splash.png -resize 480x800 android/app/src/main/res/drawable-port-hdpi/splash.png
+          convert /tmp/splash.png -resize 800x1280 android/app/src/main/res/drawable-port-xhdpi/splash.png
+          convert /tmp/splash.png -resize 1080x1920 android/app/src/main/res/drawable-port-xxhdpi/splash.png
+          convert /tmp/splash.png -resize 1440x2560 android/app/src/main/res/drawable-port-xxxhdpi/splash.png
+          convert /tmp/splash.png -resize 480x320 android/app/src/main/res/drawable-land-mdpi/splash.png
+          convert /tmp/splash.png -resize 800x480 android/app/src/main/res/drawable-land-hdpi/splash.png
+          convert /tmp/splash.png -resize 1280x800 android/app/src/main/res/drawable-land-xhdpi/splash.png
+          convert /tmp/splash.png -resize 1920x1080 android/app/src/main/res/drawable-land-xxhdpi/splash.png
+          convert /tmp/splash.png -resize 2560x1440 android/app/src/main/res/drawable-land-xxxhdpi/splash.png
 
-    convert /tmp/splash.png -resize 480x320 android/app/src/main/res/drawable-land-mdpi/splash.png
-    convert /tmp/splash.png -resize 800x480 android/app/src/main/res/drawable-land-hdpi/splash.png
-    convert /tmp/splash.png -resize 1280x800 android/app/src/main/res/drawable-land-xhdpi/splash.png
-    convert /tmp/splash.png -resize 1920x1080 android/app/src/main/res/drawable-land-xxhdpi/splash.png
-    convert /tmp/splash.png -resize 2560x1440 android/app/src/main/res/drawable-land-xxxhdpi/splash.png
+          echo "✅ Splash screens gerados com sucesso!"
+          ls -la android/app/src/main/res/drawable-*/splash.png
 
-    echo "✅ Splash screens gerados com sucesso!"
-    ls -la android/app/src/main/res/drawable-*/splash.png
-            
       - name: Generate launcher icons
         run: |
-          echo "🗑️  Deletando imagens antigas..."
+          echo "🗑️ Deletando imagens antigas..."
           find android/app/src/main/res/mipmap-* -name "ic_launcher*.png" -delete 2>/dev/null || true
-          
+
           echo "📁 Criando pastas..."
           mkdir -p android/app/src/main/res/mipmap-{mdpi,hdpi,xhdpi,xxhdpi,xxxhdpi}
-          
+
           echo "🎨 Gerando imagem base..."
           convert -size 512x512 xc:"#2196F3" \
             -pointsize 80 -fill white -gravity center -annotate +0+0 "iMobi" \
             /tmp/ic_launcher.png
-          
+
           echo "📱 Convertendo para todas densidades..."
           convert /tmp/ic_launcher.png -resize 48x48 android/app/src/main/res/mipmap-mdpi/ic_launcher.png
           convert /tmp/ic_launcher.png -resize 48x48 android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png
@@ -93,31 +94,14 @@ jobs:
           convert /tmp/ic_launcher.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png
           convert /tmp/ic_launcher.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
           convert /tmp/ic_launcher.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
-          
+
           echo "✅ Ícones gerados com sucesso!"
           ls -la android/app/src/main/res/mipmap-mdpi/ic_launcher*.png
- 
-
-      - name: Fix Android Assets
-        run: |
-          sudo apt-get update && sudo apt-get install -y imagemagick
-          mkdir -p android/app/src/main/res/mipmap-{mdpi,hdpi,xhdpi,xxhdpi,xxxhdpi}
-          for dir in android/app/src/main/res/mipmap-*/; do
-            for file in "$dir"*.png; do
-              if [ -f "$file" ]; then
-                echo "Processing: $file"
-                convert "$file" -strip "$file.tmp" && mv "$file.tmp" "$file" || echo "Failed to process $file"
-              fi
-            done
-          done
-          echo "Assets validados"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-         # gradle-version: '9.5.0'
           validate-wrappers: false
-         
 
       - name: Install Android Platform 36 & Build Tools 36
         run: |
@@ -129,8 +113,7 @@ jobs:
 
       - name: Build Android Release (APK & AAB)
         working-directory: android
-        run: |
-          ./gradlew clean assembleRelease bundleRelease --stacktrace
+        run: ./gradlew clean assembleRelease bundleRelease --stacktrace
 
       - name: Collect Android Artifacts
         run: |
