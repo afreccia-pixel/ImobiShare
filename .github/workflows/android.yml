@@ -42,7 +42,33 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y imagemagick
-          
+
+    - name: Generate splash screens
+  run: |
+    echo "🗑️  Deletando splash antigos..."
+    find android/app/src/main/res/drawable-* -name "splash.png" -delete 2>/dev/null || true
+
+    echo "🎨 Gerando imagem base do splash..."
+    convert -size 1024x1024 xc:"#2196F3" \
+      -pointsize 120 -fill white -gravity center -annotate +0+0 "iMobi" \
+      /tmp/splash.png
+
+    echo "📱 Convertendo splash para todas densidades..."
+    convert /tmp/splash.png -resize 320x480 android/app/src/main/res/drawable-port-mdpi/splash.png
+    convert /tmp/splash.png -resize 480x800 android/app/src/main/res/drawable-port-hdpi/splash.png
+    convert /tmp/splash.png -resize 800x1280 android/app/src/main/res/drawable-port-xhdpi/splash.png
+    convert /tmp/splash.png -resize 1080x1920 android/app/src/main/res/drawable-port-xxhdpi/splash.png
+    convert /tmp/splash.png -resize 1440x2560 android/app/src/main/res/drawable-port-xxxhdpi/splash.png
+
+    convert /tmp/splash.png -resize 480x320 android/app/src/main/res/drawable-land-mdpi/splash.png
+    convert /tmp/splash.png -resize 800x480 android/app/src/main/res/drawable-land-hdpi/splash.png
+    convert /tmp/splash.png -resize 1280x800 android/app/src/main/res/drawable-land-xhdpi/splash.png
+    convert /tmp/splash.png -resize 1920x1080 android/app/src/main/res/drawable-land-xxhdpi/splash.png
+    convert /tmp/splash.png -resize 2560x1440 android/app/src/main/res/drawable-land-xxxhdpi/splash.png
+
+    echo "✅ Splash screens gerados com sucesso!"
+    ls -la android/app/src/main/res/drawable-*/splash.png
+            
       - name: Generate launcher icons
         run: |
           echo "🗑️  Deletando imagens antigas..."
