@@ -44,6 +44,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y imagemagick
+          
+      - name: Regenerate main splash
+        run: |
+          sudo apt-get update && sudo apt-get install -y imagemagick
+          echo "🎨 Gerando splash principal..."
+          convert -size 1024x1024 xc:"#2196F3" \
+            -pointsize 120 -fill white -gravity center -annotate +0+0 "iMobi" \
+            android/app/src/main/res/drawable/splash.png
+          echo "✅ Splash principal recriado!"
 
       - name: Generate splash screens
         run: |
