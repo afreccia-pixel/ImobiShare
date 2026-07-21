@@ -37,7 +37,29 @@ jobs:
 
       - name: Sync Capacitor Android
         run: npx cap sync android
+Copy code
+      ## ✅ NOVO: Delete imagens corrompidas
+      - name: Remove Corrupted Assets
+        run: |
+          find android/app/src/main/res/mipmap-* -name "*.png" -delete 2>/dev/null || true
+          echo "✅ Imagens corrompidas deletadas"
 
+      - name: Regenerate Assets
+        run: |
+          sudo apt-get update && sudo apt-get install -y imagemagick
+          
+          ## Se tiver imagem fonte em web/assets
+          if [ -f "src/assets/icon.png" ] || [ -f "web/assets/icon.png" ]; then
+            SOURCE_IMG=$(find . -name "icon.png" | head -n 1)
+            mkdir -p android/app/src/main/res/mipmap-{mdpi,hdpi,xhdpi,xxhdpi,xxxhdpi}
+            
+            convert "$SOURCE_IMG" -resize 48x48 android/app/src/main/res/mipmap-mdpi/ic_launcher.png
+            convert "$SOURCE_IMG" -resize 72x72 android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+            convert "$SOURCE_IMG" -resize 96x96 android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+            convert "$SOURCE_IMG" -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+            convert "$SOURCE_IMG" -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+            
+            echo
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
