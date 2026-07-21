@@ -37,29 +37,21 @@ jobs:
 
       - name: Sync Capacitor Android
         run: npx cap sync android
-Copy code
-      ## ✅ NOVO: Delete imagens corrompidas
-      - name: Remove Corrupted Assets
-        run: |
-          find android/app/src/main/res/mipmap-* -name "*.png" -delete 2>/dev/null || true
-          echo "✅ Imagens corrompidas deletadas"
 
-      - name: Regenerate Assets
+      - name: Fix Android Assets
         run: |
           sudo apt-get update && sudo apt-get install -y imagemagick
-          
-          ## Se tiver imagem fonte em web/assets
-          if [ -f "src/assets/icon.png" ] || [ -f "web/assets/icon.png" ]; then
-            SOURCE_IMG=$(find . -name "icon.png" | head -n 1)
-            mkdir -p android/app/src/main/res/mipmap-{mdpi,hdpi,xhdpi,xxhdpi,xxxhdpi}
-            
-            convert "$SOURCE_IMG" -resize 48x48 android/app/src/main/res/mipmap-mdpi/ic_launcher.png
-            convert "$SOURCE_IMG" -resize 72x72 android/app/src/main/res/mipmap-hdpi/ic_launcher.png
-            convert "$SOURCE_IMG" -resize 96x96 android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
-            convert "$SOURCE_IMG" -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-            convert "$SOURCE_IMG" -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-            
-            echo
+          mkdir -p android/app/src/main/res/mipmap-{mdpi,hdpi,xhdpi,xxhdpi,xxxhdpi}
+          for dir in android/app/src/main/res/mipmap-*/; do
+            for file in "$dir"*.png; do
+              if [ -f "$file" ]; then
+                echo "Processing: $file"
+                convert "$file" -strip "$file.tmp" && mv "$file.tmp" "$file" || echo "Failed to process $file"
+              fi
+            done
+          done
+          echo "Assets validados"
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -82,14 +74,11 @@ Copy code
       - name: Collect Android Artifacts
         run: |
           mkdir -p build-artifacts
-          
-          # Find and copy APK
           APK_SRC=$(find android/app/build/outputs/apk/release/ -name "*.apk" | head -n 1)
           if [ -n "$APK_SRC" ]; then
             cp "$APK_SRC" build-artifacts/app-release.apk
             echo "Successfully collected APK: $APK_SRC"
           else
-            # Fallback search if path differs
             APK_FALLBACK=$(find android/app/build/outputs/ -name "*.apk" | head -n 1)
             if [ -n "$APK_FALLBACK" ]; then
               cp "$APK_FALLBACK" build-artifacts/app-release.apk
@@ -99,14 +88,11 @@ Copy code
               exit 1
             fi
           fi
-          
-          # Find and copy AAB
           AAB_SRC=$(find android/app/build/outputs/bundle/release/ -name "*.aab" | head -n 1)
           if [ -n "$AAB_SRC" ]; then
             cp "$AAB_SRC" build-artifacts/app-release.aab
             echo "Successfully collected AAB: $AAB_SRC"
           else
-            # Fallback search if path differs
             AAB_FALLBACK=$(find android/app/build/outputs/ -name "*.aab" | head -n 1)
             if [ -n "$AAB_FALLBACK" ]; then
               cp "$AAB_FALLBACK" build-artifacts/app-release.aab
