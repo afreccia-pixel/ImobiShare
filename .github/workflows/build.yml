@@ -23,9 +23,9 @@ jobs:
           mkdir -p android/app/src/main/res/mipmap-{mdpi,hdpi,xhdpi,xxhdpi,xxxhdpi}
           
           echo "🎨 Gerando imagem base..."
-          convert -size 512x512 xc:'##2196F3' \
-            -pointsize 80 -fill white -gravity center -annotate +0+0 "iMobi" \
-            /tmp/ic_launcher.png
+          convert -size 512x512 xc:"#2196F3" \
+          -pointsize 80 -fill white -gravity center -annotate +0+0 "iMobi" \
+          /tmp/ic_launcher.png
           
           echo "📱 Convertendo para todas densidades..."
           convert /tmp/ic_launcher.png -resize 48x48 android/app/src/main/res/mipmap-mdpi/ic_launcher.png
