@@ -86,8 +86,7 @@ jobs:
         with:
          # gradle-version: '9.5.0'
           validate-wrappers: false
-          #para nao recriar novamente
-          validate-wrappers: false
+         
 
       - name: Install Android Platform 36 & Build Tools 36
         run: |
