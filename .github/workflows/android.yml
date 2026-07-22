@@ -118,6 +118,10 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           validate-wrappers: false
+          
+      - name: Regenerate Gradle Wrapper (fix corrupted jar)
+        working-directory: android
+        run: gradle wrapper --gradle-version 8.7          
 
       - name: Install Android Platform 36 & Build Tools 36
         run: |
