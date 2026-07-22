@@ -1,0 +1,5 @@
+{
+  "java.import.gradle.wrapper.allowed": "always",
+  "java.import.gradle.wrapper.enabled": true,
+  "gradle.wrapper.enabled": true
+}
