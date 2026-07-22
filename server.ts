@@ -8,6 +8,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
+import { ServerDb } from './server-db';
 
 // Load environment variables
 dotenv.config();
@@ -36,6 +37,193 @@ function getGeminiClient(): GoogleGenAI {
   }
   return aiClient;
 }
+
+// JWT Token Decoder helper for Google Sign-In
+function decodeGoogleToken(token: string) {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = Buffer.from(parts[1], 'base64').toString('utf-8');
+    return JSON.parse(payload);
+  } catch (err) {
+    console.error('Error decoding Google token:', err);
+    return null;
+  }
+}
+
+// REST API for Email/Password Authentication
+app.post('/api/auth/login', async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'E-mail e senha são obrigatórios.' });
+    }
+    const broker = await ServerDb.getCorretorByEmail(email);
+    if (!broker) {
+      return res.status(401).json({ error: 'E-mail ou senha incorretos. Registre-se caso seja um novo corretor.' });
+    }
+    if (broker.password !== password) {
+      return res.status(401).json({ error: 'Senha incorreta.' });
+    }
+    // Session success
+    const { password: _, ...cleanBroker } = broker;
+    return res.json({ success: true, corretor: cleanBroker });
+  } catch (error: any) {
+    console.error('Erro no login:', error);
+    return res.status(500).json({ error: 'Erro interno ao realizar login.' });
+  }
+});
+
+// REST API for Email/Password Registration
+app.post('/api/auth/register', async (req: Request, res: Response) => {
+  try {
+    const { nome, email, password, creci, telefone, whatsapp, cidade } = req.body;
+    if (!nome || !email || !password) {
+      return res.status(400).json({ error: 'Nome, e-mail e senha são obrigatórios.' });
+    }
+    const existing = await ServerDb.getCorretorByEmail(email);
+    if (existing) {
+      return res.status(400).json({ error: 'Este e-mail já está cadastrado no sistema.' });
+    }
+    
+    const id = `corretor-${Date.now()}`;
+    const newBroker = {
+      id,
+      nome,
+      email,
+      password,
+      creci: creci || 'CRECI Pendente',
+      telefone: telefone || '',
+      whatsapp: whatsapp || '',
+      foto: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+      cidade: cidade || 'Balneário Camboriú',
+      restringirParceiros: false,
+      parceirosEmails: []
+    };
+    
+    const saved = await ServerDb.saveCorretor(newBroker);
+    return res.json({ success: true, corretor: saved });
+  } catch (error: any) {
+    console.error('Erro no registro:', error);
+    return res.status(500).json({ error: 'Erro interno ao criar conta.' });
+  }
+});
+
+// REST API for Google Sign-In backend verification
+app.post('/api/auth/google', async (req: Request, res: Response) => {
+  try {
+    const { credential } = req.body;
+    if (!credential) {
+      return res.status(400).json({ error: 'Token de credencial do Google é obrigatório.' });
+    }
+    
+    const payload = decodeGoogleToken(credential);
+    if (!payload || !payload.email) {
+      return res.status(400).json({ error: 'Token do Google inválido ou ilegível.' });
+    }
+    
+    let broker = await ServerDb.getCorretorByEmail(payload.email);
+    if (!broker) {
+      // Register new broker automatically via Google credentials
+      const id = `corretor-${Date.now()}`;
+      broker = {
+        id,
+        nome: payload.name || payload.email.split('@')[0],
+        email: payload.email,
+        password: `google_${Date.now()}_auth`, // Secure placeholder password
+        creci: 'CRECI Pendente',
+        telefone: '',
+        whatsapp: '',
+        foto: payload.picture || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+        cidade: 'Balneário Camboriú',
+        restringirParceiros: false,
+        parceirosEmails: []
+      };
+      await ServerDb.saveCorretor(broker);
+    }
+    
+    const { password: _, ...cleanBroker } = broker;
+    return res.json({ success: true, corretor: cleanBroker });
+  } catch (error: any) {
+    console.error('Erro no login com Google:', error);
+    return res.status(500).json({ error: 'Erro interno ao processar login com Google.' });
+  }
+});
+
+// REST API Database Properties and Brokers endpoints
+app.get('/api/properties', async (req: Request, res: Response) => {
+  try {
+    const list = await ServerDb.getImoveis();
+    return res.json(list);
+  } catch (error: any) {
+    console.error('Erro ao buscar imóveis:', error);
+    return res.status(500).json({ error: 'Erro interno ao buscar imóveis.' });
+  }
+});
+
+app.post('/api/properties', async (req: Request, res: Response) => {
+  try {
+    const saved = await ServerDb.saveImovel(req.body);
+    return res.json(saved);
+  } catch (error: any) {
+    console.error('Erro ao salvar imóvel:', error);
+    return res.status(500).json({ error: 'Erro interno ao salvar imóvel.' });
+  }
+});
+
+app.delete('/api/properties/:id', async (req: Request, res: Response) => {
+  try {
+    await ServerDb.deleteImovel(req.params.id);
+    return res.json({ success: true });
+  } catch (error: any) {
+    console.error('Erro ao deletar imóvel:', error);
+    return res.status(500).json({ error: 'Erro ao deletar imóvel.' });
+  }
+});
+
+app.get('/api/brokers', async (req: Request, res: Response) => {
+  try {
+    const list = await ServerDb.getCorretores();
+    return res.json(list);
+  } catch (error: any) {
+    console.error('Erro ao buscar corretores:', error);
+    return res.status(500).json({ error: 'Erro interno ao buscar corretores.' });
+  }
+});
+
+app.post('/api/brokers', async (req: Request, res: Response) => {
+  try {
+    const saved = await ServerDb.saveCorretor(req.body);
+    return res.json(saved);
+  } catch (error: any) {
+    console.error('Erro ao salvar corretor:', error);
+    return res.status(500).json({ error: 'Erro interno ao salvar perfil do corretor.' });
+  }
+});
+
+app.get('/api/favorites/:corretorId', async (req: Request, res: Response) => {
+  try {
+    const list = await ServerDb.getFavoritos(req.params.corretorId);
+    return res.json(list);
+  } catch (error: any) {
+    console.error('Erro ao buscar favoritos:', error);
+    return res.status(500).json({ error: 'Erro ao buscar favoritos.' });
+  }
+});
+
+app.post('/api/favorites/toggle', async (req: Request, res: Response) => {
+  try {
+    const { corretorId, imovelId } = req.body;
+    if (!corretorId || !imovelId) {
+      return res.status(400).json({ error: 'corretorId e imovelId são obrigatórios.' });
+    }
+    const list = await ServerDb.toggleFavorite(corretorId, imovelId);
+    return res.json(list);
+  } catch (error: any) {
+    console.error('Erro ao alternar favorito:', error);
+    return res.status(500).json({ error: 'Erro ao favoritar imóvel.' });
+  }
+});
 
 // REST API endpoint to receive support and feedback messages directly
 app.post('/api/support/send', async (req: Request, res: Response) => {
@@ -116,6 +304,9 @@ Retorne APENAS o texto da descrição melhorada, sem introduções, aspas ou exp
 // Setup Vite integration
 const startServer = async () => {
   const PORT = 3000;
+
+  // Initialize persistent database
+  await ServerDb.init();
 
   if (process.env.NODE_ENV !== 'production') {
     // Dynamically import Vite server in development

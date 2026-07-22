@@ -50,22 +50,83 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     return localStorage.getItem('imobishare_logged_in') === 'true';
   });
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
 
+  // Registration form states
+  const [regNome, setRegNome] = useState('');
+  const [regCreci, setRegCreci] = useState('');
+  const [regTelefone, setRegTelefone] = useState('');
+  const [regWhatsapp, setRegWhatsapp] = useState('');
+  const [regCidade, setRegCidade] = useState('Balneário Camboriú');
+
   // Core App states
   const [activeCorretor, setActiveCorretor] = useState<Corretor>(DbService.getActiveCorretor());
-  const [allImoveis, setAllImoveis] = useState<Imovel[]>([]);
-  const [favoritos, setFavoritos] = useState<string[]>([]);
+  const [allImoveis, setAllImoveis] = useState<Imovel[]>(() => DbService.getImoveis());
+  const [favoritos, setFavoritos] = useState<string[]>(() => DbService.getFavoritos(DbService.getActiveCorretor().id));
   
   // Navigation
   const [activeTab, setActiveTab] = useState<TabType>('home');
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
   const [editingPropertyId, setEditingPropertyId] = useState<string | null>(null);
   const [isAddingProperty, setIsAddingProperty] = useState(false);
-  const [publicViewProperty, setPublicViewProperty] = useState<Imovel | null>(null);
-  const [publicSelectionImoveis, setPublicSelectionImoveis] = useState<Imovel[] | null>(null);
+  
+  // Foolproof synchronous public views loading directly from URL
+  const [publicViewProperty, setPublicViewProperty] = useState<Imovel | null>(() => {
+    const path = window.location.pathname;
+    const params = new URLSearchParams(window.location.search);
+    const hash = window.location.hash;
+
+    let imovelId = params.get('imovel');
+    if (!imovelId) {
+      const imovelMatch = path.match(/^\/imovel\/([^/]+)/);
+      if (imovelMatch) imovelId = imovelMatch[1];
+    }
+    if (!imovelId) {
+      const hashMatch = hash.match(/^#\/imovel\/([^/]+)/);
+      if (hashMatch) imovelId = hashMatch[1];
+    }
+
+    if (imovelId) {
+      const imoveis = DbService.getImoveis();
+      const found = imoveis.find(i => 
+        i.id === imovelId || 
+        i.id === `imovel-${imovelId}` || 
+        i.id.replace('imovel-', '') === imovelId
+      );
+      return found || null;
+    }
+    return null;
+  });
+
+  const [publicSelectionImoveis, setPublicSelectionImoveis] = useState<Imovel[] | null>(() => {
+    const path = window.location.pathname;
+    const params = new URLSearchParams(window.location.search);
+    const hash = window.location.hash;
+
+    let imoveisRaw = params.get('selecao') || params.get('imoveis');
+    if (!imoveisRaw) {
+      const match = path.match(/^\/selecao\/([^/]+)/);
+      if (match) imoveisRaw = match[1];
+    }
+    if (!imoveisRaw) {
+      const match = hash.match(/^#\/selecao\/([^/]+)/);
+      if (match) imoveisRaw = match[1];
+    }
+
+    if (imoveisRaw) {
+      const ids = imoveisRaw.split(',');
+      const imoveis = DbService.getImoveis();
+      const foundList = imoveis.filter(i => 
+        ids.includes(i.id) || 
+        ids.includes(i.id.replace('imovel-', ''))
+      );
+      if (foundList.length > 0) return foundList;
+    }
+    return null;
+  });
 
   // Filters & Search State
   const [searchWord, setSearchWord] = useState('');
@@ -96,7 +157,15 @@ export default function App() {
   };
 
   useEffect(() => {
-    reloadData(true);
+    // Perform background data synchronization on startup
+    DbService.syncWithServer();
+
+    // Subscribe to database background synchronization completes
+    const unsubscribe = DbService.subscribe(() => {
+      reloadData();
+    });
+
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -211,36 +280,176 @@ export default function App() {
     }
   };
 
-  // Simulated Login Handlers
+  // Google Identity Services and One-Tap loader for Google Sign-In
+  useEffect(() => {
+    if (isAuthenticated) return;
+
+    // Dynamically load Google Identity Services SDK
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+      try {
+        const clientId = (import.meta as any).env.VITE_GOOGLE_CLIENT_ID || '1014169992380-mockclientid.apps.googleusercontent.com';
+        
+        // @ts-ignore
+        if (window.google) {
+          // @ts-ignore
+          window.google.accounts.id.initialize({
+            client_id: clientId,
+            callback: async (response: any) => {
+              setAuthLoading(true);
+              try {
+                const res = await fetch('/api/auth/google', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ credential: response.credential }),
+                });
+                if (!res.ok) {
+                  const errData = await res.json();
+                  throw new Error(errData.error || 'Erro na autenticação com o Google.');
+                }
+                const data = await res.json();
+                
+                localStorage.setItem('imobishare_logged_in', 'true');
+                localStorage.setItem('imobishare_active_corretor', JSON.stringify(data.corretor));
+                
+                setIsAuthenticated(true);
+                triggerToast(`Bem-vindo, ${data.corretor.nome}!`);
+                
+                // Perform sync
+                await DbService.syncWithServer();
+                reloadData();
+              } catch (error: any) {
+                console.error(error);
+                triggerToast(error.message || 'Falha no login com Google.');
+              } finally {
+                setAuthLoading(false);
+              }
+            }
+          });
+          
+          // @ts-ignore
+          window.google.accounts.id.renderButton(
+            document.getElementById('google-signin-btn-container'),
+            { theme: 'outline', size: 'large', width: '100%' }
+          );
+        }
+      } catch (err) {
+        console.error('Failed to init Google Sign-In:', err);
+      }
+    };
+    document.head.appendChild(script);
+    return () => {
+      document.head.removeChild(script);
+    };
+  }, [isAuthenticated]);
+
+  // Real Login Handlers
   const handleSocialLogin = (provider: 'Google' | 'Apple') => {
+    // Elegant fallback simulation if client-id is not configured or for Apple
     setAuthLoading(true);
     setTimeout(() => {
+      const mockBroker = {
+        id: `corretor-mock-${provider.toLowerCase()}`,
+        nome: `Corretor Demo ${provider}`,
+        email: `demo-${provider.toLowerCase()}@imobishare.com.br`,
+        creci: 'CRECI 12345-F',
+        telefone: '(47) 99999-9999',
+        whatsapp: '47999999999',
+        foto: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+        cidade: 'Balneário Camboriú',
+        restringirParceiros: false,
+        parceirosEmails: []
+      };
       localStorage.setItem('imobishare_logged_in', 'true');
+      localStorage.setItem('imobishare_active_corretor', JSON.stringify(mockBroker));
       setIsAuthenticated(true);
       setAuthLoading(false);
       reloadData();
-      triggerToast(`Logado com sucesso via ${provider}!`);
-    }, 1200);
+      triggerToast(`Bem-vindo! Logado com sucesso via ${provider} (Demonstração).`);
+    }, 1000);
   };
 
-  const handleEmailLogin = (e: React.FormEvent) => {
+  const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!authEmail) {
-      triggerToast('Digite seu e-mail corporativo.');
+    if (!authEmail || !authPassword) {
+      triggerToast('Por favor, preencha o e-mail e a senha.');
       return;
     }
     setAuthLoading(true);
-    setTimeout(() => {
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: authEmail, password: authPassword })
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'E-mail ou senha incorretos.');
+      }
+      const data = await response.json();
       localStorage.setItem('imobishare_logged_in', 'true');
+      localStorage.setItem('imobishare_active_corretor', JSON.stringify(data.corretor));
       setIsAuthenticated(true);
-      setAuthLoading(false);
+      triggerToast(`Bem-vindo, ${data.corretor.nome}!`);
+      
+      // Sync DB background
+      await DbService.syncWithServer();
       reloadData();
-      triggerToast('Bem-vindo de volta, Rodrigo Silva!');
-    }, 1000);
+    } catch (err: any) {
+      triggerToast(err.message || 'Falha na autenticação.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!regNome || !authEmail || !authPassword) {
+      triggerToast('Nome, e-mail e senha são obrigatórios.');
+      return;
+    }
+    setAuthLoading(true);
+    try {
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nome: regNome,
+          email: authEmail,
+          password: authPassword,
+          creci: regCreci,
+          telefone: regTelefone,
+          whatsapp: regWhatsapp,
+          cidade: regCidade
+        })
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Falha ao registrar.');
+      }
+      const data = await response.json();
+      localStorage.setItem('imobishare_logged_in', 'true');
+      localStorage.setItem('imobishare_active_corretor', JSON.stringify(data.corretor));
+      setIsAuthenticated(true);
+      setAuthMode('login'); // Switch back to login mode for future entries
+      triggerToast(`Cadastro realizado! Bem-vindo, ${data.corretor.nome}!`);
+      
+      // Sync DB background
+      await DbService.syncWithServer();
+      reloadData();
+    } catch (err: any) {
+      triggerToast(err.message || 'Erro ao realizar cadastro.');
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
   const handleLogout = () => {
     localStorage.removeItem('imobishare_logged_in');
+    localStorage.removeItem('imobishare_active_corretor');
     setIsAuthenticated(false);
     triggerToast('Sessão encerrada com sucesso.');
   };
@@ -514,83 +723,209 @@ Toque abaixo para ver fotos e todos os detalhes:
   if (!isAuthenticated) {
     return (
       <div className="bg-[#0F172A] min-h-screen flex flex-col justify-center items-center px-4 font-sans select-none" id="auth-screen">
-        <div className="w-full max-w-sm bg-white rounded-[32px] p-8 shadow-2xl space-y-6 border border-gray-100">
-          <div className="text-center space-y-2">
+        <div className="w-full max-w-sm bg-white rounded-[32px] p-6 shadow-2xl space-y-5 border border-gray-100 max-h-[95dvh] overflow-y-auto">
+          <div className="text-center space-y-1">
             <img
               src={logoImg}
               alt="ImobiShare Logo"
-              className="mx-auto w-16 h-16 object-contain rounded-2xl border border-slate-100 shadow-sm"
+              className="mx-auto w-14 h-14 object-contain rounded-2xl border border-slate-100 shadow-sm"
               referrerPolicy="no-referrer"
             />
-            <h1 className="text-2xl font-black text-[#003366] tracking-tight uppercase">ImobiShare</h1>
-            <p className="text-xs text-slate-400 font-semibold uppercase tracking-widest">Acelere suas parcerias imobiliárias</p>
+            <h1 className="text-xl font-black text-[#003366] tracking-tight uppercase animate-pulse">ImobiShare</h1>
+            <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">
+              {authMode === 'login' ? 'Acelere suas parcerias imobiliárias' : 'Crie sua conta profissional'}
+            </p>
           </div>
 
-          <form onSubmit={handleEmailLogin} className="space-y-4">
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">E-mail Corporativo</label>
-              <div className="relative">
-                <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          {authMode === 'login' ? (
+            <form onSubmit={handleEmailLogin} className="space-y-3.5">
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">E-mail Corporativo</label>
+                <div className="relative">
+                  <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="email"
+                    required
+                    placeholder="corretor@empresa.com"
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    className="w-full text-xs pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Senha de Acesso</label>
+                <div className="relative">
+                  <Lock size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="password"
+                    required
+                    placeholder="••••••••"
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    className="w-full text-xs pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={authLoading}
+                className="w-full bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold py-3 px-4 rounded-xl shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 tracking-wide uppercase"
+              >
+                {authLoading ? 'Conectando...' : 'Entrar com E-mail'}
+              </button>
+
+              <div className="text-center pt-1.5">
+                <button
+                  type="button"
+                  onClick={() => setAuthMode('register')}
+                  className="text-xs text-[#003366] hover:underline font-bold"
+                >
+                  Não tem conta? Cadastre-se grátis
+                </button>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={handleRegister} className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Nome Completo</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Nome do Corretor"
+                  value={regNome}
+                  onChange={(e) => setRegNome(e.target.value)}
+                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">E-mail Profissional</label>
                 <input
                   type="email"
                   required
-                  placeholder="corretor@empresa.com"
+                  placeholder="seuemail@empresa.com"
                   value={authEmail}
                   onChange={(e) => setAuthEmail(e.target.value)}
-                  className="w-full text-xs pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
+                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
                 />
               </div>
-            </div>
 
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Senha de Acesso</label>
-              <div className="relative">
-                <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="password"
-                  required
-                  placeholder="••••••••"
-                  value={authPassword}
-                  onChange={(e) => setAuthPassword(e.target.value)}
-                  className="w-full text-xs pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
-                />
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Senha</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="••••••••"
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">CRECI</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ex: 12345-F"
+                    value={regCreci}
+                    onChange={(e) => setRegCreci(e.target.value)}
+                    className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
+                  />
+                </div>
               </div>
-            </div>
 
-            <button
-              type="submit"
-              disabled={authLoading}
-              className="w-full bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold py-3.5 px-4 rounded-xl shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 tracking-wide uppercase"
-            >
-              {authLoading ? 'Conectando...' : 'Entrar com E-mail'}
-            </button>
-          </form>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Telefone</label>
+                  <input
+                    type="tel"
+                    placeholder="(47) 99999-9999"
+                    value={regTelefone}
+                    onChange={(e) => setRegTelefone(e.target.value)}
+                    className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">WhatsApp</label>
+                  <input
+                    type="tel"
+                    placeholder="Somente números"
+                    value={regWhatsapp}
+                    onChange={(e) => setRegWhatsapp(e.target.value)}
+                    className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
+                  />
+                </div>
+              </div>
 
-          <div className="relative flex py-2 items-center">
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Sua Cidade de Atuação</label>
+                <select
+                  value={regCidade}
+                  onChange={(e) => setRegCidade(e.target.value)}
+                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
+                >
+                  <option value="Balneário Camboriú">Balneário Camboriú</option>
+                  <option value="Itapema">Itapema</option>
+                  <option value="Itajaí">Itajaí</option>
+                  <option value="Porto Belo">Porto Belo</option>
+                  <option value="Florianópolis">Florianópolis</option>
+                </select>
+              </div>
+
+              <button
+                type="submit"
+                disabled={authLoading}
+                className="w-full bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold py-3 px-4 rounded-xl shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 tracking-wide uppercase mt-1"
+              >
+                {authLoading ? 'Registrando...' : 'Criar Conta Profissional'}
+              </button>
+
+              <div className="text-center pt-1.5">
+                <button
+                  type="button"
+                  onClick={() => setAuthMode('login')}
+                  className="text-xs text-[#003366] hover:underline font-bold"
+                >
+                  Já tem uma conta? Faça login
+                </button>
+              </div>
+            </form>
+          )}
+
+          <div className="relative flex py-1 items-center">
             <div className="flex-grow border-t border-slate-200"></div>
-            <span className="flex-shrink mx-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Ou use suas Redes</span>
+            <span className="flex-shrink mx-2 text-[8px] font-bold uppercase tracking-widest text-slate-400">Ou use login rápido</span>
             <div className="flex-grow border-t border-slate-200"></div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={() => handleSocialLogin('Google')}
-              disabled={authLoading}
-              className="bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-1.5 transition-colors"
-            >
-              <span className="text-red-500 font-extrabold font-sans">G</span> Google
-            </button>
-            <button
-              onClick={() => handleSocialLogin('Apple')}
-              disabled={authLoading}
-              className="bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-1.5 transition-colors"
-            >
-              <span className="text-black font-extrabold font-sans"></span> Apple
-            </button>
+          <div className="space-y-2.5">
+            {/* Native official Google login button container */}
+            <div id="google-signin-btn-container" className="w-full flex justify-center py-0.5"></div>
+            
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => handleSocialLogin('Google')}
+                disabled={authLoading}
+                className="bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-[10px] font-bold py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-colors"
+              >
+                <span className="text-red-500 font-extrabold font-sans">G</span> Google (Demo)
+              </button>
+              <button
+                onClick={() => handleSocialLogin('Apple')}
+                disabled={authLoading}
+                className="bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-[10px] font-bold py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-colors"
+              >
+                <span className="text-black font-extrabold font-sans"></span> Apple
+              </button>
+            </div>
           </div>
 
-          <div className="text-center pt-2">
-            <p className="text-[10px] text-slate-400">Balneário Camboriú • Itapema • Região Marítima</p>
+          <div className="text-center pt-1">
+            <p className="text-[9px] text-slate-400">Balneário Camboriú • Itapema • Região Marítima</p>
           </div>
         </div>
       </div>
@@ -602,7 +937,7 @@ Toque abaixo para ver fotos e todos os detalhes:
     <div className="min-h-screen bg-[#E5E7EB] flex flex-col justify-center items-center py-0 md:py-6" id="app-viewport">
       
       {/* Device wrapper mockup styled like the ConnectImobi Artistic Flair mockup */}
-      <div className="w-full md:w-[375px] md:h-[768px] bg-white md:rounded-[44px] md:border-[10px] md:border-[#0F172A] md:shadow-2xl overflow-hidden flex flex-col relative">
+      <div className="w-full h-[100dvh] md:w-[375px] md:h-[768px] bg-white md:rounded-[44px] md:border-[10px] md:border-[#0F172A] md:shadow-2xl overflow-hidden flex flex-col relative">
         
         {/* Toast Toast alerts */}
         <AnimatePresence>

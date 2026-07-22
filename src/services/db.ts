@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Imovel, Corretor, Favorito } from '../types';
+import { Imovel, Corretor } from '../types';
 import { INITIAL_IMOVEIS, INTEGRATED_IMOVEIS, MOCK_CORRETORES } from '../data';
 
 const STORAGE_KEYS = {
@@ -13,7 +13,78 @@ const STORAGE_KEYS = {
   FAVORITOS: 'imobishare_favoritos',
 };
 
+type SyncListener = () => void;
+
 export class DbService {
+  private static listeners: SyncListener[] = [];
+
+  // Register a listener that triggers when the server data sync completes
+  static subscribe(listener: SyncListener): () => void {
+    this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter(l => l !== listener);
+    };
+  }
+
+  private static notifyListeners(): void {
+    this.listeners.forEach(l => {
+      try {
+        l();
+      } catch (err) {
+        console.error('Error in sync listener:', err);
+      }
+    });
+  }
+
+  // Synchronize local cache with Express PostgreSQL/JSON database
+  static async syncWithServer(): Promise<void> {
+    try {
+      // 1. Sync Brokers
+      const brokersRes = await fetch('/api/brokers');
+      if (brokersRes.ok) {
+        const brokers = await brokersRes.json();
+        if (brokers && brokers.length > 0) {
+          localStorage.setItem(STORAGE_KEYS.CORRETORES, JSON.stringify(brokers));
+          
+          // Also verify active broker profile is in sync
+          const active = this.getActiveCorretor();
+          const updatedActive = brokers.find((b: Corretor) => b.id === active.id);
+          if (updatedActive) {
+            localStorage.setItem(STORAGE_KEYS.ACTIVE_CORRETOR, JSON.stringify(updatedActive));
+          }
+        }
+      }
+
+      // 2. Sync Properties
+      const propertiesRes = await fetch('/api/properties');
+      if (propertiesRes.ok) {
+        const properties = await propertiesRes.json();
+        if (properties) {
+          localStorage.setItem(STORAGE_KEYS.IMOVEIS, JSON.stringify(properties));
+        }
+      }
+
+      // 3. Sync Favorites for active broker
+      const activeCorretor = this.getActiveCorretor();
+      if (activeCorretor && activeCorretor.id) {
+        const favsRes = await fetch(`/api/favorites/${activeCorretor.id}`);
+        if (favsRes.ok) {
+          const favs = await favsRes.json();
+          const allFavsRaw = localStorage.getItem(STORAGE_KEYS.FAVORITOS);
+          const allFavs = allFavsRaw ? JSON.parse(allFavsRaw) : {};
+          allFavs[activeCorretor.id] = favs;
+          localStorage.setItem(STORAGE_KEYS.FAVORITOS, JSON.stringify(allFavs));
+        }
+      }
+
+      // Notify the frontend components to reload data
+      this.notifyListeners();
+      console.log('🔄 Data successfully synchronized with production database.');
+    } catch (error) {
+      console.warn('⚠️ Server sync failed. Running in offline/cached mode:', error);
+    }
+  }
+
   // Get all brokers
   static getCorretores(): Corretor[] {
     const data = localStorage.getItem(STORAGE_KEYS.CORRETORES);
@@ -35,9 +106,10 @@ export class DbService {
     return JSON.parse(data);
   }
 
-  // Change logged-in broker (for simulation purposes!)
+  // Change logged-in broker
   static setActiveCorretor(corretor: Corretor): void {
     localStorage.setItem(STORAGE_KEYS.ACTIVE_CORRETOR, JSON.stringify(corretor));
+    this.syncWithServer(); // Sync background favorites for new active broker
   }
 
   // Save or update a broker's profile
@@ -48,11 +120,21 @@ export class DbService {
       corretores[index] = corretor;
       localStorage.setItem(STORAGE_KEYS.CORRETORES, JSON.stringify(corretores));
     }
+    
     // Also update active corretor if they are the active one
     const active = this.getActiveCorretor();
     if (active.id === corretor.id) {
       localStorage.setItem(STORAGE_KEYS.ACTIVE_CORRETOR, JSON.stringify(corretor));
     }
+
+    // Push to server asynchronously
+    fetch('/api/brokers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(corretor),
+    }).then(res => {
+      if (res.ok) this.syncWithServer();
+    }).catch(err => console.error('Failed to post broker update to database:', err));
   }
 
   // Get all properties
@@ -74,29 +156,6 @@ export class DbService {
       return allInitial;
     }
     
-    // Ensure existing items have their latitudes/longitudes updated, and integrated ones are present
-    let changed = false;
-    parsed = parsed.map(p => {
-      const initMatch = INITIAL_IMOVEIS.find(init => init.id === p.id);
-      if (initMatch && (p.latitude === undefined || p.longitude === undefined)) {
-        changed = true;
-        return { ...p, latitude: initMatch.latitude, longitude: initMatch.longitude };
-      }
-      return p;
-    });
-
-    // Check if integrated properties are in the parsed array, if not, add them
-    for (const integ of INTEGRATED_IMOVEIS) {
-      if (!parsed.some(p => p.id === integ.id)) {
-        parsed.push(integ);
-        changed = true;
-      }
-    }
-
-    if (changed) {
-      localStorage.setItem(STORAGE_KEYS.IMOVEIS, JSON.stringify(parsed));
-    }
-
     return parsed;
   }
 
@@ -104,7 +163,6 @@ export class DbService {
   static getFavoritos(corretorId: string): string[] {
     const data = localStorage.getItem(STORAGE_KEYS.FAVORITOS);
     if (!data) {
-      // Default favorites based on initial properties marked 'favorito'
       const initialFavs = INITIAL_IMOVEIS.filter(i => i.favorito).map(i => i.id);
       localStorage.setItem(STORAGE_KEYS.FAVORITOS, JSON.stringify({ [corretorId]: initialFavs }));
       return initialFavs;
@@ -134,6 +192,15 @@ export class DbService {
     parsed[corretorId] = updated;
     localStorage.setItem(STORAGE_KEYS.FAVORITOS, JSON.stringify(parsed));
 
+    // Send favorite toggle to backend
+    fetch('/api/favorites/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ corretorId, imovelId }),
+    }).then(res => {
+      if (res.ok) this.syncWithServer();
+    }).catch(err => console.error('Failed to post favorite toggle to database:', err));
+
     return updated;
   }
 
@@ -141,35 +208,54 @@ export class DbService {
   static saveImovel(imovel: Omit<Imovel, 'id' | 'dataCadastro' | 'corretorId' | 'corretorNome'> & { id?: string }): Imovel {
     const imoveis = this.getImoveis();
     const activeCorretor = this.getActiveCorretor();
+    let finalImovel: Imovel;
     
     if (imovel.id) {
       // Update existing
       const index = imoveis.findIndex(i => i.id === imovel.id);
       if (index !== -1) {
         const existing = imoveis[index];
-        const updated: Imovel = {
+        finalImovel = {
           ...existing,
           ...imovel,
           id: imovel.id, // guarantee same id
-        };
-        imoveis[index] = updated;
-        localStorage.setItem(STORAGE_KEYS.IMOVEIS, JSON.stringify(imoveis));
-        return updated;
+        } as Imovel;
+        imoveis[index] = finalImovel;
+      } else {
+        // Fallback create
+        finalImovel = {
+          ...imovel,
+          id: imovel.id,
+          dataCadastro: new Date().toISOString(),
+          corretorId: activeCorretor.id,
+          corretorNome: activeCorretor.nome,
+        } as Imovel;
+        imoveis.unshift(finalImovel);
       }
+    } else {
+      // Create new
+      finalImovel = {
+        ...imovel,
+        id: `imovel-${Date.now()}`,
+        dataCadastro: new Date().toISOString(),
+        corretorId: activeCorretor.id,
+        corretorNome: activeCorretor.nome,
+      } as Imovel;
+      imoveis.unshift(finalImovel); // Add to beginning
     }
     
-    // Create new
-    const newImovel: Imovel = {
-      ...imovel,
-      id: `imovel-${Date.now()}`,
-      dataCadastro: new Date().toISOString(),
-      corretorId: activeCorretor.id,
-      corretorNome: activeCorretor.nome,
-    };
-    
-    imoveis.unshift(newImovel); // Add to beginning
     localStorage.setItem(STORAGE_KEYS.IMOVEIS, JSON.stringify(imoveis));
-    return newImovel;
+
+    // Post update to Express database
+    fetch('/api/properties', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(finalImovel),
+    }).then(res => {
+      if (res.ok) this.syncWithServer();
+    }).catch(err => console.error('Failed to post property update to database:', err));
+
+    return finalImovel;
   }
 
   // Duplicate a property
@@ -190,6 +276,16 @@ export class DbService {
 
     imoveis.unshift(duplicated);
     localStorage.setItem(STORAGE_KEYS.IMOVEIS, JSON.stringify(imoveis));
+
+    // Save duplicate to backend database
+    fetch('/api/properties', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(duplicated),
+    }).then(res => {
+      if (res.ok) this.syncWithServer();
+    }).catch(err => console.error('Failed to duplicate property in database:', err));
+
     return duplicated;
   }
 
@@ -198,6 +294,13 @@ export class DbService {
     const imoveis = this.getImoveis();
     const updated = imoveis.filter(i => i.id !== id);
     localStorage.setItem(STORAGE_KEYS.IMOVEIS, JSON.stringify(updated));
+
+    // Delete from database
+    fetch(`/api/properties/${id}`, {
+      method: 'DELETE',
+    }).then(res => {
+      if (res.ok) this.syncWithServer();
+    }).catch(err => console.error('Failed to delete property from database:', err));
   }
 
   // Get Broker Stats
@@ -228,7 +331,6 @@ export class DbService {
       return data.text || text;
     } catch (error) {
       console.error('Failed to improve description via backend:', error);
-      // Heuristic fallback
       return `Maravilhosa oportunidade de ${type} no edifício ${titulo || 'selecionado'}, localizado em ${localizacao || 'ótimo bairro'}. ${text}`;
     }
   }
