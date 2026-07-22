@@ -119,9 +119,14 @@ jobs:
         with:
           validate-wrappers: false
           
-      - name: Regenerate Gradle Wrapper (fix corrupted jar)
+      - name: Fix corrupted Gradle Wrapper jar
         working-directory: android
-        run: gradle wrapper --gradle-version 8.7          
+        run: |
+          GRADLE_VERSION=$(grep -oP '(?<=gradle-)[0-9]+\.[0-9]+(\.[0-9]+)?(?=-)' gradle/wrapper/gradle-wrapper.properties)
+          echo "Baixando gradle-wrapper.jar para a versão $GRADLE_VERSION"
+          curl -L -o gradle/wrapper/gradle-wrapper.jar \
+            "https://raw.githubusercontent.com/gradle/gradle/v${GRADLE_VERSION}/gradle/wrapper/gradle-wrapper.jar"
+          file gradle/wrapper/gradle-wrapper.jar       
 
       - name: Install Android Platform 36 & Build Tools 36
         run: |
