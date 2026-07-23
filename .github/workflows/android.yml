@@ -5,14 +5,14 @@ on:
     branches:
       - main
     tags:
-      - 'v*'
+      - "v*"
   pull_request:
     branches:
       - main
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -27,9 +27,9 @@ jobs:
       - name: Setup Java JDK 21
         uses: actions/setup-java@v4
         with:
-          java-version: '21'
-          distribution: 'zulu'
-          cache: 'gradle'
+          java-version: "21"
+          distribution: zulu
+          cache: gradle
 
       - name: Configurar Node.js
         uses: actions/setup-node@v4
@@ -59,62 +59,71 @@ jobs:
 
           echo "🎨 Preparando imagem base do splash..."
           if [ -f "assets/splash.png" ]; then
-            echo "📷 Usando imagem personalizada: assets/splash.png"
             cp assets/splash.png /tmp/splash.png
           else
-            echo "🎨 Nenhuma imagem personalizada encontrada, gerando placeholder..."
             convert -size 1024x1024 xc:"#2196F3" \
               -pointsize 120 -fill white -gravity center -annotate +0+0 "iMobi" \
               /tmp/splash.png
           fi
 
-          echo "📱 Gerando splash para todas as densidades e orientações..."
-          declare -A PORT_SIZES=( [mdpi]="320x480" [hdpi]="480x800" [xhdpi]="800x1280" [xxhdpi]="1080x1920" [xxxhdpi]="1440x2560" )
-          declare -A LAND_SIZES=( [mdpi]="480x320" [hdpi]="800x480" [xhdpi]="1280x800" [xxhdpi]="1920x1080" [xxxhdpi]="2560x1440" )
+          declare -A PORT_SIZES=(
+            [mdpi]="320x480"
+            [hdpi]="480x800"
+            [xhdpi]="800x1280"
+            [xxhdpi]="1080x1920"
+            [xxxhdpi]="1440x2560"
+          )
+
+          declare -A LAND_SIZES=(
+            [mdpi]="480x320"
+            [hdpi]="800x480"
+            [xhdpi]="1280x800"
+            [xxhdpi]="1920x1080"
+            [xxxhdpi]="2560x1440"
+          )
 
           for density in "${!PORT_SIZES[@]}"; do
-            convert /tmp/splash.png -resize "${PORT_SIZES[$density]}" "android/app/src/main/res/drawable-port-$density/splash.png"
-            convert /tmp/splash.png -resize "${LAND_SIZES[$density]}" "android/app/src/main/res/drawable-land-$density/splash.png"
+            mkdir -p "android/app/src/main/res/drawable-port-$density"
+            mkdir -p "android/app/src/main/res/drawable-land-$density"
+            convert /tmp/splash.png -resize "${PORT_SIZES[$density]}" \
+              "android/app/src/main/res/drawable-port-$density/splash.png"
+            convert /tmp/splash.png -resize "${LAND_SIZES[$density]}" \
+              "android/app/src/main/res/drawable-land-$density/splash.png"
           done
 
-          echo "🎨 Atualizando splash principal (drawable/splash.png)..."
+          mkdir -p android/app/src/main/res/drawable
           cp /tmp/splash.png android/app/src/main/res/drawable/splash.png
-
-          echo "✅ Splash screens gerados com sucesso!"
-          ls -la android/app/src/main/res/drawable-*/splash.png
 
       - name: Generate launcher icons
         run: |
-          echo "🗑️ Deletando imagens antigas..."
           find android/app/src/main/res/mipmap-* -name "ic_launcher*.png" -delete 2>/dev/null || true
-
-          echo "📁 Criando pastas..."
           mkdir -p android/app/src/main/res/mipmap-{mdpi,hdpi,xhdpi,xxhdpi,xxxhdpi}
 
-          echo "🎨 Preparando imagem base do ícone..."
           if [ -f "assets/icon.png" ]; then
-            echo "📷 Usando imagem personalizada: assets/icon.png"
             cp assets/icon.png /tmp/ic_launcher.png
           else
-            echo "🎨 Nenhuma imagem personalizada encontrada, gerando placeholder..."
             convert -size 512x512 xc:"#2196F3" \
               -pointsize 80 -fill white -gravity center -annotate +0+0 "iMobi" \
               /tmp/ic_launcher.png
           fi
 
-          echo "📱 Gerando ícones para todas as densidades e variantes..."
-          declare -A SIZES=( [mdpi]=48 [hdpi]=72 [xhdpi]=96 [xxhdpi]=144 [xxxhdpi]=192 )
+          declare -A SIZES=(
+            [mdpi]=48
+            [hdpi]=72
+            [xhdpi]=96
+            [xxhdpi]=144
+            [xxxhdpi]=192
+          )
 
           for density in "${!SIZES[@]}"; do
             size=${SIZES[$density]}
             dir="android/app/src/main/res/mipmap-$density"
-            for name in ic_launcher ic_launcher_round ic_launcher_foreground; do
-              convert /tmp/ic_launcher.png -resize "${size}x${size}" "$dir/$name.png"
+
+            for icon_name in ic_launcher ic_launcher_round ic_launcher_foreground; do
+              convert /tmp/ic_launcher.png -resize "${size}x${size}" \
+                "$dir/$icon_name.png"
             done
           done
-
-          echo "✅ Ícones gerados com sucesso!"
-          ls -la android/app/src/main/res/mipmap-mdpi/ic_launcher*.png
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -125,14 +134,32 @@ jobs:
         working-directory: android
         run: |
           GRADLE_VERSION=$(grep -oP '(?<=gradle-)[0-9]+\.[0-9]+(\.[0-9]+)?(?=-)' gradle/wrapper/gradle-wrapper.properties)
-          echo "Baixando gradle-wrapper.jar para a versão $GRADLE_VERSION"
           curl -L -o gradle/wrapper/gradle-wrapper.jar \
             "https://raw.githubusercontent.com/gradle/gradle/v${GRADLE_VERSION}/gradle/wrapper/gradle-wrapper.jar"
           file gradle/wrapper/gradle-wrapper.jar
 
-      - name: Install Android Platform 36 & Build Tools 36
+      - name: Install Android Platform 36 and Build Tools 36
         run: |
           echo "y" | sdkmanager --install "platforms;android-36" "build-tools;36.0.0" || \
-          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
+          echo "y" | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" "build-tools;36.0.0"
 
       - name: Grant Execute Permission to Gradlew
+        working-directory: android
+        run: chmod +x gradlew
+
+      - name: Build APK de release
+        working-directory: android
+        run: ./gradlew assembleRelease
+
+      - name: Build AAB de release
+        working-directory: android
+        run: ./gradlew bundleRelease
+
+      - name: Publicar APK e AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: imobishare-android
+          path: |
+            android/app/build/outputs/apk/release/*.apk
+            android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
