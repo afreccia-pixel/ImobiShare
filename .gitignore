@@ -1,8 +1,5 @@
-node_modules/
-build/
-dist/
-coverage/
-.DS_Store
-*.log
-.env*
-!.env.example
+.env
+*.keystore
+keystore_base64.txt
+node_modules
+dist
