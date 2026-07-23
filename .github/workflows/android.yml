@@ -181,3 +181,33 @@ jobs:
           name: imobishare-release
           path: android/app/build/outputs/apk/release/imobishare-release.apk
           if-no-files-found: error
+          
+      - name: Instalar ferramenta de envio ao Google Drive
+        if: github.event_name == 'push'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rclone
+
+      - name: Enviar APK assinado ao Google Drive
+        if: github.event_name == 'push'
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 }}
+          GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+        run: |
+          set -euo pipefail
+
+          KEY_FILE="$RUNNER_TEMP/google-drive-service-account.json"
+
+          printf '%s' "$GOOGLE_SERVICE_ACCOUNT_JSON_BASE64" | base64 --decode > "$KEY_FILE"
+
+          rclone config create gdrive drive \
+            scope drive \
+            service_account_file "$KEY_FILE" \
+            root_folder_id "$GOOGLE_DRIVE_FOLDER_ID" \
+            --non-interactive
+
+          rclone copy \
+            android/app/build/outputs/apk/release/imobishare-release.apk \
+            gdrive: \
+            --checksum \
+            --progress
