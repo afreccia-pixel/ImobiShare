@@ -5,6 +5,7 @@ const config: CapacitorConfig = {
   appName: 'ImobiShare',
   webDir: 'dist',
   server: {
+    url: 'https://imobishare.onrender.com',
     androidScheme: 'https'
   }
 };
