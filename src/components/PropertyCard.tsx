@@ -74,12 +74,19 @@ export function PropertyCard({
           referrerPolicy="no-referrer"
           className="w-full h-full object-cover"
         />
-        {/* Buy / Rent Badge */}
-        <span className={`absolute top-1 left-1 text-[7px] font-black uppercase tracking-wider text-white px-1 py-0.5 rounded-sm shadow-xs ${
-          imovel.tipo === 'venda' ? 'bg-[#003366]' : 'bg-emerald-700'
-        }`}>
-          {imovel.tipo === 'venda' ? 'Comprar' : 'Alugar'}
-        </span>
+        {/* Buy / Rent Badge & Integrated Badge */}
+        <div className="absolute top-1 left-1 flex flex-col gap-0.5">
+          <span className={`text-[7px] font-black uppercase tracking-wider text-white px-1 py-0.5 rounded-sm shadow-xs ${
+            imovel.tipo === 'venda' ? 'bg-[#003366]' : 'bg-emerald-700'
+          }`}>
+            {imovel.tipo === 'venda' ? 'Comprar' : 'Alugar'}
+          </span>
+          {imovel.integrado && (
+            <span className="text-[7px] font-black uppercase tracking-wider text-slate-900 bg-amber-300 px-1 py-0.5 rounded-sm shadow-xs" title="Imóvel importado via integração">
+              Integração
+            </span>
+          )}
+        </div>
 
         {/* Private view badge if not shared */}
         {!imovel.compartilhar && (

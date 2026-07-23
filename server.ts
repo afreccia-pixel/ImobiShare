@@ -43,7 +43,11 @@ function decodeGoogleToken(token: string) {
   try {
     const parts = token.split('.');
     if (parts.length !== 3) return null;
-    const payload = Buffer.from(parts[1], 'base64').toString('utf-8');
+    let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    while (base64.length % 4) {
+      base64 += '=';
+    }
+    const payload = Buffer.from(base64, 'base64').toString('utf-8');
     return JSON.parse(payload);
   } catch (err) {
     console.error('Error decoding Google token:', err);
@@ -256,36 +260,75 @@ app.post('/api/support/send', async (req: Request, res: Response) => {
   }
 });
 
-// REST API endpoint to improve real estate property description using Gemini 3.5 Flash
+// REST API endpoint to improve real estate property description using Gemini 3.6 Flash
 app.post('/api/ai/improve-description', async (req: Request, res: Response) => {
   try {
-    const { text, type, titulo, localizacao } = req.body;
-
-    if (!text || typeof text !== 'string') {
-      return res.status(400).json({ error: 'Falta o texto base para melhorar.' });
-    }
+    const { 
+      text, 
+      type, 
+      tipoImovel, 
+      titulo, 
+      localizacao, 
+      nomeEdificio, 
+      dormitorios, 
+      vagas, 
+      banheiros, 
+      metragem, 
+      areaTotal, 
+      valor 
+    } = req.body;
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      // Return a simulated high-quality description if API Key is not set
-      const fallbackText = `[Simulado] Excelente ${type || 'imóvel'} com ótimo acabamento, localizado em ${localizacao || 'local privilegiado'}. Ideal para quem busca conforto e sofisticação. Apresenta excelente iluminação natural, ambientes integrados e ótima ventilação. Título: ${titulo || 'Imóvel Exclusivo'}. Descrição original: "${text}"`;
+      // Return a structured high-quality description if API Key is not set
+      const baseInfoList = [
+        tipoImovel ? `Tipo: ${tipoImovel}` : '',
+        nomeEdificio ? `Edifício ${nomeEdificio}` : '',
+        dormitorios ? `${dormitorios} quartos` : '',
+        vagas ? `${vagas} vagas` : '',
+        banheiros ? `${banheiros} banheiros` : '',
+        metragem ? `${metragem}m² privativos` : '',
+        areaTotal ? `${areaTotal}m² área total` : '',
+        localizacao ? `Localização: ${localizacao}` : '',
+      ].filter(Boolean).join(' • ');
+
+      const fallbackText = text?.trim() 
+        ? `${text.trim()}\n\n✨ Destaques do Imóvel (${type === 'locação' ? 'Locação' : 'Venda'}):\n- ${baseInfoList}\n- Excelente padrão de acabamento e iluminação natural em todos os ambientes.\n- Agende uma visita para conhecer de perto esta excelente oportunidade!`
+        : `Excelente ${tipoImovel || 'imóvel'} para ${type === 'locação' ? 'locação' : 'venda'}.\n\n✨ Destaques:\n- ${baseInfoList}\n- Ambientes amplos, integrados e ventilados.\n- Pronto para morar com alto padrão de conforto e conveniência. Agende sua visita!`;
+
       return res.json({ text: fallbackText });
     }
 
     const client = getGeminiClient();
 
-    const systemPrompt = `Você é um corretor de imóveis de luxo de Balneário Camboriú especialista em marketing imobiliário e redação de alto padrão.
-Sua tarefa é melhorar, corrigir e deixar extremamente atraente a descrição resumida de um imóvel para venda ou locação.
-Mantenha o texto objetivo, sofisticado, curto (máximo de 3 a 4 linhas) e use gatilhos mentais do mercado de luxo.
-O imóvel é do tipo de negociação: ${type || 'venda'}. O título é: "${titulo || ''}". Localização: "${localizacao || ''}".
+    const systemPrompt = `Você é um corretor de imóveis de luxo e especialista em marketing imobiliário de alto padrão.
+Sua tarefa é criar ou aprimorar a descrição de um imóvel para anúncio imobiliário comercial com base nas informações cadastradas.
 
-Texto original fornecido pelo corretor:
-"${text}"
+Dados do imóvel informados no formulário:
+- Tipo de Negócio: ${type === 'locação' ? 'Locação' : 'Venda'}
+- Tipo de Imóvel: ${tipoImovel || 'Não informado'}
+- Título: ${titulo || 'Não informado'}
+- Localização: ${localizacao || 'Não informada'}
+- Nome do Edifício / Condomínio: ${nomeEdificio || 'Não informado'}
+- Quartos: ${dormitorios ?? 'N/A'}
+- Vagas de Garagem: ${vagas ?? 'N/A'}
+- Banheiros: ${banheiros ?? 'N/A'}
+- Metragem Privativa: ${metragem ? `${metragem} m²` : 'N/A'}
+- Área Total: ${areaTotal ? `${areaTotal} m²` : 'N/A'}
+- Valor: ${valor ? `R$ ${valor}` : 'N/A'}
 
-Retorne APENAS o texto da descrição melhorada, sem introduções, aspas ou explicações adicionais.`;
+Texto/Anotações originais do corretor:
+"${text || ''}"
+
+Diretrizes obrigatórias:
+1. Se houver texto original do corretor, USE esse conteúdo como base, aprimorando a redação e sem apagar informações importantes.
+2. Crie uma descrição elegante, profissional, atrativa e perfeitamente estruturada para redes sociais e portais imobiliários.
+3. JAMAIS invente características falsas ou cômodos fictícios que não foram informados nos dados acima.
+4. Mantenha o texto objetivo, fluido e cativante (2 a 4 parágrafos curtos ou lista de diferenciais).
+5. Retorne APENAS o texto da descrição melhorada, sem introduções, aspas ou notas explicativas.`;
 
     const response = await client.models.generateContent({
-      model: 'gemini-3.5-flash',
+      model: 'gemini-3.6-flash',
       contents: systemPrompt,
     });
 

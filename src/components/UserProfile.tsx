@@ -3,10 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Corretor } from '../types';
 import { DbService } from '../services/db';
-import { User, Phone, Mail, MapPin, Award, Check, RefreshCw, LogOut, CheckCircle2, Users, Plus, Trash2 } from 'lucide-react';
+import { User, Phone, Mail, MapPin, Award, Check, RefreshCw, LogOut, CheckCircle2, Users, Plus, Trash2, Camera } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface UserProfileProps {
@@ -18,6 +18,79 @@ export function UserProfile({ corretor, onProfileSwitched }: UserProfileProps) {
   const [allCorretores, setAllCorretores] = useState<Corretor[]>([]);
   const [stats, setStats] = useState({ qtdImoveis: 0, qtdLocacoes: 0, qtdVendas: 0 });
   const [successMsg, setSuccessMsg] = useState('');
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const compressImage = (file: File, maxWidth: number = 512, maxHeight: number = 512, quality: number = 0.75): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = window.Image ? new window.Image() : document.createElement('img');
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > maxWidth) {
+              height = Math.round((height * maxWidth) / width);
+              width = maxWidth;
+            }
+          } else {
+            if (height > maxHeight) {
+              width = Math.round((width * maxHeight) / height);
+              height = maxHeight;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(event.target?.result as string);
+            return;
+          }
+
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', quality);
+          resolve(dataUrl);
+        };
+        img.onerror = (err) => reject(err);
+      };
+      reader.onerror = (err) => reject(err);
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    
+    try {
+      setSuccessMsg('Processando e salvando imagem de perfil...');
+      const compressedBase64 = await compressImage(file, 512, 512, 0.75);
+      
+      const updatedCorretor = {
+        ...corretor,
+        foto: compressedBase64
+      };
+      
+      DbService.saveCorretor(updatedCorretor);
+      onProfileSwitched(updatedCorretor);
+      
+      setSuccessMsg('Sua foto de perfil foi atualizada com sucesso!');
+      setTimeout(() => setSuccessMsg(''), 4000);
+    } catch (err) {
+      console.error('Error updating profile photo:', err);
+      setSuccessMsg('Erro ao atualizar foto de perfil.');
+      setTimeout(() => setSuccessMsg(''), 4000);
+    } finally {
+      if (e.target) e.target.value = '';
+    }
+  };
 
   // Partner broker sharing states
   const [restringir, setRestringir] = useState(corretor.restringirParceiros || false);
@@ -107,12 +180,6 @@ export function UserProfile({ corretor, onProfileSwitched }: UserProfileProps) {
     return allCorretores.find(c => c.email.toLowerCase().trim() === email.toLowerCase().trim());
   };
 
-  const handleSwitchBroker = (broker: Corretor) => {
-    DbService.setActiveCorretor(broker);
-    onProfileSwitched(broker);
-    setSuccessMsg(`Simulando login como: ${broker.nome}`);
-    setTimeout(() => setSuccessMsg(''), 3000);
-  };
 
   return (
     <div className="bg-slate-50 min-h-screen pb-16" id="user-profile-container">
@@ -133,17 +200,25 @@ export function UserProfile({ corretor, onProfileSwitched }: UserProfileProps) {
 
         {/* Profile Details Card */}
         <div className="bg-white border border-slate-100 rounded-xl p-4 shadow-xs flex flex-col items-center text-center">
-          <div className="relative">
+          <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()} title="Clique para alterar sua foto de perfil">
             <img
               src={corretor.foto}
               alt={corretor.nome}
               referrerPolicy="no-referrer"
-              className="w-24 h-24 rounded-full object-cover border-4 border-slate-100 shadow-sm"
+              className="w-24 h-24 rounded-full object-cover border-4 border-slate-100 shadow-sm group-hover:opacity-80 transition-opacity"
             />
-            <div className="absolute bottom-0 right-0 bg-[#003366] text-white p-1.5 rounded-full border border-white">
-              <User size={14} />
+            <div className="absolute bottom-0 right-0 bg-[#003366] text-white p-1.5 rounded-full border border-white shadow-sm group-hover:scale-110 transition-transform">
+              <Camera size={14} />
             </div>
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/*"
+              className="hidden"
+              onChange={handlePhotoChange}
+            />
           </div>
+          <span className="text-[9px] text-[#003366] font-bold mt-1.5 hover:underline cursor-pointer" onClick={() => fileInputRef.current?.click()}>Alterar foto de perfil</span>
 
           <h2 className="font-bold text-slate-800 text-base mt-3">{corretor.nome}</h2>
           
@@ -318,44 +393,7 @@ export function UserProfile({ corretor, onProfileSwitched }: UserProfileProps) {
           </div>
         </div>
 
-        {/* Dynamic switcher simulated login bar */}
-        <div className="bg-slate-900 text-white p-4 rounded-xl shadow-md space-y-3">
-          <div>
-            <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
-              <RefreshCw size={14} className="animate-spin" style={{ animationDuration: '4s' }} />
-              Simular outro Corretor (Multiusuário)
-            </h4>
-            <p className="text-[10px] text-slate-300 mt-1">
-              Altere para outro corretor para testar a dinâmica de parcerias e imóveis privados!
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            {allCorretores.map((broker) => {
-              const active = broker.id === corretor.id;
-              return (
-                <button
-                  key={broker.id}
-                  onClick={() => handleSwitchBroker(broker)}
-                  className={`w-full flex items-center justify-between p-2 rounded-lg text-left text-xs transition-colors ${
-                    active 
-                      ? 'bg-[#003366] border border-[#003366]/40 text-white font-bold' 
-                      : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <img src={broker.foto} alt="" className="w-7 h-7 rounded-full object-cover border border-slate-700" referrerPolicy="no-referrer" />
-                    <div>
-                      <span>{broker.nome}</span>
-                      <span className="text-[9px] block text-slate-400 font-normal">{broker.creci}</span>
-                    </div>
-                  </div>
-                  {active && <Check size={14} className="text-emerald-400" />}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        {/* Multi-user simulator completely removed for clean production build */}
 
       </div>
     </div>

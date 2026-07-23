@@ -17,8 +17,30 @@ interface PropertyDetailsProps {
 export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDetailsProps) {
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
   const [whatsappSent, setWhatsappSent] = useState(false);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
 
   const isOwner = imovel.corretorId === activeCorretor.id;
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.touches[0].clientX);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX === null || !imovel.fotos || imovel.fotos.length <= 1) return;
+    const touchEndX = e.changedTouches[0].clientX;
+    const diff = touchStartX - touchEndX;
+
+    if (Math.abs(diff) > 35) {
+      if (diff > 0) {
+        // Swiped left -> Next photo
+        setActivePhotoIndex((prev) => (prev + 1) % imovel.fotos.length);
+      } else {
+        // Swiped right -> Previous photo
+        setActivePhotoIndex((prev) => (prev - 1 + imovel.fotos.length) % imovel.fotos.length);
+      }
+    }
+    setTouchStartX(null);
+  };
 
   // Format price helper
   const formatPrice = (value: number) => {
@@ -71,13 +93,24 @@ Toque abaixo para ver fotos e todos os detalhes:
 
       <div className="max-w-xl mx-auto">
         {/* Gallery */}
-        <div className="relative aspect-4/3 bg-slate-900 overflow-hidden">
+        <div 
+          className="relative aspect-4/3 bg-slate-900 overflow-hidden select-none touch-pan-y cursor-grab active:cursor-grabbing"
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+        >
           <img
             src={imovel.fotos[activePhotoIndex] || 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&auto=format&fit=crop&q=80'}
             alt={`${imovel.titulo} - Foto ${activePhotoIndex + 1}`}
             referrerPolicy="no-referrer"
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover select-none pointer-events-none"
           />
+
+          {/* Gallery Counter Indicator */}
+          {imovel.fotos.length > 0 && (
+            <span className="absolute top-4 right-4 bg-slate-900/80 backdrop-blur-md text-white text-[11px] font-bold px-2.5 py-1 rounded-full border border-white/20 shadow-md">
+              {activePhotoIndex + 1} / {imovel.fotos.length}
+            </span>
+          )}
 
           {/* Dots Indicator */}
           {imovel.fotos.length > 1 && (
@@ -137,9 +170,16 @@ Toque abaixo para ver fotos e todos os detalhes:
               {imovel.titulo}
             </h1>
 
-            <div className="flex items-center text-slate-500 text-xs mt-1.5">
-              <MapPin size={13} className="mr-1 text-slate-400" />
-              <span>{imovel.localizacao}</span>
+            <div className="flex items-center text-slate-500 text-xs mt-1.5 flex-wrap gap-x-2">
+              <span className="flex items-center">
+                <MapPin size={13} className="mr-1 text-slate-400" />
+                {imovel.localizacao}
+              </span>
+              {imovel.cep && (
+                <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded font-mono">
+                  CEP: {imovel.cep}
+                </span>
+              )}
             </div>
           </div>
 

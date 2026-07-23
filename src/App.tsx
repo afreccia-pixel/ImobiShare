@@ -54,6 +54,7 @@ export default function App() {
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState('');
 
   // Registration form states
   const [regNome, setRegNome] = useState('');
@@ -146,6 +147,13 @@ export default function App() {
   const [toastMessage, setToastMessage] = useState('');
 
   // Reload database data helper
+  const handleTabChange = (tab: TabType) => {
+    setActiveTab(tab);
+    setSearchViewMode('como_esta_hoje');
+    setSelectedPropertyId(null);
+    setIsAddingProperty(false);
+  };
+
   const reloadData = (updateCity = false) => {
     const currentCorretor = DbService.getActiveCorretor();
     setActiveCorretor(currentCorretor);
@@ -346,35 +354,11 @@ export default function App() {
     };
   }, [isAuthenticated]);
 
-  // Real Login Handlers
-  const handleSocialLogin = (provider: 'Google' | 'Apple') => {
-    // Elegant fallback simulation if client-id is not configured or for Apple
-    setAuthLoading(true);
-    setTimeout(() => {
-      const mockBroker = {
-        id: `corretor-mock-${provider.toLowerCase()}`,
-        nome: `Corretor Demo ${provider}`,
-        email: `demo-${provider.toLowerCase()}@imobishare.com.br`,
-        creci: 'CRECI 12345-F',
-        telefone: '(47) 99999-9999',
-        whatsapp: '47999999999',
-        foto: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-        cidade: 'Balneário Camboriú',
-        restringirParceiros: false,
-        parceirosEmails: []
-      };
-      localStorage.setItem('imobishare_logged_in', 'true');
-      localStorage.setItem('imobishare_active_corretor', JSON.stringify(mockBroker));
-      setIsAuthenticated(true);
-      setAuthLoading(false);
-      reloadData();
-      triggerToast(`Bem-vindo! Logado com sucesso via ${provider} (Demonstração).`);
-    }, 1000);
-  };
-
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setAuthError('');
     if (!authEmail || !authPassword) {
+      setAuthError('Por favor, preencha o e-mail e a senha.');
       triggerToast('Por favor, preencha o e-mail e a senha.');
       return;
     }
@@ -399,6 +383,7 @@ export default function App() {
       await DbService.syncWithServer();
       reloadData();
     } catch (err: any) {
+      setAuthError(err.message || 'Falha na autenticação.');
       triggerToast(err.message || 'Falha na autenticação.');
     } finally {
       setAuthLoading(false);
@@ -407,7 +392,9 @@ export default function App() {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    setAuthError('');
     if (!regNome || !authEmail || !authPassword) {
+      setAuthError('Nome, e-mail e senha são obrigatórios.');
       triggerToast('Nome, e-mail e senha são obrigatórios.');
       return;
     }
@@ -441,6 +428,7 @@ export default function App() {
       await DbService.syncWithServer();
       reloadData();
     } catch (err: any) {
+      setAuthError(err.message || 'Erro ao realizar cadastro.');
       triggerToast(err.message || 'Erro ao realizar cadastro.');
     } finally {
       setAuthLoading(false);
@@ -737,6 +725,12 @@ Toque abaixo para ver fotos e todos os detalhes:
             </p>
           </div>
 
+          {authError && (
+            <div className="bg-red-50 text-red-600 text-[11px] p-3 rounded-xl border border-red-200 font-medium leading-relaxed" id="auth-error-banner">
+              {authError}
+            </div>
+          )}
+
           {authMode === 'login' ? (
             <form onSubmit={handleEmailLogin} className="space-y-3.5">
               <div className="space-y-1">
@@ -780,7 +774,7 @@ Toque abaixo para ver fotos e todos os detalhes:
               <div className="text-center pt-1.5">
                 <button
                   type="button"
-                  onClick={() => setAuthMode('register')}
+                  onClick={() => { setAuthMode('register'); setAuthError(''); }}
                   className="text-xs text-[#003366] hover:underline font-bold"
                 >
                   Não tem conta? Cadastre-se grátis
@@ -838,27 +832,18 @@ Toque abaixo para ver fotos e todos os detalhes:
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Telefone</label>
-                  <input
-                    type="tel"
-                    placeholder="(47) 99999-9999"
-                    value={regTelefone}
-                    onChange={(e) => setRegTelefone(e.target.value)}
-                    className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">WhatsApp</label>
-                  <input
-                    type="tel"
-                    placeholder="Somente números"
-                    value={regWhatsapp}
-                    onChange={(e) => setRegWhatsapp(e.target.value)}
-                    className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
-                  />
-                </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Telefone / WhatsApp</label>
+                <input
+                  type="tel"
+                  placeholder="(47) 99999-9999"
+                  value={regTelefone}
+                  onChange={(e) => {
+                    setRegTelefone(e.target.value);
+                    setRegWhatsapp(e.target.value);
+                  }}
+                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
+                />
               </div>
 
               <div className="space-y-1">
@@ -887,7 +872,7 @@ Toque abaixo para ver fotos e todos os detalhes:
               <div className="text-center pt-1.5">
                 <button
                   type="button"
-                  onClick={() => setAuthMode('login')}
+                  onClick={() => { setAuthMode('login'); setAuthError(''); }}
                   className="text-xs text-[#003366] hover:underline font-bold"
                 >
                   Já tem uma conta? Faça login
@@ -896,33 +881,17 @@ Toque abaixo para ver fotos e todos os detalhes:
             </form>
           )}
 
-          <div className="relative flex py-1 items-center">
+          <div className="relative flex py-2 items-center">
             <div className="flex-grow border-t border-slate-200"></div>
-            <span className="flex-shrink mx-2 text-[8px] font-bold uppercase tracking-widest text-slate-400">Ou use login rápido</span>
+            <span className="flex-shrink mx-2 text-[8px] font-bold uppercase tracking-widest text-slate-400">Acesso via Google</span>
             <div className="flex-grow border-t border-slate-200"></div>
           </div>
 
           <div className="space-y-2.5">
             {/* Native official Google login button container */}
             <div id="google-signin-btn-container" className="w-full flex justify-center py-0.5"></div>
-            
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => handleSocialLogin('Google')}
-                disabled={authLoading}
-                className="bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-[10px] font-bold py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-colors"
-              >
-                <span className="text-red-500 font-extrabold font-sans">G</span> Google (Demo)
-              </button>
-              <button
-                onClick={() => handleSocialLogin('Apple')}
-                disabled={authLoading}
-                className="bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-[10px] font-bold py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-colors"
-              >
-                <span className="text-black font-extrabold font-sans"></span> Apple
-              </button>
-            </div>
           </div>
+
 
           <div className="text-center pt-1">
             <p className="text-[9px] text-slate-400">Balneário Camboriú • Itapema • Região Marítima</p>
@@ -1304,9 +1273,9 @@ Toque abaixo para ver fotos e todos os detalhes:
               {activeTab === 'my-properties' && (
                 <div className="p-4 space-y-4" id="my-properties-tab-view">
                   <div className="flex justify-between items-center">
-                    <div>
-                      <h2 className="font-extrabold text-slate-800 text-lg">Meus Imóveis Cadastrados</h2>
-                      <p className="text-[10px] text-slate-400">Gerencie, exclua e publique captações exclusivas</p>
+                    <div className="min-w-0 pr-2">
+                      <h2 className="font-extrabold text-slate-800 text-sm sm:text-base md:text-lg truncate whitespace-nowrap">Meus Imóveis Cadastrados</h2>
+                      <p className="text-[10px] text-slate-400 truncate">Gerencie, exclua e publique captações exclusivas</p>
                     </div>
                     
                     <button
@@ -1357,7 +1326,6 @@ Toque abaixo para ver fotos e todos os detalhes:
                   </div>
                 </div>
               )}
-
               {activeTab === 'profile' && (
                 <div id="profile-tab-view">
                   <UserProfile
@@ -1366,21 +1334,13 @@ Toque abaixo para ver fotos e todos os detalhes:
                       reloadData(true);
                     }}
                   />
-                  <div className="px-4 pb-12 flex justify-center">
-                    <button
-                      onClick={handleLogout}
-                      className="text-xs font-bold text-slate-400 hover:text-rose-600 flex items-center py-2"
-                    >
-                      Sair da Conta (Simulação)
-                    </button>
-                  </div>
                 </div>
               )}
 
               {activeTab === 'support' && (
                 <SupportForm
                   activeCorretor={activeCorretor}
-                  onBack={() => setActiveTab('home')}
+                  onBack={() => handleTabChange('home')}
                   triggerToast={triggerToast}
                 />
               )}
@@ -1436,7 +1396,6 @@ Toque abaixo para ver fotos e todos os detalhes:
                     ? 'bg-[#FF5A36] text-white shadow-xs'
                     : 'bg-transparent text-slate-900 hover:bg-slate-50'
                 }`}
-                title="Como está hoje"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
                   <line x1="4" y1="5" x2="20" y2="5" />
@@ -1452,7 +1411,6 @@ Toque abaixo para ver fotos e todos os detalhes:
                     ? 'bg-[#FF5A36] text-white shadow-xs'
                     : 'bg-transparent text-slate-900 hover:bg-slate-50'
                 }`}
-                title="Em lista"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
                   <rect x="3" y="3" width="18" height="18" rx="4" />
@@ -1469,7 +1427,6 @@ Toque abaixo para ver fotos e todos os detalhes:
                     ? 'bg-[#FF5A36] text-white shadow-xs'
                     : 'bg-transparent text-slate-900 hover:bg-slate-50'
                 }`}
-                title="No mapa"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
                   <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21" />
@@ -1485,7 +1442,7 @@ Toque abaixo para ver fotos e todos os detalhes:
         {!isAddingProperty && !selectedPropertyId && (
           <div className="absolute bottom-0 left-0 right-0 h-16 bg-white border-t border-slate-100 flex items-center justify-around px-2 z-20">
             <button
-              onClick={() => setActiveTab('home')}
+              onClick={() => handleTabChange('home')}
               className={`flex flex-col items-center gap-1 p-1 ${activeTab === 'home' ? 'text-[#003366]' : 'text-slate-400 hover:text-slate-600'}`}
               id="tab-home"
             >
@@ -1494,7 +1451,7 @@ Toque abaixo para ver fotos e todos os detalhes:
             </button>
 
             <button
-              onClick={() => setActiveTab('my-properties')}
+              onClick={() => handleTabChange('my-properties')}
               className={`flex flex-col items-center gap-1 p-1 ${activeTab === 'my-properties' ? 'text-[#003366]' : 'text-slate-400 hover:text-slate-600'}`}
               id="tab-my-properties"
             >
@@ -1507,6 +1464,7 @@ Toque abaixo para ver fotos e todos os detalhes:
               onClick={() => {
                 setEditingPropertyId(null);
                 setIsAddingProperty(true);
+                setSearchViewMode('como_esta_hoje');
               }}
               className="flex flex-col items-center justify-center -mt-6 bg-[#003366] text-white w-11 h-11 rounded-full shadow-lg hover:bg-[#002244] hover:scale-105 active:scale-95 transition-all z-30"
               id="btn-add-property"
@@ -1516,7 +1474,7 @@ Toque abaixo para ver fotos e todos os detalhes:
             </button>
 
             <button
-              onClick={() => setActiveTab('support')}
+              onClick={() => handleTabChange('support')}
               className={`flex flex-col items-center gap-1 p-1 ${activeTab === 'support' ? 'text-[#003366]' : 'text-slate-400 hover:text-slate-600'}`}
               id="tab-support"
             >
@@ -1525,7 +1483,7 @@ Toque abaixo para ver fotos e todos os detalhes:
             </button>
 
             <button
-              onClick={() => setActiveTab('profile')}
+              onClick={() => handleTabChange('profile')}
               className={`flex flex-col items-center gap-1 p-1 ${activeTab === 'profile' ? 'text-[#003366]' : 'text-slate-400 hover:text-slate-600'}`}
               id="tab-profile"
             >

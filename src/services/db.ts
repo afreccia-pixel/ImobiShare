@@ -314,24 +314,37 @@ export class DbService {
     return { qtdImoveis, qtdLocacoes, qtdVendas };
   }
 
-  // Improve text using the API proxy
-  static async improveDescription(text: string, type: 'venda' | 'locação', titulo: string, localizacao: string): Promise<string> {
+  // Improve text using the AI proxy
+  static async improveDescription(params: {
+    text: string;
+    type: 'venda' | 'locação';
+    tipoImovel?: string;
+    titulo?: string;
+    localizacao?: string;
+    nomeEdificio?: string;
+    dormitorios?: number;
+    vagas?: number;
+    banheiros?: number;
+    metragem?: number;
+    areaTotal?: number;
+    valor?: number;
+  }): Promise<string> {
     try {
       const response = await fetch('/api/ai/improve-description', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ text, type, titulo, localizacao }),
+        body: JSON.stringify(params),
       });
       if (!response.ok) {
         throw new Error('Erro na resposta do servidor API');
       }
       const data = await response.json();
-      return data.text || text;
+      return data.text || params.text;
     } catch (error) {
       console.error('Failed to improve description via backend:', error);
-      return `Maravilhosa oportunidade de ${type} no edifício ${titulo || 'selecionado'}, localizado em ${localizacao || 'ótimo bairro'}. ${text}`;
+      return params.text ? `${params.text}\n\nExcelente oportunidade em ${params.localizacao || 'local privilegiado'}.` : `Excelente imóvel em ${params.localizacao || 'ótimo bairro'}.`;
     }
   }
 }

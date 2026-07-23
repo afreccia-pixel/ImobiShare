@@ -24,9 +24,11 @@ export interface Imovel {
   descricao: string;
   valor: number;
   tipo: 'venda' | 'locação';
+  tipoImovel?: 'Apartamento' | 'Casa' | 'Casa em condomínio' | 'Cobertura' | 'Terreno' | 'Comercial' | 'Outro';
   cidade: string;
   bairro: string;
   localizacao: string; // endereço completo
+  cep?: string;
   nomeEdificio?: string;
   nomeProprietario: string; // só visível para o corretor proprietário
   telefoneProprietario: string; // só visível para o corretor proprietário
@@ -38,7 +40,9 @@ export interface Imovel {
   corretorNome: string; // Nome cacheado para facilidade de exibição
   dormitorios?: number;
   vagas?: number;
-  metragem?: number;
+  banheiros?: number;
+  metragem?: number; // Metragem privativa m²
+  areaTotal?: number; // Área total m²
   integrado?: boolean;
   integracaoOrigem?: string;
   latitude?: number;

@@ -78,6 +78,7 @@ export class ServerDb {
         descricao TEXT,
         valor NUMERIC NOT NULL,
         tipo VARCHAR(50) NOT NULL,
+        tipo_imovel VARCHAR(100),
         cidade VARCHAR(100) NOT NULL,
         bairro VARCHAR(100) NOT NULL,
         localizacao TEXT,
@@ -92,13 +93,21 @@ export class ServerDb {
         corretor_nome VARCHAR(255),
         dormitorios INTEGER,
         vagas INTEGER,
+        banheiros INTEGER,
         metragem NUMERIC,
+        area_total NUMERIC,
         integrado BOOLEAN DEFAULT false,
         integracao_origem VARCHAR(100),
         latitude NUMERIC,
         longitude NUMERIC
       )
     `);
+
+    // Ensure columns exist for existing tables
+    await this.pool.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS tipo_imovel VARCHAR(100);`);
+    await this.pool.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS banheiros INTEGER;`);
+    await this.pool.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS area_total NUMERIC;`);
+    await this.pool.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS cep VARCHAR(20);`);
 
     // Favorites table
     await this.pool.query(`
@@ -308,7 +317,11 @@ export class ServerDb {
         corretorNome: r.corretor_nome,
         dormitorios: r.dormitorios,
         vagas: r.vagas,
-        metragem: parseFloat(r.metragem),
+        banheiros: r.banheiros,
+        metragem: r.metragem ? parseFloat(r.metragem) : undefined,
+        areaTotal: r.area_total ? parseFloat(r.area_total) : undefined,
+        tipoImovel: r.tipo_imovel,
+        cep: r.cep,
         integrado: r.integrado,
         integracaoOrigem: r.integracao_origem,
         latitude: r.latitude ? parseFloat(r.latitude) : undefined,
@@ -332,14 +345,15 @@ export class ServerDb {
             localizacao = $8, nome_edificio = $9, nome_proprietario = $10, telefone_proprietario = $11, 
             favorito = $12, compartilhar = $13, fotos = $14, data_cadastro = $15, corretor_id = $16, 
             corretor_nome = $17, dormitorios = $18, vagas = $19, metragem = $20, integrado = $21, 
-            integracao_origem = $22, latitude = $23, longitude = $24
+            integracao_origem = $22, latitude = $23, longitude = $24, tipo_imovel = $25, banheiros = $26, area_total = $27, cep = $28
           WHERE id = $1
         `, [
           prop.id, prop.titulo, prop.descricao, prop.valor, prop.tipo, prop.cidade, prop.bairro, 
           prop.localizacao, prop.nomeEdificio || '', prop.nomeProprietario, prop.telefoneProprietario, 
           prop.favorito || false, prop.compartilhar !== false, fotosStr, prop.dataCadastro, 
           prop.corretorId, prop.corretorNome, prop.dormitorios || 0, prop.vagas || 0, prop.metragem || 0, 
-          prop.integrado || false, prop.integracaoOrigem || '', prop.latitude || null, prop.longitude || null
+          prop.integrado || false, prop.integracaoOrigem || '', prop.latitude || null, prop.longitude || null,
+          prop.tipoImovel || null, prop.banheiros || null, prop.areaTotal || null, prop.cep || null
         ]);
       } else {
         // Insert
@@ -348,14 +362,15 @@ export class ServerDb {
             id, titulo, descricao, valor, tipo, cidade, bairro, localizacao, nome_edificio, 
             nome_proprietario, telefone_proprietario, favorito, compartilhar, fotos, 
             data_cadastro, corretor_id, corretor_nome, dormitorios, vagas, metragem, 
-            integrado, integracao_origem, latitude, longitude
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+            integrado, integracao_origem, latitude, longitude, tipo_imovel, banheiros, area_total, cep
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
         `, [
           prop.id, prop.titulo, prop.descricao, prop.valor, prop.tipo, prop.cidade, prop.bairro, 
           prop.localizacao, prop.nomeEdificio || '', prop.nomeProprietario, prop.telefoneProprietario, 
           prop.favorito || false, prop.compartilhar !== false, fotosStr, prop.dataCadastro, 
           prop.corretorId, prop.corretorNome, prop.dormitorios || 0, prop.vagas || 0, prop.metragem || 0, 
-          prop.integrado || false, prop.integracaoOrigem || '', prop.latitude || null, prop.longitude || null
+          prop.integrado || false, prop.integracaoOrigem || '', prop.latitude || null, prop.longitude || null,
+          prop.tipoImovel || null, prop.banheiros || null, prop.areaTotal || null, prop.cep || null
         ]);
       }
       return prop;

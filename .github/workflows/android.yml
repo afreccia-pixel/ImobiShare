@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       HAS_SIGNING: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
-      
+
     steps:
       - uses: actions/checkout@v4
 
@@ -52,36 +52,33 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y imagemagick
 
-      - name: Regenerate main splash
-        run: |
-          sudo apt-get update && sudo apt-get install -y imagemagick
-          echo "🎨 Gerando splash principal..."
-          convert -size 1024x1024 xc:"#2196F3" \
-            -pointsize 120 -fill white -gravity center -annotate +0+0 "iMobi" \
-            android/app/src/main/res/drawable/splash.png
-          echo "✅ Splash principal recriado!"
-
       - name: Generate splash screens
         run: |
           echo "🗑️ Deletando splash antigos..."
           find android/app/src/main/res/drawable-* -name "splash.png" -delete 2>/dev/null || true
 
-          echo "🎨 Gerando imagem base do splash..."
-          convert -size 1024x1024 xc:"#2196F3" \
-            -pointsize 120 -fill white -gravity center -annotate +0+0 "iMobi" \
-            /tmp/splash.png
+          echo "🎨 Preparando imagem base do splash..."
+          if [ -f "assets/splash.png" ]; then
+            echo "📷 Usando imagem personalizada: assets/splash.png"
+            cp assets/splash.png /tmp/splash.png
+          else
+            echo "🎨 Nenhuma imagem personalizada encontrada, gerando placeholder..."
+            convert -size 1024x1024 xc:"#2196F3" \
+              -pointsize 120 -fill white -gravity center -annotate +0+0 "iMobi" \
+              /tmp/splash.png
+          fi
 
-          echo "📱 Convertendo splash para todas densidades..."
-          convert /tmp/splash.png -resize 320x480 android/app/src/main/res/drawable-port-mdpi/splash.png
-          convert /tmp/splash.png -resize 480x800 android/app/src/main/res/drawable-port-hdpi/splash.png
-          convert /tmp/splash.png -resize 800x1280 android/app/src/main/res/drawable-port-xhdpi/splash.png
-          convert /tmp/splash.png -resize 1080x1920 android/app/src/main/res/drawable-port-xxhdpi/splash.png
-          convert /tmp/splash.png -resize 1440x2560 android/app/src/main/res/drawable-port-xxxhdpi/splash.png
-          convert /tmp/splash.png -resize 480x320 android/app/src/main/res/drawable-land-mdpi/splash.png
-          convert /tmp/splash.png -resize 800x480 android/app/src/main/res/drawable-land-hdpi/splash.png
-          convert /tmp/splash.png -resize 1280x800 android/app/src/main/res/drawable-land-xhdpi/splash.png
-          convert /tmp/splash.png -resize 1920x1080 android/app/src/main/res/drawable-land-xxhdpi/splash.png
-          convert /tmp/splash.png -resize 2560x1440 android/app/src/main/res/drawable-land-xxxhdpi/splash.png
+          echo "📱 Gerando splash para todas as densidades e orientações..."
+          declare -A PORT_SIZES=( [mdpi]="320x480" [hdpi]="480x800" [xhdpi]="800x1280" [xxhdpi]="1080x1920" [xxxhdpi]="1440x2560" )
+          declare -A LAND_SIZES=( [mdpi]="480x320" [hdpi]="800x480" [xhdpi]="1280x800" [xxhdpi]="1920x1080" [xxxhdpi]="2560x1440" )
+
+          for density in "${!PORT_SIZES[@]}"; do
+            convert /tmp/splash.png -resize "${PORT_SIZES[$density]}" "android/app/src/main/res/drawable-port-$density/splash.png"
+            convert /tmp/splash.png -resize "${LAND_SIZES[$density]}" "android/app/src/main/res/drawable-land-$density/splash.png"
+          done
+
+          echo "🎨 Atualizando splash principal (drawable/splash.png)..."
+          cp /tmp/splash.png android/app/src/main/res/drawable/splash.png
 
           echo "✅ Splash screens gerados com sucesso!"
           ls -la android/app/src/main/res/drawable-*/splash.png
@@ -94,31 +91,28 @@ jobs:
           echo "📁 Criando pastas..."
           mkdir -p android/app/src/main/res/mipmap-{mdpi,hdpi,xhdpi,xxhdpi,xxxhdpi}
 
-          echo "🎨 Gerando imagem base..."
-          convert -size 512x512 xc:"#2196F3" \
-            -pointsize 80 -fill white -gravity center -annotate +0+0 "iMobi" \
-            /tmp/ic_launcher.png
+          echo "🎨 Preparando imagem base do ícone..."
+          if [ -f "assets/icon.png" ]; then
+            echo "📷 Usando imagem personalizada: assets/icon.png"
+            cp assets/icon.png /tmp/ic_launcher.png
+          else
+            echo "🎨 Nenhuma imagem personalizada encontrada, gerando placeholder..."
+            convert -size 512x512 xc:"#2196F3" \
+              -pointsize 80 -fill white -gravity center -annotate +0+0 "iMobi" \
+              /tmp/ic_launcher.png
+          fi
 
-          echo "📱 Convertendo para todas densidades..."
-          convert /tmp/ic_launcher.png -resize 48x48 android/app/src/main/res/mipmap-mdpi/ic_launcher.png
-          convert /tmp/ic_launcher.png -resize 48x48 android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png
-          convert /tmp/ic_launcher.png -resize 72x72 android/app/src/main/res/mipmap-hdpi/ic_launcher.png
-          convert /tmp/ic_launcher.png -resize 72x72 android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png
-          convert /tmp/ic_launcher.png -resize 96x96 android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
-          convert /tmp/ic_launcher.png -resize 96x96 android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png
-          convert /tmp/ic_launcher.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-          convert /tmp/ic_launcher.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png
-          convert /tmp/ic_launcher.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-          convert /tmp/ic_launcher.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
-          convert /tmp/ic_launcher.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-          convert /tmp/ic_launcher.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
-          convert /tmp/ic_launcher.png -resize 48x48 android/app/src/main/res/mipmap-mdpi/ic_launcher_foreground.png
-          convert /tmp/ic_launcher.png -resize 72x72 android/app/src/main/res/mipmap-hdpi/ic_launcher_foreground.png
-          convert /tmp/ic_launcher.png -resize 96x96 android/app/src/main/res/mipmap-xhdpi/ic_launcher_foreground.png
-          convert /tmp/ic_launcher.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png
-          convert /tmp/ic_launcher.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png
+          echo "📱 Gerando ícones para todas as densidades e variantes..."
+          declare -A SIZES=( [mdpi]=48 [hdpi]=72 [xhdpi]=96 [xxhdpi]=144 [xxxhdpi]=192 )
 
-          echo "✅ Ícones gerados com sucesso!"
+          for density in "${!SIZES[@]}"; do
+            size=${SIZES[$density]}
+            dir="android/app/src/main/res/mipmap-$density"
+            for name in ic_launcher ic_launcher_round ic_launcher_foreground; do
+              convert /tmp/ic_launcher.png -resize "${size}x${size}" "$dir/$name.png"
+            done
+          done
+
           echo "✅ Ícones gerados com sucesso!"
           ls -la android/app/src/main/res/mipmap-mdpi/ic_launcher*.png
 
@@ -126,7 +120,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           validate-wrappers: false
-          
+
       - name: Fix corrupted Gradle Wrapper jar
         working-directory: android
         run: |
@@ -134,7 +128,7 @@ jobs:
           echo "Baixando gradle-wrapper.jar para a versão $GRADLE_VERSION"
           curl -L -o gradle/wrapper/gradle-wrapper.jar \
             "https://raw.githubusercontent.com/gradle/gradle/v${GRADLE_VERSION}/gradle/wrapper/gradle-wrapper.jar"
-          file gradle/wrapper/gradle-wrapper.jar       
+          file gradle/wrapper/gradle-wrapper.jar
 
       - name: Install Android Platform 36 & Build Tools 36
         run: |
@@ -142,75 +136,3 @@ jobs:
           echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
 
       - name: Grant Execute Permission to Gradlew
-        run: chmod +x android/gradlew
-
-      - name: Decode Keystore
-        if: env.HAS_SIGNING == 'true'
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        run: |
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
-          echo "✅ Keystore decodificada com sucesso!"
-
-      - name: Build Android Release (APK & AAB)
-        working-directory: android
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew clean assembleRelease bundleRelease --stacktrace
-
-      - name: Collect Android Artifacts
-        run: |
-          mkdir -p build-artifacts
-          APK_SRC=$(find android/app/build/outputs/apk/release/ -name "*.apk" | head -n 1)
-          if [ -n "$APK_SRC" ]; then
-            cp "$APK_SRC" build-artifacts/app-release.apk
-            echo "Successfully collected APK: $APK_SRC"
-          else
-            APK_FALLBACK=$(find android/app/build/outputs/ -name "*.apk" | head -n 1)
-            if [ -n "$APK_FALLBACK" ]; then
-              cp "$APK_FALLBACK" build-artifacts/app-release.apk
-              echo "Collected fallback APK: $APK_FALLBACK"
-            else
-              echo "Error: No release APK found!"
-              exit 1
-            fi
-          fi
-          AAB_SRC=$(find android/app/build/outputs/bundle/release/ -name "*.aab" | head -n 1)
-          if [ -n "$AAB_SRC" ]; then
-            cp "$AAB_SRC" build-artifacts/app-release.aab
-            echo "Successfully collected AAB: $AAB_SRC"
-          else
-            AAB_FALLBACK=$(find android/app/build/outputs/ -name "*.aab" | head -n 1)
-            if [ -n "$AAB_FALLBACK" ]; then
-              cp "$AAB_FALLBACK" build-artifacts/app-release.aab
-              echo "Collected fallback AAB: $AAB_FALLBACK"
-            else
-              echo "Error: No release AAB found!"
-              exit 1
-            fi
-          fi
-
-      - name: Upload Android APK Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-release-apk
-          path: build-artifacts/app-release.apk
-          if-no-files-found: error
-
-      - name: Upload Android AAB Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-release-aab
-          path: build-artifacts/app-release.aab
-          if-no-files-found: error
-
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            build-artifacts/app-release.apk
-            build-artifacts/app-release.aab
