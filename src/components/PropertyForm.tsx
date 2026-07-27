@@ -7,6 +7,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Imovel } from '../types';
 import { DbService } from '../services/db';
 import { Sparkles, MapPin, Search, Plus, Trash2, Check, ArrowLeft, Image as ImageIcon, Upload, Building2, Bed, Car, Maximize, Bath } from 'lucide-react';
+import { getValidImage, handleImageError } from '../utils/imageUtils';
 
 interface PropertyFormProps {
   imovelId?: string | null; // If editing
@@ -47,8 +48,9 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
 
   // 3. Tipo de imóvel, Negócio e Valor
   const [tipoImovel, setTipoImovel] = useState<PropertyTypeOption | ''>('Apartamento');
-  const [tipo, setTipo] = useState<'venda' | 'locação'>('venda');
+  const [tipo, setTipo] = useState<'venda' | 'locação' | 'ambos'>('venda');
   const [valor, setValor] = useState<number | ''>('');
+  const [valorLocacao, setValorLocacao] = useState<number | ''>('');
 
   // 4. Área Total
   const [areaTotal, setAreaTotal] = useState<number | ''>('');
@@ -85,6 +87,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
   // Loading & error states
   const [aiLoading, setAiLoading] = useState(false);
   const [autocompleteLoading, setAutocompleteLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   // Conditional mandatory status check: Terreno or Comercial makes bedrooms, building name and garage optional
@@ -103,6 +106,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         setTipoImovel((found.tipoImovel as PropertyTypeOption) || 'Apartamento');
         setTipo(found.tipo || 'venda');
         setValor(found.valor || '');
+        setValorLocacao(found.valorLocacao || '');
         setAreaTotal(found.areaTotal ?? found.metragem ?? '');
         setDormitorios(found.dormitorios ?? '');
         setVagas(found.vagas ?? '');
@@ -215,7 +219,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         valor: valor !== '' ? Number(valor) : undefined,
       });
 
-      setDescricao(improved);
+      setDescricao(improved.replace(/\*/g, ''));
     } catch (err) {
       console.error(err);
       setErrorMsg('Erro ao conectar com a IA. Tente novamente.');
@@ -328,9 +332,26 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
       return;
     }
 
-    if (!valor || Number(valor) <= 0) {
-      setErrorMsg('Valor do imóvel é obrigatório e deve ser maior que zero.');
-      return;
+    // Valor validation based on business type
+    if (tipo === 'venda') {
+      if (!valor || Number(valor) <= 0) {
+        setErrorMsg('Valor de venda é obrigatório e deve ser maior que zero.');
+        return;
+      }
+    } else if (tipo === 'locação') {
+      if (!valorLocacao || Number(valorLocacao) <= 0) {
+        setErrorMsg('Valor da locação / aluguel é obrigatório e deve ser maior que zero.');
+        return;
+      }
+    } else if (tipo === 'ambos') {
+      if (!valor || Number(valor) <= 0) {
+        setErrorMsg('Informe o Valor de Venda para este imóvel.');
+        return;
+      }
+      if (!valorLocacao || Number(valorLocacao) <= 0) {
+        setErrorMsg('Informe o Valor de Locação para este imóvel.');
+        return;
+      }
     }
 
     // 4. Área Total validation
@@ -381,31 +402,36 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
       return;
     }
 
-    const saved = DbService.saveImovel({
-      id: imovelId || undefined,
-      titulo,
-      descricao,
-      valor: Number(valor),
-      tipo,
-      tipoImovel: tipoImovel as any,
-      cidade,
-      bairro: bairro || 'Centro',
-      localizacao,
-      cep: cep.trim() || undefined,
-      nomeEdificio: nomeEdificio.trim() || undefined,
-      nomeProprietario: nomeProprietario.trim(),
-      telefoneProprietario: telefoneProprietario.trim(),
-      favorito,
-      compartilhar,
-      fotos,
-      dormitorios: dormitorios !== '' ? Number(dormitorios) : undefined,
-      vagas: vagas !== '' ? Number(vagas) : undefined,
-      banheiros: banheiros !== '' ? Number(banheiros) : undefined,
-      metragem: metragem !== '' ? Number(metragem) : undefined,
-      areaTotal: areaTotal !== '' ? Number(areaTotal) : undefined,
-    });
+    setIsSaving(true);
 
-    onSave(saved);
+    setTimeout(() => {
+      const saved = DbService.saveImovel({
+        id: imovelId || undefined,
+        titulo,
+        descricao,
+        valor: valor !== '' ? Number(valor) : (valorLocacao !== '' ? Number(valorLocacao) : 0),
+        valorLocacao: (tipo === 'locação' || tipo === 'ambos') && valorLocacao !== '' ? Number(valorLocacao) : undefined,
+        tipo,
+        tipoImovel: tipoImovel as any,
+        cidade,
+        bairro: bairro || 'Centro',
+        localizacao,
+        cep: cep.trim() || undefined,
+        nomeEdificio: nomeEdificio.trim() || undefined,
+        nomeProprietario: nomeProprietario.trim(),
+        telefoneProprietario: telefoneProprietario.trim(),
+        favorito,
+        compartilhar,
+        fotos,
+        dormitorios: dormitorios !== '' ? Number(dormitorios) : undefined,
+        vagas: vagas !== '' ? Number(vagas) : undefined,
+        banheiros: banheiros !== '' ? Number(banheiros) : undefined,
+        metragem: metragem !== '' ? Number(metragem) : undefined,
+        areaTotal: areaTotal !== '' ? Number(areaTotal) : undefined,
+      });
+
+      onSave(saved);
+    }, 400);
   };
 
   return (
@@ -445,7 +471,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
           <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
             {fotos.map((foto, index) => (
               <div key={index} className="relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 bg-slate-100 border border-slate-200 shadow-2xs">
-                <img src={foto} alt={`Foto ${index + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                <img src={getValidImage(foto)} alt={`Foto ${index + 1}`} onError={handleImageError} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                 <button
                   type="button"
                   onClick={() => handleRemovePhoto(index)}
@@ -574,134 +600,214 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
               </select>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <span className="text-[10px] text-slate-500 font-medium block mb-0.5 whitespace-nowrap">Negócio:</span>
-                <div className="grid grid-cols-2 gap-1 bg-slate-100 p-0.5 rounded-lg">
-                  <button
-                    type="button"
-                    onClick={() => setTipo('venda')}
-                    className={`py-1 text-xs font-bold rounded-md transition-all ${
-                      tipo === 'venda' ? 'bg-white text-[#003366] shadow-2xs' : 'text-slate-500'
-                    }`}
-                  >
-                    Venda
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTipo('locação')}
-                    className={`py-1 text-xs font-bold rounded-md transition-all ${
-                      tipo === 'locação' ? 'bg-white text-emerald-800 shadow-2xs' : 'text-slate-500'
-                    }`}
-                  >
-                    Locação
-                  </button>
-                </div>
+            <div>
+              <span className="text-[10px] text-slate-500 font-medium block mb-1 whitespace-nowrap">Modalidade de Negócio:</span>
+              <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setTipo('venda')}
+                  className={`py-1.5 text-xs font-bold rounded-lg transition-all ${
+                    tipo === 'venda' ? 'bg-white text-[#003366] shadow-2xs' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  Venda
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTipo('locação')}
+                  className={`py-1.5 text-xs font-bold rounded-lg transition-all ${
+                    tipo === 'locação' ? 'bg-white text-emerald-800 shadow-2xs' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  Locação
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTipo('ambos')}
+                  className={`py-1.5 text-xs font-bold rounded-lg transition-all ${
+                    tipo === 'ambos' ? 'bg-white text-indigo-900 shadow-2xs' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  Venda & Locação
+                </button>
               </div>
+            </div>
 
-              <div>
-                <span className="text-[10px] text-slate-500 font-medium block mb-0.5 whitespace-nowrap">
-                  Valor {tipo === 'locação' ? '(mês)' : ''} <span className="text-rose-500">*</span>
-                </span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="R$ Valor"
-                  value={formatNumberWithSeparators(valor)}
-                  onChange={(e) => {
-                    const rawValue = e.target.value;
-                    const cleanValue = rawValue.replace(/\D/g, '');
-                    setValor(cleanValue === '' ? '' : Number(cleanValue));
-                  }}
-                  className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] font-bold text-[#003366]"
-                />
-              </div>
+            {/* Price Inputs */}
+            <div className="pt-1">
+              {tipo === 'venda' && (
+                <div>
+                  <span className="text-[10px] text-slate-500 font-medium block mb-0.5 whitespace-nowrap">
+                    Valor de Venda (R$) <span className="text-rose-500">*</span>
+                  </span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="R$ 0"
+                    value={formatNumberWithSeparators(valor)}
+                    onChange={(e) => {
+                      const cleanValue = e.target.value.replace(/\D/g, '');
+                      setValor(cleanValue === '' ? '' : Number(cleanValue));
+                    }}
+                    className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] font-bold text-[#003366]"
+                  />
+                </div>
+              )}
+
+              {tipo === 'locação' && (
+                <div>
+                  <span className="text-[10px] text-slate-500 font-medium block mb-0.5 whitespace-nowrap">
+                    Valor de Locação / Mês (R$) <span className="text-rose-500">*</span>
+                  </span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="R$ 0 /mês"
+                    value={formatNumberWithSeparators(valorLocacao)}
+                    onChange={(e) => {
+                      const cleanValue = e.target.value.replace(/\D/g, '');
+                      setValorLocacao(cleanValue === '' ? '' : Number(cleanValue));
+                    }}
+                    className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-emerald-700 font-bold text-emerald-800"
+                  />
+                </div>
+              )}
+
+              {tipo === 'ambos' && (
+                <div className="grid grid-cols-2 gap-2 bg-indigo-50/40 p-2 rounded-xl border border-indigo-100">
+                  <div>
+                    <span className="text-[10px] text-slate-600 font-bold block mb-0.5 whitespace-nowrap">
+                      Valor Venda (R$) <span className="text-rose-500">*</span>
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="R$ Venda"
+                      value={formatNumberWithSeparators(valor)}
+                      onChange={(e) => {
+                        const cleanValue = e.target.value.replace(/\D/g, '');
+                        setValor(cleanValue === '' ? '' : Number(cleanValue));
+                      }}
+                      className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] font-bold text-[#003366] bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-600 font-bold block mb-0.5 whitespace-nowrap">
+                      Valor Locação (R$/mês) <span className="text-rose-500">*</span>
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="R$ Locação/mês"
+                      value={formatNumberWithSeparators(valorLocacao)}
+                      onChange={(e) => {
+                        const cleanValue = e.target.value.replace(/\D/g, '');
+                        setValorLocacao(cleanValue === '' ? '' : Number(cleanValue));
+                      }}
+                      className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-emerald-700 font-bold text-emerald-800 bg-white"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        {/* 4. Especificações do Imóvel (Metragens, Quartos, Vagas, Banheiros) */}
-        <div className="bg-white p-3 rounded-lg border border-slate-100 space-y-2">
-          <div className="flex items-center justify-between">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+        {/* 4. Especificações do Imóvel (Quartos, BWC, Vagas, Area Priv., Area Total) */}
+        <div className="bg-white p-3 sm:p-3.5 rounded-xl border border-slate-200/80 space-y-2.5">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-700">
               4. Especificações do Imóvel <span className="text-rose-500">*</span>
             </label>
             {isLandOrCommercial && (
-              <span className="text-[9px] text-amber-600 font-semibold bg-amber-50 px-1.5 py-0.5 rounded-md whitespace-nowrap">
+              <span className="text-[9px] text-amber-700 font-semibold bg-amber-50 px-2 py-0.5 rounded-md">
                 Opcional p/ {tipoImovel}
               </span>
             )}
           </div>
 
-          <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
-            <div>
-              <span className="text-[10px] font-semibold text-slate-600 block mb-0.5 whitespace-nowrap overflow-hidden text-ellipsis" title="Área Total (m²)">
-                Área Total <span className="text-rose-500">*</span>
-              </span>
-              <input
-                type="number"
-                placeholder="m²"
-                value={areaTotal}
-                onChange={(e) => setAreaTotal(e.target.value === '' ? '' : Number(e.target.value))}
-                className="w-full text-xs px-1.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] font-medium text-center"
-                min="0"
-              />
+          <div className="space-y-2.5">
+            {/* Linha 1: Quartos, BWC, Vagas */}
+            <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
+              <div>
+                <label className="text-[10px] font-semibold text-slate-600 block mb-1 whitespace-nowrap">
+                  Quartos {!isLandOrCommercial && <span className="text-rose-500">*</span>}
+                </label>
+                <input
+                  type="number"
+                  placeholder="Qtd"
+                  value={dormitorios}
+                  onChange={(e) => setDormitorios(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold text-center"
+                  min="0"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-semibold text-slate-600 block mb-1 whitespace-nowrap">
+                  BWC <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  placeholder="Qtd"
+                  value={banheiros}
+                  onChange={(e) => setBanheiros(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold text-center"
+                  min="0"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-semibold text-slate-600 block mb-1 whitespace-nowrap">
+                  Vagas {!isLandOrCommercial && <span className="text-rose-500">*</span>}
+                </label>
+                <input
+                  type="number"
+                  placeholder="Qtd"
+                  value={vagas}
+                  onChange={(e) => setVagas(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold text-center"
+                  min="0"
+                />
+              </div>
             </div>
 
-            <div>
-              <span className="text-[10px] font-semibold text-slate-600 block mb-0.5 whitespace-nowrap overflow-hidden text-ellipsis" title="Metragem Privativa (m²)">
-                Privativa <span className="text-rose-500">*</span>
-              </span>
-              <input
-                type="number"
-                placeholder="m²"
-                value={metragem}
-                onChange={(e) => setMetragem(e.target.value === '' ? '' : Number(e.target.value))}
-                className="w-full text-xs px-1.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] font-medium text-center"
-                min="0"
-              />
-            </div>
+            {/* Linha 2: Area Priv. e Area Total */}
+            <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
+              <div>
+                <label className="text-[10px] font-semibold text-slate-600 block mb-1 whitespace-nowrap">
+                  Area Priv. <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    placeholder="m²"
+                    value={metragem}
+                    onChange={(e) => setMetragem(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full text-xs px-2 py-1.5 pr-7 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold text-center"
+                    min="0"
+                  />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-semibold pointer-events-none">m²</span>
+                </div>
+              </div>
 
-            <div>
-              <span className="text-[10px] font-semibold text-slate-600 block mb-0.5 whitespace-nowrap overflow-hidden text-ellipsis" title="Quartos / Dormitórios">
-                Quartos {!isLandOrCommercial && <span className="text-rose-500">*</span>}
-              </span>
-              <input
-                type="number"
-                placeholder="Qtd"
-                value={dormitorios}
-                onChange={(e) => setDormitorios(e.target.value === '' ? '' : Number(e.target.value))}
-                className="w-full text-xs px-1.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] font-medium text-center"
-                min="0"
-              />
-            </div>
-
-            <div>
-              <span className="text-[10px] font-semibold text-slate-600 block mb-0.5 whitespace-nowrap overflow-hidden text-ellipsis" title="Vagas de Garagem">
-                Vagas {!isLandOrCommercial && <span className="text-rose-500">*</span>}
-              </span>
-              <input
-                type="number"
-                placeholder="Qtd"
-                value={vagas}
-                onChange={(e) => setVagas(e.target.value === '' ? '' : Number(e.target.value))}
-                className="w-full text-xs px-1.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] font-medium text-center"
-                min="0"
-              />
-            </div>
-
-            <div>
-              <span className="text-[10px] font-semibold text-slate-600 block mb-0.5 whitespace-nowrap overflow-hidden text-ellipsis" title="Banheiros">
-                Banheiros <span className="text-rose-500">*</span>
-              </span>
-              <input
-                type="number"
-                placeholder="Qtd"
-                value={banheiros}
-                onChange={(e) => setBanheiros(e.target.value === '' ? '' : Number(e.target.value))}
-                className="w-full text-xs px-1.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] font-medium text-center"
-                min="0"
-              />
+              <div>
+                <label className="text-[10px] font-semibold text-slate-600 block mb-1 whitespace-nowrap">
+                  Area Total <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    placeholder="m²"
+                    value={areaTotal}
+                    onChange={(e) => setAreaTotal(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full text-xs px-2 py-1.5 pr-7 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold text-center"
+                    min="0"
+                  />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-semibold pointer-events-none">m²</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -843,9 +949,14 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         {/* Submit Button */}
         <button
           type="submit"
-          className="w-full bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold py-3 px-4 rounded-xl shadow-md transition-all active:scale-[0.98] uppercase tracking-wider text-[11px]"
+          disabled={isSaving}
+          className="w-full bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold py-3.5 px-4 rounded-xl shadow-md transition-all active:scale-[0.98] uppercase tracking-wider text-[11px] flex items-center justify-center min-h-[44px]"
         >
-          {imovelId ? 'Atualizar Imóvel' : 'Salvar Imóvel'}
+          {isSaving ? (
+            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+          ) : (
+            imovelId ? 'Atualizar Imóvel' : 'Salvar Imóvel'
+          )}
         </button>
 
       </form>

@@ -22,8 +22,9 @@ export interface Imovel {
   id: string;
   titulo: string;
   descricao: string;
-  valor: number;
-  tipo: 'venda' | 'locação';
+  valor: number; // Valor de Venda (ou principal)
+  valorLocacao?: number; // Valor de Locação / Aluguel por mês
+  tipo: 'venda' | 'locação' | 'ambos';
   tipoImovel?: 'Apartamento' | 'Casa' | 'Casa em condomínio' | 'Cobertura' | 'Terreno' | 'Comercial' | 'Outro';
   cidade: string;
   bairro: string;

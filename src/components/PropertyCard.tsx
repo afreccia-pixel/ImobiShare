@@ -6,7 +6,8 @@
 import React from 'react';
 import { Imovel, Corretor } from '../types';
 import { motion } from 'motion/react';
-import { Heart, Share2, Edit2, Copy, Trash2, MapPin, EyeOff, Eye, CheckCircle2, Bed, Car, Maximize } from 'lucide-react';
+import { Heart, Share2, Edit2, Copy, Trash2, MapPin, EyeOff, Eye, CheckCircle2, Bed, Car, Maximize, Bath } from 'lucide-react';
+import { getValidImage, handleImageError } from '../utils/imageUtils';
 
 interface PropertyCardProps {
   key?: string | number;
@@ -67,19 +68,20 @@ export function PropertyCard({
       id={`property-card-${imovel.id}`}
     >
       {/* Property Image Container */}
-      <div className="relative w-20 h-20 sm:w-24 sm:h-24 flex-shrink-0 rounded-lg overflow-hidden bg-slate-50">
+      <div className="relative w-20 h-20 sm:w-24 sm:h-24 flex-shrink-0 rounded-lg overflow-hidden bg-slate-100">
         <img
-          src={imovel.fotos[0] || 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=300&auto=format&fit=crop&q=80'}
-          alt={imovel.titulo}
+          src={getValidImage(imovel.fotos?.[0])}
+          alt=""
+          onError={handleImageError}
           referrerPolicy="no-referrer"
           className="w-full h-full object-cover"
         />
         {/* Buy / Rent Badge & Integrated Badge */}
         <div className="absolute top-1 left-1 flex flex-col gap-0.5">
           <span className={`text-[7px] font-black uppercase tracking-wider text-white px-1 py-0.5 rounded-sm shadow-xs ${
-            imovel.tipo === 'venda' ? 'bg-[#003366]' : 'bg-emerald-700'
+            imovel.tipo === 'venda' ? 'bg-[#003366]' : imovel.tipo === 'locação' ? 'bg-emerald-700' : 'bg-indigo-900'
           }`}>
-            {imovel.tipo === 'venda' ? 'Comprar' : 'Alugar'}
+            {imovel.tipo === 'venda' ? 'Comprar' : imovel.tipo === 'locação' ? 'Alugar' : 'Venda & Aluguel'}
           </span>
           {imovel.integrado && (
             <span className="text-[7px] font-black uppercase tracking-wider text-slate-900 bg-amber-300 px-1 py-0.5 rounded-sm shadow-xs" title="Imóvel importado via integração">
@@ -137,6 +139,11 @@ export function PropertyCard({
             </span>
             <span className="text-slate-300">•</span>
             <span className="flex items-center gap-0.5">
+              <Bath size={10} className="text-slate-400 flex-shrink-0" />
+              <span>{imovel.banheiros ?? 0} BWC</span>
+            </span>
+            <span className="text-slate-300">•</span>
+            <span className="flex items-center gap-0.5">
               <Car size={10} className="text-slate-400 flex-shrink-0" />
               <span>{imovel.vagas ?? 0} {imovel.vagas === 1 ? 'vaga' : 'vagas'}</span>
             </span>
@@ -151,10 +158,25 @@ export function PropertyCard({
         {/* Bottom Row: Price & Actions */}
         <div className="flex items-center justify-between border-t border-slate-100/60 pt-1 mt-1">
           <div className="flex flex-col">
-            <span className="font-extrabold text-[#003366] text-xs sm:text-sm leading-tight">
-              {formatPrice(imovel.valor)}
-              {imovel.tipo === 'locação' && <span className="text-[9px] font-normal text-slate-500"> /mês</span>}
-            </span>
+            {imovel.tipo === 'ambos' ? (
+              <div className="flex flex-col">
+                <span className="font-extrabold text-[#003366] text-xs leading-tight">
+                  {formatPrice(imovel.valor)} <span className="text-[9px] font-semibold text-slate-400">(Venda)</span>
+                </span>
+                <span className="font-extrabold text-emerald-800 text-[11px] leading-tight">
+                  {formatPrice(imovel.valorLocacao || 0)}<span className="text-[8px] font-normal text-emerald-600">/mês (Locação)</span>
+                </span>
+              </div>
+            ) : imovel.tipo === 'locação' ? (
+              <span className="font-extrabold text-emerald-800 text-xs sm:text-sm leading-tight">
+                {formatPrice(imovel.valorLocacao || imovel.valor)}
+                <span className="text-[9px] font-normal text-slate-500"> /mês</span>
+              </span>
+            ) : (
+              <span className="font-extrabold text-[#003366] text-xs sm:text-sm leading-tight">
+                {formatPrice(imovel.valor)}
+              </span>
+            )}
           </div>
 
           {/* Action Row */}

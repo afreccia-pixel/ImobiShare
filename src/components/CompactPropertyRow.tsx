@@ -85,25 +85,44 @@ export function CompactPropertyRow({
             )}
           </div>
 
-          <div className="flex items-center gap-2 text-[9px] text-slate-400 mt-0.5">
-            <span className="flex items-center gap-0.5 truncate max-w-[120px]">
+          <div className="flex items-center gap-1.5 text-[9px] text-slate-400 mt-0.5">
+            <span className="flex items-center gap-0.5 truncate max-w-[100px]">
               <MapPin size={8} />
               <span className="truncate">{imovel.bairro}</span>
             </span>
             <span>•</span>
             <span className="font-bold text-slate-500">{imovel.metragem ?? 0}m²</span>
             <span>•</span>
-            <span className="font-bold text-slate-500">{imovel.dormitorios ?? 0} {imovel.dormitorios === 1 ? 'dorm' : 'dorms'}</span>
+            <span className="font-bold text-slate-500">{imovel.dormitorios ?? 0} dorms</span>
+            <span>•</span>
+            <span className="font-bold text-slate-500">{imovel.banheiros ?? 0} BWC</span>
           </div>
         </div>
       </div>
 
       {/* Right: Price & Favorite */}
       <div className="flex items-center gap-2 flex-shrink-0">
-        <span className="font-extrabold text-[#003366] text-xs leading-none">
-          {formatPrice(imovel.valor)}
-          {imovel.tipo === 'locação' && <span className="text-[8px] font-normal text-slate-400 block text-right">/mês</span>}
-        </span>
+        <div className="flex flex-col text-right">
+          {imovel.tipo === 'ambos' ? (
+            <>
+              <span className="font-extrabold text-[#003366] text-xs leading-tight">
+                {formatPrice(imovel.valor)}
+              </span>
+              <span className="font-extrabold text-emerald-800 text-[10px] leading-tight">
+                {formatPrice(imovel.valorLocacao || 0)}/mês
+              </span>
+            </>
+          ) : imovel.tipo === 'locação' ? (
+            <span className="font-extrabold text-emerald-800 text-xs leading-none">
+              {formatPrice(imovel.valorLocacao || imovel.valor)}
+              <span className="text-[8px] font-normal text-slate-400 block text-right">/mês</span>
+            </span>
+          ) : (
+            <span className="font-extrabold text-[#003366] text-xs leading-none">
+              {formatPrice(imovel.valor)}
+            </span>
+          )}
+        </div>
 
         {onFavoriteToggle && (
           <button

@@ -12,9 +12,10 @@ import { motion } from 'motion/react';
 interface UserProfileProps {
   corretor: Corretor;
   onProfileSwitched: (newProfile: Corretor) => void;
+  onLogout?: () => void;
 }
 
-export function UserProfile({ corretor, onProfileSwitched }: UserProfileProps) {
+export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfileProps) {
   const [allCorretores, setAllCorretores] = useState<Corretor[]>([]);
   const [stats, setStats] = useState({ qtdImoveis: 0, qtdLocacoes: 0, qtdVendas: 0 });
   const [successMsg, setSuccessMsg] = useState('');
@@ -184,8 +185,22 @@ export function UserProfile({ corretor, onProfileSwitched }: UserProfileProps) {
   return (
     <div className="bg-slate-50 min-h-screen pb-16" id="user-profile-container">
       {/* Header */}
-      <div className="bg-white border-b border-slate-100 px-4 py-3.5 sticky top-0 z-10 text-center">
-        <h1 className="font-bold text-slate-800 text-base">Meu Perfil Profissional</h1>
+      <div className="bg-white border-b border-slate-100 px-4 py-3.5 sticky top-0 z-10 flex items-center justify-between">
+        <div className="w-8"></div>
+        <h1 className="font-bold text-slate-800 text-base text-center flex-grow">Meu Perfil Profissional</h1>
+        {onLogout ? (
+          <button
+            type="button"
+            onClick={onLogout}
+            title="Sair do Sistema"
+            className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded-lg transition-all flex items-center gap-1 text-xs font-bold"
+          >
+            <LogOut size={16} />
+            <span className="hidden sm:inline">Sair</span>
+          </button>
+        ) : (
+          <div className="w-8"></div>
+        )}
       </div>
 
       <div className="p-4 max-w-xl mx-auto space-y-5">
@@ -393,8 +408,23 @@ export function UserProfile({ corretor, onProfileSwitched }: UserProfileProps) {
           </div>
         </div>
 
-        {/* Multi-user simulator completely removed for clean production build */}
-
+        {/* Logout Section Card */}
+        {onLogout && (
+          <div className="bg-white border border-red-100 rounded-xl p-4 shadow-xs space-y-2 text-center" id="profile-logout-card">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Encerrar Sessão</h3>
+            <p className="text-[11px] text-slate-500">
+              Deseja sair da sua conta no ImobiShare neste dispositivo?
+            </p>
+            <button
+              type="button"
+              onClick={onLogout}
+              className="w-full mt-2 bg-red-50 hover:bg-red-100 active:scale-[0.98] text-red-600 border border-red-200 text-xs font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs"
+            >
+              <LogOut size={16} />
+              <span>Sair do Sistema</span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

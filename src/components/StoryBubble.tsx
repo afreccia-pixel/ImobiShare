@@ -6,6 +6,7 @@
 import React from 'react';
 import { Imovel, Corretor } from '../types';
 import { motion } from 'motion/react';
+import { getValidImage, handleImageError } from '../utils/imageUtils';
 
 interface StoryBubbleProps {
   key?: string | number;
@@ -34,8 +35,9 @@ export function StoryBubble({ imovel, corretor, onClick }: StoryBubbleProps) {
       <div className="w-16 h-16 rounded-full border-2 border-[#003366] p-0.5 bg-white relative flex items-center justify-center transition-all duration-200 group-hover:scale-105">
         <div className="w-full h-full rounded-full overflow-hidden bg-slate-100">
           <img
-            src={imovel.fotos?.[0] || 'https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=100&auto=format&fit=crop&q=80'}
-            alt={imovel.titulo}
+            src={getValidImage(imovel.fotos?.[0])}
+            alt=""
+            onError={handleImageError}
             referrerPolicy="no-referrer"
             className="w-full h-full object-cover"
           />

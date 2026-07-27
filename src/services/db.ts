@@ -5,6 +5,7 @@
 
 import { Imovel, Corretor } from '../types';
 import { INITIAL_IMOVEIS, INTEGRATED_IMOVEIS, MOCK_CORRETORES } from '../data';
+import { sanitizeFotos } from '../utils/imageUtils';
 
 const STORAGE_KEYS = {
   IMOVEIS: 'imobishare_imoveis',
@@ -137,26 +138,52 @@ export class DbService {
     }).catch(err => console.error('Failed to post broker update to database:', err));
   }
 
+  // Add new broker
+  static addCorretor(corretor: Corretor): void {
+    const corretores = this.getCorretores();
+    const index = corretores.findIndex(c => c.id === corretor.id);
+    if (index === -1) {
+      corretores.push(corretor);
+    } else {
+      corretores[index] = corretor;
+    }
+    localStorage.setItem(STORAGE_KEYS.CORRETORES, JSON.stringify(corretores));
+    
+    fetch('/api/brokers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(corretor),
+    }).then(res => {
+      if (res.ok) this.syncWithServer();
+    }).catch(err => console.error('Failed to post broker to database:', err));
+  }
+
   // Get all properties
   static getImoveis(): Imovel[] {
     const data = localStorage.getItem(STORAGE_KEYS.IMOVEIS);
+    let rawList: Imovel[] = [];
     if (!data) {
-      const allInitial = [...INITIAL_IMOVEIS, ...INTEGRATED_IMOVEIS];
-      localStorage.setItem(STORAGE_KEYS.IMOVEIS, JSON.stringify(allInitial));
-      return allInitial;
+      rawList = [...INITIAL_IMOVEIS, ...INTEGRATED_IMOVEIS];
+    } else {
+      try {
+        rawList = JSON.parse(data);
+      } catch (e) {
+        console.error("Error parsing stored properties, resetting:", e);
+        rawList = [...INITIAL_IMOVEIS, ...INTEGRATED_IMOVEIS];
+      }
     }
     
-    let parsed: Imovel[] = [];
-    try {
-      parsed = JSON.parse(data);
-    } catch (e) {
-      console.error("Error parsing stored properties, resetting:", e);
-      const allInitial = [...INITIAL_IMOVEIS, ...INTEGRATED_IMOVEIS];
-      localStorage.setItem(STORAGE_KEYS.IMOVEIS, JSON.stringify(allInitial));
-      return allInitial;
+    // Sanitize property photos to prevent corrupted or non-URL entries
+    const sanitized = rawList.map(item => ({
+      ...item,
+      fotos: sanitizeFotos(item.fotos)
+    }));
+
+    if (!data) {
+      localStorage.setItem(STORAGE_KEYS.IMOVEIS, JSON.stringify(sanitized));
     }
     
-    return parsed;
+    return sanitized;
   }
 
   // Get favorites for current broker
@@ -210,6 +237,8 @@ export class DbService {
     const activeCorretor = this.getActiveCorretor();
     let finalImovel: Imovel;
     
+    const sanitizedInputFotos = sanitizeFotos(imovel.fotos);
+
     if (imovel.id) {
       // Update existing
       const index = imoveis.findIndex(i => i.id === imovel.id);
@@ -218,6 +247,7 @@ export class DbService {
         finalImovel = {
           ...existing,
           ...imovel,
+          fotos: sanitizedInputFotos,
           id: imovel.id, // guarantee same id
         } as Imovel;
         imoveis[index] = finalImovel;
@@ -225,6 +255,7 @@ export class DbService {
         // Fallback create
         finalImovel = {
           ...imovel,
+          fotos: sanitizedInputFotos,
           id: imovel.id,
           dataCadastro: new Date().toISOString(),
           corretorId: activeCorretor.id,
@@ -236,6 +267,7 @@ export class DbService {
       // Create new
       finalImovel = {
         ...imovel,
+        fotos: sanitizedInputFotos,
         id: `imovel-${Date.now()}`,
         dataCadastro: new Date().toISOString(),
         corretorId: activeCorretor.id,
@@ -341,10 +373,12 @@ export class DbService {
         throw new Error('Erro na resposta do servidor API');
       }
       const data = await response.json();
-      return data.text || params.text;
+      const rawText = data.text || params.text || '';
+      return rawText.replace(/\*/g, '');
     } catch (error) {
       console.error('Failed to improve description via backend:', error);
-      return params.text ? `${params.text}\n\nExcelente oportunidade em ${params.localizacao || 'local privilegiado'}.` : `Excelente imóvel em ${params.localizacao || 'ótimo bairro'}.`;
+      const fallback = params.text ? `${params.text}\n\nExcelente oportunidade em ${params.localizacao || 'local privilegiado'}.` : `Excelente imóvel em ${params.localizacao || 'ótimo bairro'}.`;
+      return fallback.replace(/\*/g, '');
     }
   }
 }

@@ -323,9 +323,9 @@ app.post('/api/ai/improve-description', async (req: Request, res: Response) => {
         localizacao ? `Localização: ${localizacao}` : '',
       ].filter(Boolean).join(' • ');
 
-      const fallbackText = text?.trim() 
+      const fallbackText = (text?.trim() 
         ? `${text.trim()}\n\n✨ Destaques do Imóvel (${type === 'locação' ? 'Locação' : 'Venda'}):\n- ${baseInfoList}\n- Excelente padrão de acabamento e iluminação natural em todos os ambientes.\n- Agende uma visita para conhecer de perto esta excelente oportunidade!`
-        : `Excelente ${tipoImovel || 'imóvel'} para ${type === 'locação' ? 'locação' : 'venda'}.\n\n✨ Destaques:\n- ${baseInfoList}\n- Ambientes amplos, integrados e ventilados.\n- Pronto para morar com alto padrão de conforto e conveniência. Agende sua visita!`;
+        : `Excelente ${tipoImovel || 'imóvel'} para ${type === 'locação' ? 'locação' : 'venda'}.\n\n✨ Destaques:\n- ${baseInfoList}\n- Ambientes amplos, integrados e ventilados.\n- Pronto para morar com alto padrão de conforto e conveniência. Agende sua visita!`).replace(/\*/g, '');
 
       return res.json({ text: fallbackText });
     }
@@ -342,8 +342,8 @@ Dados do imóvel informados no formulário:
 - Localização: ${localizacao || 'Não informada'}
 - Nome do Edifício / Condomínio: ${nomeEdificio || 'Não informado'}
 - Quartos: ${dormitorios ?? 'N/A'}
-- Vagas de Garagem: ${vagas ?? 'N/A'}
 - Banheiros: ${banheiros ?? 'N/A'}
+- Vagas de Garagem: ${vagas ?? 'N/A'}
 - Metragem Privativa: ${metragem ? `${metragem} m²` : 'N/A'}
 - Área Total: ${areaTotal ? `${areaTotal} m²` : 'N/A'}
 - Valor: ${valor ? `R$ ${valor}` : 'N/A'}
@@ -356,14 +356,16 @@ Diretrizes obrigatórias:
 2. Crie uma descrição elegante, profissional, atrativa e perfeitamente estruturada para redes sociais e portais imobiliários.
 3. JAMAIS invente características falsas ou cômodos fictícios que não foram informados nos dados acima.
 4. Mantenha o texto objetivo, fluido e cativante (2 a 4 parágrafos curtos ou lista de diferenciais).
-5. Retorne APENAS o texto da descrição melhorada, sem introduções, aspas ou notas explicativas.`;
+5. REGRA CRÍTICA DE FORMATAÇÃO: NÃO UTILIZE ASTERISCOS (* OU **) EM NENHUMA PARTE DO TEXTO. Não use negrito com asteriscos. Se usar marcadores de lista, use traço (-) ou hífens.
+6. Retorne APENAS o texto da descrição melhorada, sem introduções, aspas ou notas explicativas.`;
 
     const response = await client.models.generateContent({
       model: 'gemini-3.6-flash',
       contents: systemPrompt,
     });
 
-    const generatedText = response.text?.trim() || text;
+    const rawText = response.text?.trim() || text || '';
+    const generatedText = rawText.replace(/\*/g, '');
     return res.json({ text: generatedText });
 
   } catch (error: any) {

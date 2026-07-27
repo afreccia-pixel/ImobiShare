@@ -66,7 +66,10 @@ export function formatAuthError(error: any): string {
   const message = error.message || '';
 
   if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
-    return 'O login com o Google foi cancelado pelo usuário.';
+    return 'O login com o Google foi cancelado.';
+  }
+  if (code === 'auth/unauthorized-domain') {
+    return 'Este domínio de visualização ainda não está na lista de domínios autorizados do Firebase. Para prosseguir, utilize o login com E-mail ou o botão "Entrar no Modo de Teste".';
   }
   if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
     return 'E-mail ou senha incorretos. Por favor, verifique seus dados.';
@@ -84,16 +87,16 @@ export function formatAuthError(error: any): string {
     return 'Erro de conexão. Verifique sua internet e tente novamente.';
   }
   if (code === 'auth/popup-blocked') {
-    return 'O navegador bloqueou o pop-up de login. Redirecionando...';
+    return 'O navegador bloqueou a janela de login do Google. Ative os pop-ups para este site ou utilize a opção "Entrar no Modo de Teste".';
   }
   if (code === 'auth/operation-not-allowed') {
-    return 'A autenticação por este método não está ativada no console do Firebase.';
+    return 'O login com Google não está habilitado no seu console Firebase. Acesse o Console -> Authentication -> Sign-in method e ative o provedor Google.';
   }
   if (message.includes('offline') || message.includes('network')) {
     return 'Sem conexão com a internet. Verifique sua rede.';
   }
 
-  return 'Ocorreu uma falha no login. Por favor, tente novamente em instantes.';
+  return 'Não foi possível fazer login com o Google no momento. Tente com E-mail/Senha ou use o "Modo de Teste".';
 }
 
 /**

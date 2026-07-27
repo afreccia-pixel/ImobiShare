@@ -7,13 +7,25 @@ import { Corretor, Imovel } from './types';
 
 export const MOCK_CORRETORES: Corretor[] = [
   {
+    id: 'corretor-alexandre',
+    nome: 'Alexandre Freccia',
+    creci: 'CRECI 28901-F',
+    telefone: '(47) 99888-7766',
+    whatsapp: '47998887766',
+    email: 'afreccia@gmail.com',
+    foto: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=150&auto=format&fit=crop&q=80',
+    cidade: 'Balneário Camboriú',
+    qtdImoveis: 10,
+    qtdLocacoes: 4
+  },
+  {
     id: 'corretor-1',
     nome: 'Rodrigo Silva',
     creci: 'CRECI 12345-F',
     telefone: '(47) 99123-4567',
     whatsapp: '47991234567',
     email: 'rodrigo.silva@imobishare.com',
-    foto: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=150&auto=format&fit=crop&q=80',
+    foto: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
     cidade: 'Balneário Camboriú',
     qtdImoveis: 8,
     qtdLocacoes: 3
@@ -78,7 +90,8 @@ export const INITIAL_IMOVEIS: Imovel[] = [
     titulo: 'Apartamento Alto Padrão Decorado Centro',
     descricao: 'Apartamento totalmente decorado por arquiteto renomado, com 3 suítes, living integrado, sacada gourmet integrada e automação completa. Prédio com área de lazer estilo resort de frente para avenida principal.',
     valor: 3800000,
-    tipo: 'venda',
+    valorLocacao: 15000,
+    tipo: 'ambos',
     cidade: 'Balneário Camboriú',
     bairro: 'Centro',
     localizacao: 'Rua 1500, nº 120, Centro - Balneário Camboriú - SC',

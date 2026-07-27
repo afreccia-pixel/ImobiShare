@@ -311,7 +311,15 @@ export class ServerDb {
         telefoneProprietario: r.telefone_proprietario,
         favorito: r.favorito,
         compartilhar: r.compartilhar,
-        fotos: r.fotos ? r.fotos.split(',') : [],
+        fotos: (() => {
+          if (!r.fotos) return [];
+          try {
+            const parsed = JSON.parse(r.fotos);
+            return Array.isArray(parsed) ? parsed : [r.fotos];
+          } catch {
+            return r.fotos.split(',').filter((f: string) => f.trim().length > 0);
+          }
+        })(),
         dataCadastro: r.data_cadastro,
         corretorId: r.corretor_id,
         corretorNome: r.corretor_nome,
@@ -335,7 +343,7 @@ export class ServerDb {
 
   static async saveImovel(prop: Imovel): Promise<Imovel> {
     if (this.isPostgres && this.pool) {
-      const fotosStr = prop.fotos.join(',');
+      const fotosStr = JSON.stringify(prop.fotos || []);
       const check = await this.pool.query('SELECT id FROM properties WHERE id = $1', [prop.id]);
       if (check.rows.length > 0) {
         // Update

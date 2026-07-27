@@ -7,7 +7,8 @@ import React, { useState } from 'react';
 import logoImg from '../assets/images/imobishare_logo_1784239677798.jpg';
 import { Imovel } from '../types';
 import { MOCK_CORRETORES } from '../data';
-import { MapPin, Phone, MessageCircle, Building2, Check, ArrowLeft, Home, Bed, Car, Maximize } from 'lucide-react';
+import { MapPin, Phone, MessageCircle, Building2, Check, ArrowLeft, Home, Bed, Car, Maximize, Bath } from 'lucide-react';
+import { getValidImage, handleImageError } from '../utils/imageUtils';
 
 interface PublicViewProps {
   imovel: Imovel;
@@ -69,8 +70,9 @@ export function PublicView({ imovel, onExit }: PublicViewProps) {
         {/* Main photo slider */}
         <div className="relative aspect-4/3 bg-slate-900">
           <img
-            src={imovel.fotos[activePhotoIdx] || 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&auto=format&fit=crop&q=80'}
+            src={getValidImage(imovel.fotos?.[activePhotoIdx])}
             alt=""
+            onError={handleImageError}
             referrerPolicy="no-referrer"
             className="w-full h-full object-cover"
           />
@@ -91,9 +93,9 @@ export function PublicView({ imovel, onExit }: PublicViewProps) {
           )}
 
           <span className={`absolute top-4 left-4 text-xs font-bold uppercase text-white px-2.5 py-0.5 rounded-full ${
-            imovel.tipo === 'venda' ? 'bg-[#003366]' : 'bg-emerald-600'
+            imovel.tipo === 'venda' ? 'bg-[#003366]' : imovel.tipo === 'locação' ? 'bg-emerald-600' : 'bg-indigo-900'
           }`}>
-            {imovel.tipo === 'venda' ? 'Compra' : 'Aluguel'}
+            {imovel.tipo === 'venda' ? 'Compra' : imovel.tipo === 'locação' ? 'Aluguel' : 'Compra & Aluguel'}
           </span>
         </div>
 
@@ -108,7 +110,7 @@ export function PublicView({ imovel, onExit }: PublicViewProps) {
                   idx === activePhotoIdx ? 'border-[#003366]' : 'border-transparent opacity-70'
                 }`}
               >
-                <img src={foto} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                <img src={getValidImage(foto)} alt="" onError={handleImageError} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
               </button>
             ))}
           </div>
@@ -128,11 +130,28 @@ export function PublicView({ imovel, onExit }: PublicViewProps) {
 
           <div className="p-3 bg-slate-50 rounded-lg flex items-center justify-between">
             <div>
-              <span className="text-[9px] uppercase text-slate-400 font-bold block">Preço</span>
-              <span className="text-xl font-bold text-slate-900">
-                {formatPrice(imovel.valor)}
-                {imovel.tipo === 'locação' && <span className="text-xs font-normal text-slate-500"> /mês</span>}
+              <span className="text-[9px] uppercase text-slate-400 font-bold block">
+                {imovel.tipo === 'ambos' ? 'Valores' : 'Preço'}
               </span>
+              {imovel.tipo === 'ambos' ? (
+                <div className="flex flex-col gap-1 mt-0.5">
+                  <span className="text-sm font-bold text-[#003366]">
+                    Venda: {formatPrice(imovel.valor)}
+                  </span>
+                  <span className="text-sm font-bold text-emerald-800">
+                    Locação: {formatPrice(imovel.valorLocacao || 0)}/mês
+                  </span>
+                </div>
+              ) : imovel.tipo === 'locação' ? (
+                <span className="text-xl font-bold text-emerald-800">
+                  {formatPrice(imovel.valorLocacao || imovel.valor)}
+                  <span className="text-xs font-normal text-slate-500"> /mês</span>
+                </span>
+              ) : (
+                <span className="text-xl font-bold text-slate-900">
+                  {formatPrice(imovel.valor)}
+                </span>
+              )}
             </div>
             
             <div className="text-right">
@@ -142,20 +161,25 @@ export function PublicView({ imovel, onExit }: PublicViewProps) {
           </div>
 
           {/* Características Essenciais */}
-          <div className="grid grid-cols-3 gap-2 py-1">
-            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+          <div className="grid grid-cols-4 gap-2 py-1">
+            <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex flex-col items-center text-center">
               <Bed size={15} className="text-[#003366] mb-1" />
-              <span className="text-[9px] uppercase text-slate-400 font-bold">Dormitórios</span>
+              <span className="text-[9px] uppercase text-slate-400 font-bold">Dorm.</span>
               <span className="text-xs font-extrabold text-slate-800">{imovel.dormitorios ?? 0}</span>
             </div>
-            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+            <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+              <Bath size={15} className="text-[#003366] mb-1" />
+              <span className="text-[9px] uppercase text-slate-400 font-bold">BWC</span>
+              <span className="text-xs font-extrabold text-slate-800">{imovel.banheiros ?? 0}</span>
+            </div>
+            <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex flex-col items-center text-center">
               <Car size={15} className="text-[#003366] mb-1" />
               <span className="text-[9px] uppercase text-slate-400 font-bold">Vagas</span>
               <span className="text-xs font-extrabold text-slate-800">{imovel.vagas ?? 0}</span>
             </div>
-            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+            <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex flex-col items-center text-center">
               <Maximize size={15} className="text-[#003366] mb-1" />
-              <span className="text-[9px] uppercase text-slate-400 font-bold">Área Privativa</span>
+              <span className="text-[9px] uppercase text-slate-400 font-bold">Área</span>
               <span className="text-xs font-extrabold text-slate-800">{imovel.metragem ?? 0} m²</span>
             </div>
           </div>
@@ -168,7 +192,7 @@ export function PublicView({ imovel, onExit }: PublicViewProps) {
           </div>
 
           {/* Broker footer details */}
-          <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+          <div className="pt-4 border-t border-slate-100 flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2.5">
               <img
                 src={ownerBroker.foto}
@@ -180,6 +204,25 @@ export function PublicView({ imovel, onExit }: PublicViewProps) {
                 <span className="text-xs font-bold text-slate-800 block">Corretor Responsável</span>
                 <span className="text-[10px] text-slate-400">{ownerBroker.nome} | {ownerBroker.creci}</span>
               </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <a
+                href={`tel:${ownerBroker.telefone?.replace(/\D/g, '') || '47998887766'}`}
+                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl transition-all border border-slate-200/80 active:scale-95"
+                title="Ligar para o corretor"
+              >
+                <Phone size={14} className="text-[#003366]" />
+                <span>Ligar</span>
+              </a>
+              <button
+                onClick={handleWhatsAppClick}
+                className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs active:scale-95"
+                title="Enviar WhatsApp ao corretor"
+              >
+                <MessageCircle size={14} />
+                <span>WhatsApp</span>
+              </button>
             </div>
           </div>
 

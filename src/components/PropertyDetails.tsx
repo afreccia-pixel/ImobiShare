@@ -6,7 +6,9 @@
 import React, { useState } from 'react';
 import { Imovel, Corretor } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { MapPin, Phone, MessageCircle, ArrowLeft, Building2, UserCheck, ShieldAlert, Check, Bed, Car, Maximize } from 'lucide-react';
+import { MapPin, Phone, MessageCircle, ArrowLeft, Building2, UserCheck, ShieldAlert, Check, Bed, Car, Maximize, Bath } from 'lucide-react';
+import { getValidImage, handleImageError } from '../utils/imageUtils';
+import { DbService } from '../services/db';
 
 interface PropertyDetailsProps {
   imovel: Imovel;
@@ -57,9 +59,14 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
   const handleSendWhatsApp = () => {
     // Build extremely clean and light WhatsApp text for maximum readability
     const location = imovel.nomeEdificio?.trim() ? `${imovel.nomeEdificio} (${imovel.bairro})` : imovel.bairro;
-    const tipoLabel = imovel.tipo === 'venda' ? 'Venda' : 'Aluguel';
-    const preco = formatPrice(imovel.valor) + (imovel.tipo === 'locação' ? '/mês' : '');
-    const caracteristicas = `${imovel.dormitorios ?? 0} dorms • ${imovel.vagas ?? 0} vagas • ${imovel.metragem ?? 0}m²`;
+    const tipoLabel = imovel.tipo === 'venda' ? 'Venda' : imovel.tipo === 'locação' ? 'Aluguel' : 'Venda & Aluguel';
+    let preco = formatPrice(imovel.valor);
+    if (imovel.tipo === 'locação') {
+      preco = formatPrice(imovel.valorLocacao || imovel.valor) + '/mês';
+    } else if (imovel.tipo === 'ambos') {
+      preco = `Venda: ${formatPrice(imovel.valor)} | Locação: ${formatPrice(imovel.valorLocacao || 0)}/mês`;
+    }
+    const caracteristicas = `${imovel.dormitorios ?? 0} dorms • ${imovel.banheiros ?? 0} BWC • ${imovel.vagas ?? 0} vagas • ${imovel.metragem ?? 0}m²`;
 
     const messageText = `🏠 \`\`\`${location}\`\`\`
 💰 \`\`\`${preco} (${tipoLabel})\`\`\`
@@ -99,8 +106,9 @@ Toque abaixo para ver fotos e todos os detalhes:
           onTouchEnd={handleTouchEnd}
         >
           <img
-            src={imovel.fotos[activePhotoIndex] || 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&auto=format&fit=crop&q=80'}
-            alt={`${imovel.titulo} - Foto ${activePhotoIndex + 1}`}
+            src={getValidImage(imovel.fotos?.[activePhotoIndex])}
+            alt=""
+            onError={handleImageError}
             referrerPolicy="no-referrer"
             className="w-full h-full object-cover select-none pointer-events-none"
           />
@@ -129,9 +137,9 @@ Toque abaixo para ver fotos e todos os detalhes:
 
           {/* Type Badge */}
           <span className={`absolute top-4 left-4 text-xs font-bold uppercase tracking-wider text-white px-3 py-1 rounded-full shadow-md ${
-            imovel.tipo === 'venda' ? 'bg-[#003366]' : 'bg-emerald-600'
+            imovel.tipo === 'venda' ? 'bg-[#003366]' : imovel.tipo === 'locação' ? 'bg-emerald-600' : 'bg-indigo-900'
           }`}>
-            {imovel.tipo === 'venda' ? 'Venda' : 'Locação'}
+            {imovel.tipo === 'venda' ? 'Venda' : imovel.tipo === 'locação' ? 'Locação' : 'Venda & Locação'}
           </span>
         </div>
 
@@ -146,7 +154,7 @@ Toque abaixo para ver fotos e todos os detalhes:
                   idx === activePhotoIndex ? 'border-[#003366] ring-2 ring-[#003366]/10' : 'border-slate-100 opacity-70 hover:opacity-100'
                 }`}
               >
-                <img src={foto} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                <img src={getValidImage(foto)} alt="" onError={handleImageError} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
               </button>
             ))}
           </div>
@@ -185,11 +193,34 @@ Toque abaixo para ver fotos e todos os detalhes:
 
           <div className="py-3 border-y border-slate-100 flex items-center justify-between">
             <div>
-              <span className="text-[10px] uppercase text-slate-400 font-bold block">Valor Solicitado</span>
-              <span className="text-xl font-extrabold text-slate-900">
-                {formatPrice(imovel.valor)}
-                {imovel.tipo === 'locação' && <span className="text-sm font-medium text-slate-500"> /mês</span>}
+              <span className="text-[10px] uppercase text-slate-400 font-bold block">
+                {imovel.tipo === 'ambos' ? 'Valores Solicitados' : 'Valor Solicitado'}
               </span>
+              {imovel.tipo === 'ambos' ? (
+                <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4 mt-1">
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase block">Venda:</span>
+                    <span className="text-lg font-extrabold text-[#003366]">
+                      {formatPrice(imovel.valor)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase block">Locação:</span>
+                    <span className="text-lg font-extrabold text-emerald-800">
+                      {formatPrice(imovel.valorLocacao || 0)}<span className="text-xs font-medium text-slate-500"> /mês</span>
+                    </span>
+                  </div>
+                </div>
+              ) : imovel.tipo === 'locação' ? (
+                <span className="text-xl font-extrabold text-emerald-800">
+                  {formatPrice(imovel.valorLocacao || imovel.valor)}
+                  <span className="text-sm font-medium text-slate-500"> /mês</span>
+                </span>
+              ) : (
+                <span className="text-xl font-extrabold text-slate-900">
+                  {formatPrice(imovel.valor)}
+                </span>
+              )}
             </div>
 
             <div className="text-right">
@@ -203,20 +234,25 @@ Toque abaixo para ver fotos e todos os detalhes:
           </div>
 
           {/* Características Essenciais */}
-          <div className="grid grid-cols-3 gap-2.5 py-1">
-            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+          <div className="grid grid-cols-4 gap-2 py-1">
+            <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex flex-col items-center text-center">
               <Bed size={15} className="text-[#003366] mb-1" />
-              <span className="text-[9px] uppercase text-slate-400 font-bold">Dormitórios</span>
+              <span className="text-[9px] uppercase text-slate-400 font-bold">Dorm.</span>
               <span className="text-xs font-extrabold text-slate-800">{imovel.dormitorios ?? 0}</span>
             </div>
-            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+            <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+              <Bath size={15} className="text-[#003366] mb-1" />
+              <span className="text-[9px] uppercase text-slate-400 font-bold">BWC</span>
+              <span className="text-xs font-extrabold text-slate-800">{imovel.banheiros ?? 0}</span>
+            </div>
+            <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex flex-col items-center text-center">
               <Car size={15} className="text-[#003366] mb-1" />
               <span className="text-[9px] uppercase text-slate-400 font-bold">Vagas</span>
               <span className="text-xs font-extrabold text-slate-800">{imovel.vagas ?? 0}</span>
             </div>
-            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+            <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex flex-col items-center text-center">
               <Maximize size={15} className="text-[#003366] mb-1" />
-              <span className="text-[9px] uppercase text-slate-400 font-bold">Área Privativa</span>
+              <span className="text-[9px] uppercase text-slate-400 font-bold">Área</span>
               <span className="text-xs font-extrabold text-slate-800">{imovel.metragem ?? 0} m²</span>
             </div>
           </div>
@@ -230,42 +266,71 @@ Toque abaixo para ver fotos e todos os detalhes:
         </div>
 
         {/* Broker Information */}
-        <div className="p-4 bg-white border-b border-slate-100 space-y-3">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Responsável pelo Cadastro</span>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-slate-100 overflow-hidden border border-slate-200 flex-shrink-0">
-                {isOwner ? (
-                  <img src={activeCorretor.foto} alt="Você" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                ) : (
-                  <div className="w-full h-full bg-[#003366] flex items-center justify-center text-white font-bold text-sm">
-                    {imovel.corretorNome.charAt(0)}
+        {(() => {
+          const corretores = DbService.getCorretores();
+          const responsibleBroker = isOwner 
+            ? activeCorretor 
+            : (corretores.find(c => c.id === imovel.corretorId) || {
+                nome: imovel.corretorNome,
+                telefone: '(47) 99888-7766',
+                whatsapp: '47998887766',
+                creci: 'Corretor Parceiro'
+              });
+          
+          const rawPhone = responsibleBroker.telefone || '(47) 99888-7766';
+          const rawWhatsapp = responsibleBroker.whatsapp || responsibleBroker.telefone || '47998887766';
+          const cleanPhone = rawPhone.replace(/\D/g, '');
+          const cleanWhatsapp = rawWhatsapp.replace(/\D/g, '');
+
+          return (
+            <div className="p-4 bg-white border-b border-slate-100 space-y-3">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Responsável pelo Cadastro</span>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-slate-100 overflow-hidden border border-slate-200 flex-shrink-0">
+                    {isOwner ? (
+                      <img src={activeCorretor.foto} alt="Você" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    ) : (
+                      <div className="w-full h-full bg-[#003366] flex items-center justify-center text-white font-bold text-sm">
+                        {imovel.corretorNome.charAt(0)}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-800 text-sm block">
-                  {isOwner ? 'Você' : imovel.corretorNome}
-                </span>
-                <span className="text-xs text-slate-400">
-                  {isOwner ? activeCorretor.creci : 'Parceria Autorizada'}
-                </span>
+                  <div>
+                    <span className="font-semibold text-slate-800 text-sm block">
+                      {isOwner ? `Você (${activeCorretor.nome})` : imovel.corretorNome}
+                    </span>
+                    <span className="text-xs text-slate-400">
+                      {isOwner ? activeCorretor.creci : (responsibleBroker.creci || 'Parceria Autorizada')}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Direct Action links for Phone and WhatsApp */}
+                <div className="flex items-center gap-2">
+                  <a
+                    href={`tel:${cleanPhone}`}
+                    className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl transition-all shadow-2xs border border-slate-200/80 active:scale-95"
+                    title="Ligar para o corretor responsável"
+                  >
+                    <Phone size={14} className="text-[#003366]" />
+                    <span>Ligar</span>
+                  </a>
+                  <a
+                    href={`https://wa.me/${cleanWhatsapp}?text=${encodeURIComponent(`Olá ${responsibleBroker.nome.split(' ')[0]}, vi o imóvel "${imovel.titulo}" (#${imovel.id.replace('imovel-', '')}) no ImobiShare e gostaria de informações.`)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs active:scale-95"
+                    title="Enviar WhatsApp ao corretor responsável"
+                  >
+                    <MessageCircle size={14} />
+                    <span>WhatsApp</span>
+                  </a>
+                </div>
               </div>
             </div>
-
-            {/* Quick Contact badge */}
-            {!isOwner && (
-              <a
-                href={`https://wa.me/${imovel.corretorId === 'corretor-2' ? '47992345678' : '47993456789'}`}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center text-xs font-bold text-[#003366] bg-[#003366]/5 hover:bg-[#003366]/10 px-3 py-1.5 rounded-lg transition-colors"
-              >
-                <Phone size={13} className="mr-1" /> Falar com Colega
-              </a>
-            )}
-          </div>
-        </div>
+          );
+        })()}
 
         {/* Confidential Section - ONLY Visivel para o corretor que cadastrou */}
         {isOwner && (
