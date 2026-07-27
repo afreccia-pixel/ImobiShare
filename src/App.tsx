@@ -7,6 +7,18 @@ import React, { useState, useEffect } from 'react';
 import logoImg from './assets/images/imobishare_logo_1784239677798.jpg';
 import { Imovel, Corretor } from './types';
 import { DbService } from './services/db';
+import { 
+  auth, 
+  signInWithGoogle, 
+  checkRedirectAuth, 
+  loginEmailPassword, 
+  registerEmailPassword, 
+  resetPassword, 
+  logoutUser, 
+  syncUserWithFirestore, 
+  formatAuthError 
+} from './services/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 import { StoryBubble } from './components/StoryBubble';
 import { PropertyCard } from './components/PropertyCard';
 import { CompactPropertyRow } from './components/CompactPropertyRow';
@@ -50,7 +62,7 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     return localStorage.getItem('imobishare_logged_in') === 'true';
   });
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot_password'>('login');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
@@ -288,72 +300,104 @@ export default function App() {
     }
   };
 
-  // Google Identity Services and One-Tap loader for Google Sign-In
+  // Firebase Auth persistence & redirect result listener
   useEffect(() => {
-    if (isAuthenticated) return;
-
-    // Dynamically load Google Identity Services SDK
-    const script = document.createElement('script');
-    script.src = 'https://accounts.google.com/gsi/client';
-    script.async = true;
-    script.defer = true;
-    script.onload = () => {
-      try {
-        const clientId = (import.meta as any).env.VITE_GOOGLE_CLIENT_ID || '1014169992380-mockclientid.apps.googleusercontent.com';
-        
-        // @ts-ignore
-        if (window.google) {
-          // @ts-ignore
-          window.google.accounts.id.initialize({
-            client_id: clientId,
-            callback: async (response: any) => {
-              setAuthLoading(true);
-              try {
-                const res = await fetch('/api/auth/google', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ credential: response.credential }),
-                });
-                if (!res.ok) {
-                  const errData = await res.json();
-                  throw new Error(errData.error || 'Erro na autenticação com o Google.');
-                }
-                const data = await res.json();
-                
-                localStorage.setItem('imobishare_logged_in', 'true');
-                localStorage.setItem('imobishare_active_corretor', JSON.stringify(data.corretor));
-                
-                setIsAuthenticated(true);
-                triggerToast(`Bem-vindo, ${data.corretor.nome}!`);
-                
-                // Perform sync
-                await DbService.syncWithServer();
-                reloadData();
-              } catch (error: any) {
-                console.error(error);
-                triggerToast(error.message || 'Falha no login com Google.');
-              } finally {
-                setAuthLoading(false);
-              }
-            }
-          });
-          
-          // @ts-ignore
-          window.google.accounts.id.renderButton(
-            document.getElementById('google-signin-btn-container'),
-            { theme: 'outline', size: 'large', width: '100%' }
-          );
+    checkRedirectAuth()
+      .then(async (user) => {
+        if (user) {
+          const userData = await syncUserWithFirestore(user);
+          const corretor: Corretor = {
+            id: user.uid,
+            nome: userData.nome || user.displayName || 'Corretor ImobiShare',
+            creci: userData.creci || '12345-F',
+            telefone: userData.telefone || '(47) 99999-9999',
+            whatsapp: userData.whatsapp || '(47) 99999-9999',
+            cidade: userData.cidade || 'Balneário Camboriú',
+            email: user.email || '',
+            foto: userData.foto || user.photoURL || 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=250',
+          };
+          DbService.setActiveCorretor(corretor);
+          localStorage.setItem('imobishare_logged_in', 'true');
+          setIsAuthenticated(true);
+          setActiveCorretor(corretor);
+          triggerToast(`Bem-vindo, ${corretor.nome}!`);
+          reloadData();
         }
-      } catch (err) {
-        console.error('Failed to init Google Sign-In:', err);
-      }
-    };
-    document.head.appendChild(script);
-    return () => {
-      document.head.removeChild(script);
-    };
-  }, [isAuthenticated]);
+      })
+      .catch((err) => console.error('Error handling Google auth redirect:', err));
 
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        try {
+          const userData = await syncUserWithFirestore(user);
+          const corretor: Corretor = {
+            id: user.uid,
+            nome: userData.nome || user.displayName || 'Corretor ImobiShare',
+            creci: userData.creci || '12345-F',
+            telefone: userData.telefone || '(47) 99999-9999',
+            whatsapp: userData.whatsapp || '(47) 99999-9999',
+            cidade: userData.cidade || 'Balneário Camboriú',
+            email: user.email || '',
+            foto: userData.foto || user.photoURL || 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=250',
+          };
+          DbService.setActiveCorretor(corretor);
+          localStorage.setItem('imobishare_logged_in', 'true');
+          setIsAuthenticated(true);
+          setActiveCorretor(corretor);
+        } catch (err) {
+          console.error('Error syncing Firebase user profile:', err);
+        }
+      } else {
+        // If not logged in on Firebase, respect local stored session if exists
+        const isLoggedInLocally = localStorage.getItem('imobishare_logged_in') === 'true';
+        if (!isLoggedInLocally) {
+          setIsAuthenticated(false);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Google Sign-In with Firebase Auth
+  const handleGoogleLogin = async () => {
+    setAuthLoading(true);
+    setAuthError('');
+    try {
+      const user = await signInWithGoogle();
+      if (user) {
+        const userData = await syncUserWithFirestore(user);
+        const corretor: Corretor = {
+          id: user.uid,
+          nome: userData.nome || user.displayName || 'Corretor ImobiShare',
+          creci: userData.creci || '12345-F',
+          telefone: userData.telefone || '(47) 99999-9999',
+          whatsapp: userData.whatsapp || '(47) 99999-9999',
+          cidade: userData.cidade || 'Balneário Camboriú',
+          email: user.email || '',
+          foto: userData.foto || user.photoURL || 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=250',
+        };
+        DbService.setActiveCorretor(corretor);
+        localStorage.setItem('imobishare_logged_in', 'true');
+        setIsAuthenticated(true);
+        setActiveCorretor(corretor);
+        triggerToast(`Bem-vindo, ${corretor.nome}!`);
+        await DbService.syncWithServer();
+        reloadData();
+      }
+    } catch (err: any) {
+      if (err.message === 'REDIRECTING') {
+        return;
+      }
+      const formatted = formatAuthError(err);
+      setAuthError(formatted);
+      triggerToast(formatted);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  // Email & Password Login
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
@@ -364,32 +408,60 @@ export default function App() {
     }
     setAuthLoading(true);
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: authEmail, password: authPassword })
-      });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'E-mail ou senha incorretos.');
+      let user;
+      try {
+        user = await loginEmailPassword(authEmail, authPassword);
+      } catch (fbErr) {
+        // Fallback sync with Express server authentication endpoint
+        const response = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: authEmail, password: authPassword })
+        });
+        if (!response.ok) {
+          throw fbErr;
+        }
+        const data = await response.json();
+        localStorage.setItem('imobishare_logged_in', 'true');
+        localStorage.setItem('imobishare_active_corretor', JSON.stringify(data.corretor));
+        setIsAuthenticated(true);
+        setActiveCorretor(data.corretor);
+        triggerToast(`Bem-vindo, ${data.corretor.nome}!`);
+        await DbService.syncWithServer();
+        reloadData();
+        return;
       }
-      const data = await response.json();
-      localStorage.setItem('imobishare_logged_in', 'true');
-      localStorage.setItem('imobishare_active_corretor', JSON.stringify(data.corretor));
-      setIsAuthenticated(true);
-      triggerToast(`Bem-vindo, ${data.corretor.nome}!`);
-      
-      // Sync DB background
-      await DbService.syncWithServer();
-      reloadData();
+
+      if (user) {
+        const userData = await syncUserWithFirestore(user);
+        const corretor: Corretor = {
+          id: user.uid,
+          nome: userData.nome || user.displayName || 'Corretor ImobiShare',
+          creci: userData.creci || '12345-F',
+          telefone: userData.telefone || '(47) 99999-9999',
+          whatsapp: userData.whatsapp || '(47) 99999-9999',
+          cidade: userData.cidade || 'Balneário Camboriú',
+          email: user.email || '',
+          foto: userData.foto || user.photoURL || 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=250',
+        };
+        DbService.setActiveCorretor(corretor);
+        localStorage.setItem('imobishare_logged_in', 'true');
+        setIsAuthenticated(true);
+        setActiveCorretor(corretor);
+        triggerToast(`Bem-vindo, ${corretor.nome}!`);
+        await DbService.syncWithServer();
+        reloadData();
+      }
     } catch (err: any) {
-      setAuthError(err.message || 'Falha na autenticação.');
-      triggerToast(err.message || 'Falha na autenticação.');
+      const formatted = formatAuthError(err);
+      setAuthError(formatted);
+      triggerToast(formatted);
     } finally {
       setAuthLoading(false);
     }
   };
 
+  // Register user with Firebase Auth & Firestore
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
@@ -400,47 +472,83 @@ export default function App() {
     }
     setAuthLoading(true);
     try {
-      const response = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nome: regNome,
-          email: authEmail,
-          password: authPassword,
-          creci: regCreci,
-          telefone: regTelefone,
-          whatsapp: regWhatsapp,
-          cidade: regCidade
-        })
+      const user = await registerEmailPassword(authEmail, authPassword, {
+        nome: regNome,
+        creci: regCreci,
+        telefone: regTelefone,
+        whatsapp: regWhatsapp,
+        cidade: regCidade,
       });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Falha ao registrar.');
-      }
-      const data = await response.json();
+      const userData = await syncUserWithFirestore(user, {
+        nome: regNome,
+        creci: regCreci,
+        telefone: regTelefone,
+        whatsapp: regWhatsapp,
+        cidade: regCidade,
+      });
+      const corretor: Corretor = {
+        id: user.uid,
+        nome: regNome,
+        creci: regCreci || '12345-F',
+        telefone: regTelefone || '(47) 99999-9999',
+        whatsapp: regWhatsapp || '(47) 99999-9999',
+        cidade: regCidade || 'Balneário Camboriú',
+        email: authEmail,
+        foto: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=250',
+      };
+      DbService.setActiveCorretor(corretor);
       localStorage.setItem('imobishare_logged_in', 'true');
-      localStorage.setItem('imobishare_active_corretor', JSON.stringify(data.corretor));
       setIsAuthenticated(true);
-      setAuthMode('login'); // Switch back to login mode for future entries
-      triggerToast(`Cadastro realizado! Bem-vindo, ${data.corretor.nome}!`);
-      
-      // Sync DB background
+      setActiveCorretor(corretor);
+      setAuthMode('login');
+      triggerToast(`Cadastro realizado! Bem-vindo, ${corretor.nome}!`);
       await DbService.syncWithServer();
       reloadData();
     } catch (err: any) {
-      setAuthError(err.message || 'Erro ao realizar cadastro.');
-      triggerToast(err.message || 'Erro ao realizar cadastro.');
+      const formatted = formatAuthError(err);
+      setAuthError(formatted);
+      triggerToast(formatted);
     } finally {
       setAuthLoading(false);
     }
   };
 
-  const handleLogout = () => {
+  // Reset password via Firebase
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    if (!authEmail) {
+      setAuthError('Por favor, informe seu e-mail para receber as instruções.');
+      triggerToast('Por favor, informe seu e-mail.');
+      return;
+    }
+    setAuthLoading(true);
+    try {
+      await resetPassword(authEmail);
+      triggerToast('E-mail de redefinição enviado! Verifique sua caixa de entrada.');
+      setAuthMode('login');
+    } catch (err: any) {
+      const formatted = formatAuthError(err);
+      setAuthError(formatted);
+      triggerToast(formatted);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  // Logout
+  const handleLogout = async () => {
+    try {
+      await logoutUser();
+    } catch (err) {
+      console.error('Error logging out of Firebase:', err);
+    }
     localStorage.removeItem('imobishare_logged_in');
     localStorage.removeItem('imobishare_active_corretor');
     setIsAuthenticated(false);
     triggerToast('Sessão encerrada com sucesso.');
   };
+
 
   // Filter properties based on current filters and search word
   const getFilteredImoveis = () => {
@@ -711,17 +819,17 @@ Toque abaixo para ver fotos e todos os detalhes:
   if (!isAuthenticated) {
     return (
       <div className="bg-[#0F172A] min-h-screen flex flex-col justify-center items-center px-4 font-sans select-none" id="auth-screen">
-        <div className="w-full max-w-sm bg-white rounded-[32px] p-6 shadow-2xl space-y-5 border border-gray-100 max-h-[95dvh] overflow-y-auto">
+        <div className="w-full max-w-sm bg-white rounded-[32px] p-6 shadow-2xl space-y-4 border border-gray-100 max-h-[95dvh] overflow-y-auto">
           <div className="text-center space-y-1">
             <img
               src={logoImg}
               alt="ImobiShare Logo"
-              className="mx-auto w-14 h-14 object-contain rounded-2xl border border-slate-100 shadow-sm"
+              className="mx-auto w-14 h-14 object-contain rounded-2xl border border-slate-100 shadow-xs"
               referrerPolicy="no-referrer"
             />
             <h1 className="text-xl font-black text-[#003366] tracking-tight uppercase animate-pulse">ImobiShare</h1>
             <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">
-              {authMode === 'login' ? 'Acelere suas parcerias imobiliárias' : 'Crie sua conta profissional'}
+              {authMode === 'login' ? 'Acelere suas parcerias imobiliárias' : authMode === 'register' ? 'Crie sua conta profissional' : 'Recuperação de Senha'}
             </p>
           </div>
 
@@ -731,8 +839,31 @@ Toque abaixo para ver fotos e todos os detalhes:
             </div>
           )}
 
-          {authMode === 'login' ? (
-            <form onSubmit={handleEmailLogin} className="space-y-3.5">
+          {/* PROMINENT GOOGLE SIGN-IN BUTTON AT TOP */}
+          <button
+            type="button"
+            id="google-signin-btn"
+            onClick={handleGoogleLogin}
+            disabled={authLoading}
+            className="w-full bg-white hover:bg-slate-50 active:scale-[0.98] text-slate-700 text-xs font-bold py-3 px-4 rounded-xl border border-slate-200 shadow-xs hover:shadow-md transition-all flex items-center justify-center gap-2 tracking-wide cursor-pointer"
+          >
+            <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+            </svg>
+            {authLoading ? 'Aguarde...' : 'Entrar com Google'}
+          </button>
+
+          <div className="relative flex py-1 items-center">
+            <div className="flex-grow border-t border-slate-200"></div>
+            <span className="flex-shrink mx-2 text-[8px] font-bold uppercase tracking-widest text-slate-400">Ou acesse com e-mail</span>
+            <div className="flex-grow border-t border-slate-200"></div>
+          </div>
+
+          {authMode === 'login' && (
+            <form onSubmit={handleEmailLogin} className="space-y-3">
               <div className="space-y-1">
                 <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">E-mail Corporativo</label>
                 <div className="relative">
@@ -766,22 +897,31 @@ Toque abaixo para ver fotos e todos os detalhes:
               <button
                 type="submit"
                 disabled={authLoading}
-                className="w-full bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold py-3 px-4 rounded-xl shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 tracking-wide uppercase"
+                className="w-full bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold py-3 px-4 rounded-xl shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 tracking-wide uppercase cursor-pointer"
               >
                 {authLoading ? 'Conectando...' : 'Entrar com E-mail'}
               </button>
 
-              <div className="text-center pt-1.5">
+              <div className="flex items-center justify-between pt-1 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => { setAuthMode('forgot_password'); setAuthError(''); }}
+                  className="text-slate-500 hover:text-[#003366] font-medium cursor-pointer"
+                >
+                  Esqueci minha senha
+                </button>
                 <button
                   type="button"
                   onClick={() => { setAuthMode('register'); setAuthError(''); }}
-                  className="text-xs text-[#003366] hover:underline font-bold"
+                  className="text-[#003366] hover:underline font-bold cursor-pointer"
                 >
-                  Não tem conta? Cadastre-se grátis
+                  Criar Conta
                 </button>
               </div>
             </form>
-          ) : (
+          )}
+
+          {authMode === 'register' && (
             <form onSubmit={handleRegister} className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
               <div className="space-y-1">
                 <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Nome Completo</label>
@@ -864,7 +1004,7 @@ Toque abaixo para ver fotos e todos os detalhes:
               <button
                 type="submit"
                 disabled={authLoading}
-                className="w-full bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold py-3 px-4 rounded-xl shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 tracking-wide uppercase mt-1"
+                className="w-full bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold py-3 px-4 rounded-xl shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 tracking-wide uppercase mt-1 cursor-pointer"
               >
                 {authLoading ? 'Registrando...' : 'Criar Conta Profissional'}
               </button>
@@ -873,7 +1013,7 @@ Toque abaixo para ver fotos e todos os detalhes:
                 <button
                   type="button"
                   onClick={() => { setAuthMode('login'); setAuthError(''); }}
-                  className="text-xs text-[#003366] hover:underline font-bold"
+                  className="text-xs text-[#003366] hover:underline font-bold cursor-pointer"
                 >
                   Já tem uma conta? Faça login
                 </button>
@@ -881,17 +1021,46 @@ Toque abaixo para ver fotos e todos os detalhes:
             </form>
           )}
 
-          <div className="relative flex py-2 items-center">
-            <div className="flex-grow border-t border-slate-200"></div>
-            <span className="flex-shrink mx-2 text-[8px] font-bold uppercase tracking-widest text-slate-400">Acesso via Google</span>
-            <div className="flex-grow border-t border-slate-200"></div>
-          </div>
+          {authMode === 'forgot_password' && (
+            <form onSubmit={handleForgotPassword} className="space-y-3.5">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Informe o e-mail da sua conta abaixo para receber um link seguro de redefinição de senha.
+              </p>
 
-          <div className="space-y-2.5">
-            {/* Native official Google login button container */}
-            <div id="google-signin-btn-container" className="w-full flex justify-center py-0.5"></div>
-          </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">E-mail Cadastrado</label>
+                <div className="relative">
+                  <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="email"
+                    required
+                    placeholder="corretor@empresa.com"
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    className="w-full text-xs pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
+                  />
+                </div>
+              </div>
 
+              <button
+                type="submit"
+                disabled={authLoading}
+                className="w-full bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold py-3 px-4 rounded-xl shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 tracking-wide uppercase cursor-pointer"
+              >
+                {authLoading ? 'Enviando...' : 'Enviar Link de Recuperação'}
+              </button>
+
+              <div className="text-center pt-1">
+                <button
+                  type="button"
+                  onClick={() => { setAuthMode('login'); setAuthError(''); }}
+                  className="text-xs text-[#003366] hover:underline font-bold cursor-pointer"
+                >
+                  Voltar ao Login
+                </button>
+              </div>
+            </form>
+          )}
 
           <div className="text-center pt-1">
             <p className="text-[9px] text-slate-400">Balneário Camboriú • Itapema • Região Marítima</p>
@@ -900,6 +1069,7 @@ Toque abaixo para ver fotos e todos os detalhes:
       </div>
     );
   }
+
 
   // --- MAIN APP VIEW WRAPPER (Device framed / Responsive container) ---
   return (

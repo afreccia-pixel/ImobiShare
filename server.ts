@@ -56,6 +56,37 @@ function decodeGoogleToken(token: string) {
 }
 
 // REST API for Email/Password Authentication
+app.post('/api/auth/sync-firebase-user', async (req: Request, res: Response) => {
+  try {
+    const { uid, email, nome, foto, creci, telefone, whatsapp, cidade } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'E-mail é obrigatório para sincronização.' });
+    }
+
+    // Check if broker already exists in Neon PostgreSQL by email or uid
+    let broker = await ServerDb.getCorretorByEmail(email);
+    
+    const cleanBroker = {
+      id: broker ? broker.id : (uid || `corretor-${Date.now()}`),
+      nome: nome || (broker ? broker.nome : email.split('@')[0]),
+      email: email,
+      creci: creci || (broker ? broker.creci : 'CRECI Pendente'),
+      telefone: telefone || (broker ? broker.telefone : ''),
+      whatsapp: whatsapp || (broker ? broker.whatsapp : ''),
+      foto: foto || (broker ? broker.foto : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'),
+      cidade: cidade || (broker ? broker.cidade : 'Balneário Camboriú'),
+      restringirParceiros: broker ? broker.restringirParceiros : false,
+      parceirosEmails: broker ? broker.parceirosEmails : []
+    };
+
+    const saved = await ServerDb.saveCorretor(cleanBroker);
+    return res.json({ success: true, corretor: saved });
+  } catch (error: any) {
+    console.error('Erro ao sincronizar usuário do Firebase com o Neon:', error);
+    return res.status(500).json({ error: 'Erro interno ao sincronizar usuário no Neon PostgreSQL.' });
+  }
+});
+
 app.post('/api/auth/login', async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;

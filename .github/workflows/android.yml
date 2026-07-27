@@ -181,11 +181,3 @@ jobs:
           name: imobishare-release
           path: android/app/build/outputs/apk/release/imobishare-release.apk
           if-no-files-found: error
-          
-      - name: Instalar ferramenta de envio ao Google Drive
-        if: github.event_name == 'push'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y rclone
-
-    

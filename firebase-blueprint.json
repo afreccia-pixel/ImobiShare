@@ -1,0 +1,35 @@
+{
+  "entities": {
+    "users": {
+      "title": "User Profiles",
+      "description": "Perfis de corretores e usuários do ImobiShare",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "nome": { "type": "string" },
+        "email": { "type": "string" },
+        "foto": { "type": "string" },
+        "creci": { "type": "string" },
+        "telefone": { "type": "string" },
+        "whatsapp": { "type": "string" },
+        "cidade": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "lastLoginAt": { "type": "string" }
+      },
+      "required": ["uid", "email"]
+    },
+    "properties": {
+      "title": "Imóveis",
+      "description": "Imóveis e captações no ImobiShare",
+      "type": "object",
+      "properties": {
+        "titulo": { "type": "string" },
+        "tipo": { "type": "string" },
+        "valor": { "type": "number" },
+        "cidade": { "type": "string" },
+        "corretorId": { "type": "string" }
+      },
+      "required": ["titulo", "corretorId"]
+    }
+  }
+}
