@@ -175,19 +175,6 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose \
             android/app/build/outputs/apk/release/imobishare-release.apk
 
-      - name: Mostrar SHA-1 da keystore de release
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-        run: |
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/check.keystore"
-          keytool -list -v \
-            -keystore "$RUNNER_TEMP/check.keystore" \
-            -alias "$ANDROID_KEY_ALIAS" \
-            -storepass "$ANDROID_KEYSTORE_PASSWORD" \
-          | grep -E "SHA1|SHA256"
-
       - name: Publicar APK assinado
         uses: actions/upload-artifact@v4
         with:
