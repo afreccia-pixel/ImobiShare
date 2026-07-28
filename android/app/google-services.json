@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "53499268333",
+    "project_id": "imobishare1",
+    "storage_bucket": "imobishare1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:53499268333:android:b17a3ea38d12ab557950e4",
+        "android_client_info": {
+          "package_name": "com.portalcamboriu.imobishare"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCcIqpprpjXIYApAeQrmf6St-zNcksFCh4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
