@@ -176,17 +176,16 @@ jobs:
             android/app/build/outputs/apk/release/imobishare-release.apk
             steps:
             
-      - name: Generate SHA-1
+      - name: Verify Keystore SHA-1
         run: |
           keytool -list -v \
-            -keystore android/app/debug.keystore \
-            -alias androiddebugkey \
-            -storepass android \
-            -keypass android | grep SHA1
+            -keystore "$RUNNER_TEMP/my-release-key.keystore" \
+            -alias ${{ secrets.ANDROID_KEY_ALIAS }} \
+            -storepass ${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
+            | grep SHA1
 
-
-
-            
+      - name: Build with Gradle
+        run: ./gradlew assembleRelease            
 
       - name: Publicar APK assinado
         uses: actions/upload-artifact@v4
