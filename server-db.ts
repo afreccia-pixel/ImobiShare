@@ -426,6 +426,30 @@ export class ServerDb {
     }
   }
 
+  static async getStatus() {
+    let dbOk = false;
+    let dbTime: string | null = null;
+    let dbError: string | null = null;
+
+    if (this.isPostgres && this.pool) {
+      try {
+        const res = await this.pool.query('SELECT NOW() as now');
+        dbOk = true;
+        dbTime = res.rows[0]?.now ? String(res.rows[0].now) : new Date().toISOString();
+      } catch (e: any) {
+        dbError = e?.message || String(e);
+      }
+    }
+
+    return {
+      isPostgres: this.isPostgres,
+      dbOk,
+      dbTime,
+      dbError,
+      hasDatabaseUrl: Boolean(process.env.DATABASE_URL)
+    };
+  }
+
   static async getFavoritos(corretorId: string): Promise<string[]> {
     if (this.isPostgres && this.pool) {
       const res = await this.pool.query('SELECT imovel_id FROM favorites WHERE corretor_id = $1', [corretorId]);

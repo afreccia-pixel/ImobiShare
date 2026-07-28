@@ -198,6 +198,22 @@ app.post('/api/auth/google', async (req: Request, res: Response) => {
   }
 });
 
+// Health & Diagnostic API
+app.get('/api/health', async (req: Request, res: Response) => {
+  try {
+    const dbStatus = await ServerDb.getStatus();
+    return res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      cors: true,
+      serverUrl: process.env.VITE_SERVER_URL || 'https://imobishare.onrender.com',
+      db: dbStatus
+    });
+  } catch (err: any) {
+    return res.status(500).json({ status: 'error', error: err?.message || String(err) });
+  }
+});
+
 // REST API Database Properties and Brokers endpoints
 app.get(['/api/properties', '/api/imoveis'], async (req: Request, res: Response) => {
   try {

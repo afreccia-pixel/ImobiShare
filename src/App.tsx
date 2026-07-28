@@ -29,6 +29,7 @@ import { PropertyDetails } from './components/PropertyDetails';
 import { UserProfile } from './components/UserProfile';
 import { PublicView } from './components/PublicView';
 import { SupportForm } from './components/SupportForm';
+import { ConnectionTests } from './components/ConnectionTests';
 import { getValidImage, handleImageError } from './utils/imageUtils';
 import {
   Home as HomeIcon,
@@ -54,11 +55,12 @@ import {
   Bed,
   Car,
   Maximize,
-  LogOut
+  LogOut,
+  Activity
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-type TabType = 'home' | 'my-properties' | 'profile' | 'support';
+type TabType = 'home' | 'my-properties' | 'profile' | 'support' | 'tests';
 
 export default function App() {
   // Authentication state
@@ -1675,6 +1677,12 @@ Toque abaixo para ver fotos e todos os detalhes:
                   triggerToast={triggerToast}
                 />
               )}
+
+              {activeTab === 'tests' && (
+                <div id="connection-tests-tab-view">
+                  <ConnectionTests />
+                </div>
+              )}
             </>
           )}
 
@@ -1802,6 +1810,15 @@ Toque abaixo para ver fotos e todos os detalhes:
               title="Cadastrar Novo Imóvel"
             >
               <PlusCircle size={22} className="stroke-[2.5px]" />
+            </button>
+
+            <button
+              onClick={() => handleTabChange('tests')}
+              className={`flex flex-col items-center gap-1 p-1 ${activeTab === 'tests' ? 'text-[#003366]' : 'text-slate-400 hover:text-slate-600'}`}
+              id="tab-tests"
+            >
+              <Activity size={18} className={activeTab === 'tests' ? 'stroke-[2.5px]' : 'stroke-2'} />
+              <span className="text-[8px] font-extrabold uppercase tracking-wider">Testes</span>
             </button>
 
             <button
