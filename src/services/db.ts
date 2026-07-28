@@ -280,13 +280,24 @@ export class DbService {
     localStorage.setItem(STORAGE_KEYS.IMOVEIS, JSON.stringify(imoveis));
 
     // Post update to Express database
-    fetch(getApiUrl('/api/properties'), {
+    const apiUrl = getApiUrl('/api/properties');
+    console.log(`📡 Sending property POST request to: ${apiUrl}`);
+    
+    fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(finalImovel),
-    }).then(res => {
-      if (res.ok) this.syncWithServer();
-    }).catch(err => console.error('Failed to post property update to database:', err));
+    }).then(async res => {
+      if (res.ok) {
+        console.log('✅ Property persisted successfully on backend');
+        this.syncWithServer();
+      } else {
+        const errText = await res.text().catch(() => '');
+        console.error(`❌ Failed to persist property on backend (Status ${res.status}):`, errText);
+      }
+    }).catch(err => {
+      console.error('❌ Network error posting property update to backend:', err);
+    });
 
     return finalImovel;
   }

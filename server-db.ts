@@ -343,6 +343,27 @@ export class ServerDb {
 
   static async saveImovel(prop: Imovel): Promise<Imovel> {
     if (this.isPostgres && this.pool) {
+      // Ensure broker exists in brokers table to prevent FK constraint violations
+      if (prop.corretorId) {
+        try {
+          const brokerCheck = await this.pool.query('SELECT id FROM brokers WHERE id = $1', [prop.corretorId]);
+          if (brokerCheck.rows.length === 0) {
+            await this.pool.query(`
+              INSERT INTO brokers (id, nome, email, password)
+              VALUES ($1, $2, $3, $4)
+              ON CONFLICT (id) DO NOTHING
+            `, [
+              prop.corretorId, 
+              prop.corretorNome || 'Corretor', 
+              `${prop.corretorId}@imobishare.com`, 
+              'password123'
+            ]);
+          }
+        } catch (e) {
+          console.warn('⚠️ Could not verify/upsert broker before property save:', e);
+        }
+      }
+
       const fotosStr = JSON.stringify(prop.fotos || []);
       const check = await this.pool.query('SELECT id FROM properties WHERE id = $1', [prop.id]);
       if (check.rows.length > 0) {

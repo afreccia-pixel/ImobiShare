@@ -92,10 +92,10 @@ export function PublicView({ imovel, onExit }: PublicViewProps) {
             </div>
           )}
 
-          <span className={`absolute top-4 left-4 text-xs font-bold uppercase text-white px-2.5 py-0.5 rounded-full ${
+          <span className={`absolute top-3 left-3 text-[10px] font-bold uppercase tracking-wider text-white px-2 py-0.5 rounded-full shadow-md ${
             imovel.tipo === 'venda' ? 'bg-[#003366]' : imovel.tipo === 'locação' ? 'bg-emerald-600' : 'bg-indigo-900'
           }`}>
-            {imovel.tipo === 'venda' ? 'Compra' : imovel.tipo === 'locação' ? 'Aluguel' : 'Compra & Aluguel'}
+            {imovel.tipo === 'venda' ? 'Venda' : imovel.tipo === 'locação' ? 'Aluguel' : 'Venda & Aluguel'}
           </span>
         </div>
 
@@ -192,35 +192,35 @@ export function PublicView({ imovel, onExit }: PublicViewProps) {
           </div>
 
           {/* Broker footer details */}
-          <div className="pt-4 border-t border-slate-100 flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2.5">
+          <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
               <img
                 src={ownerBroker.foto}
                 alt={ownerBroker.nome}
                 referrerPolicy="no-referrer"
-                className="w-10 h-10 rounded-full object-cover border border-slate-100"
+                className="w-9 h-9 rounded-full object-cover border border-slate-100 flex-shrink-0"
               />
-              <div>
-                <span className="text-xs font-bold text-slate-800 block">Corretor Responsável</span>
-                <span className="text-[10px] text-slate-400">{ownerBroker.nome} | {ownerBroker.creci}</span>
+              <div className="min-w-0 flex-1">
+                <span className="text-xs font-bold text-slate-800 block truncate">Corretor Responsável</span>
+                <span className="text-[10px] text-slate-400 block truncate">{ownerBroker.nome} | {ownerBroker.creci}</span>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 flex-shrink-0">
               <a
                 href={`tel:${ownerBroker.telefone?.replace(/\D/g, '') || '47998887766'}`}
-                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl transition-all border border-slate-200/80 active:scale-95"
+                className="flex items-center justify-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold rounded-lg transition-all border border-slate-200/80 active:scale-95"
                 title="Ligar para o corretor"
               >
-                <Phone size={14} className="text-[#003366]" />
+                <Phone size={12} className="text-[#003366]" />
                 <span>Ligar</span>
               </a>
               <button
                 onClick={handleWhatsAppClick}
-                className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs active:scale-95"
+                className="flex items-center justify-center gap-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-lg transition-all shadow-2xs active:scale-95"
                 title="Enviar WhatsApp ao corretor"
               >
-                <MessageCircle size={14} />
+                <MessageCircle size={12} />
                 <span>WhatsApp</span>
               </button>
             </div>

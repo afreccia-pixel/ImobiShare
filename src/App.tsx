@@ -901,10 +901,10 @@ Toque abaixo para ver fotos e todos os detalhes:
                     className="w-full h-full object-cover"
                     referrerPolicy="no-referrer"
                   />
-                  <span className={`absolute top-1 left-1 text-[7px] font-black uppercase tracking-wider text-white px-1 py-0.5 rounded-sm shadow-xs ${
+                  <span className={`absolute top-1 left-1 text-[6.5px] font-extrabold uppercase tracking-tight text-white px-1 py-0.5 rounded-xs shadow-xs ${
                     imovel.tipo === 'venda' ? 'bg-[#003366]' : imovel.tipo === 'locação' ? 'bg-emerald-700' : 'bg-indigo-900'
                   }`}>
-                    {imovel.tipo === 'venda' ? 'Comprar' : imovel.tipo === 'locação' ? 'Alugar' : 'Venda & Aluguel'}
+                    {imovel.tipo === 'venda' ? 'Venda' : imovel.tipo === 'locação' ? 'Aluguel' : 'Venda & Aluguel'}
                   </span>
                 </div>
 
@@ -1882,7 +1882,7 @@ Toque abaixo para ver fotos e todos os detalhes:
                         onClick={() => setFilterTipo('comprar')}
                         className={`py-2 rounded-lg text-xs transition-all ${filterTipo === 'comprar' ? 'bg-white text-[#003366] shadow-xs' : 'text-slate-500'}`}
                       >
-                        Comprar (Venda)
+                        Venda
                       </button>
                       <button
                         type="button"

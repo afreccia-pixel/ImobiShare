@@ -9,15 +9,19 @@ export function getApiUrl(path: string): string {
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
 
   if (typeof window !== 'undefined') {
+    const capacitorObj = (window as any).Capacitor;
     const isCapacitorNative = Boolean(
-      (window as any).Capacitor?.isNativePlatform?.() ||
-      (window as any).Capacitor?.getPlatform?.() === 'android' ||
-      (window as any).Capacitor?.getPlatform?.() === 'ios'
+      capacitorObj?.isNativePlatform?.() ||
+      capacitorObj?.getPlatform?.() === 'android' ||
+      capacitorObj?.getPlatform?.() === 'ios' ||
+      window.location.protocol === 'capacitor:' ||
+      window.location.protocol === 'file:' ||
+      (window.location.hostname === 'localhost' && window.location.port !== '3000' && window.location.port !== '5173')
     );
 
     const configuredServerUrl = (import.meta as any).env?.VITE_SERVER_URL;
 
-    if (isCapacitorNative) {
+    if (isCapacitorNative || configuredServerUrl) {
       const baseUrl = (configuredServerUrl || DEFAULT_SERVER_URL).replace(/\/$/, '');
       return `${baseUrl}${cleanPath}`;
     }
@@ -25,3 +29,4 @@ export function getApiUrl(path: string): string {
 
   return cleanPath;
 }
+
