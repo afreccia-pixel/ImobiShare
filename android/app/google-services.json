@@ -12,7 +12,20 @@
           "package_name": "com.portalcamboriu.imobishare"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "53499268333-bp7kiait09dr2aojlcn2elldd8pa9cbu.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.portalcamboriu.imobishare",
+            "certificate_hash": "a3b5b4276bc949994b905d8adead6ea859fe910e"
+          }
+        },
+        {
+          "client_id": "53499268333-re636j9tnbonm8o4jkcoi498dp04oeui.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCcIqpprpjXIYApAeQrmf6St-zNcksFCh4"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "53499268333-re636j9tnbonm8o4jkcoi498dp04oeui.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
