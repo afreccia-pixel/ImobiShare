@@ -2,6 +2,7 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
   getAuth, 
   GoogleAuthProvider, 
+  signInWithCredential,
   signInWithPopup, 
   signInWithRedirect, 
   getRedirectResult,
@@ -12,6 +13,8 @@ import {
   onAuthStateChanged,
   User
 } from 'firebase/auth';
+import { Capacitor } from '@capacitor/core';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { 
   getFirestore, 
   doc, 
@@ -169,9 +172,31 @@ export async function syncUserWithNeon(
 export const syncUserWithFirestore = syncUserWithNeon;
 
 /**
- * Sign in with Google using Popup or Redirect fallback
+ * Sign in with Google using native Capacitor Auth on Android / iOS or Web fallback
  */
 export async function signInWithGoogle(): Promise<User> {
+  // Use native Google Sign-In when running on Android/iOS native Capacitor container
+  if (Capacitor.isNativePlatform() || Capacitor.getPlatform() === 'android') {
+    try {
+      console.log('Iniciando login nativo com Google via @capacitor-firebase/authentication...');
+      const result = await FirebaseAuthentication.signInWithGoogle();
+      
+      const idToken = result.credential?.idToken;
+      if (!idToken) {
+        throw new Error('Não foi possível obter o ID Token do Google Sign-In nativo.');
+      }
+
+      // Authenticate with Firebase JS SDK using the native credential
+      const credential = GoogleAuthProvider.credential(idToken);
+      const userCredential = await signInWithCredential(auth, credential);
+      return userCredential.user;
+    } catch (nativeError: any) {
+      console.error('Erro no login nativo com Google:', nativeError);
+      throw nativeError;
+    }
+  }
+
+  // Fallback for Web / PWA browser environment
   try {
     const result = await signInWithPopup(auth, googleProvider);
     return result.user;
@@ -237,5 +262,12 @@ export async function resetPassword(email: string): Promise<void> {
  * Sign out
  */
 export async function logoutUser(): Promise<void> {
+  if (Capacitor.isNativePlatform() || Capacitor.getPlatform() === 'android') {
+    try {
+      await FirebaseAuthentication.signOut();
+    } catch (e) {
+      console.warn('Erro ao deslogar do plugin nativo de auth:', e);
+    }
+  }
   await fbSignOut(auth);
 }

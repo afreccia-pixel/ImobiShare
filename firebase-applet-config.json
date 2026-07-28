@@ -1,12 +1,12 @@
 {
-  "projectId": "agile-sight-x5xj8",
-  "appId": "1:1027408596365:web:84a7d2bf982ff8d7e8c1c4",
-  "apiKey": "AIzaSyB_OyyikloayK0vJpt5Q1I0uJ8_bhVINrE",
-  "authDomain": "agile-sight-x5xj8.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-imobishare-273c03ae-ae39-44b7-8d17-d87cbcad3380",
-  "storageBucket": "agile-sight-x5xj8.firebasestorage.app",
-  "messagingSenderId": "1027408596365",
-  "measurementId": "",
-  "oAuthClientId": "1027408596365-vlij7f4o7ldn72nghaflfnajj8c0sp68.apps.googleusercontent.com",
+  "projectId": "imobishare1",
+  "appId": "1:53499268333:web:a4643de992841e547950e4",
+  "apiKey": "AIzaSyBS39fg7tA7_KB-UIGhye-DTh1mQhFHXEI",
+  "authDomain": "imobishare1.firebaseapp.com",
+  "firestoreDatabaseId": "",
+  "storageBucket": "imobishare1.firebasestorage.app",
+  "messagingSenderId": "53499268333",
+  "measurementId": "G-7T8Y343F9M",
+  "oAuthClientId": "",
   "recaptchaSiteKey": ""
 }

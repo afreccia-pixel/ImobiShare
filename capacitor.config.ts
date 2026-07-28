@@ -7,7 +7,13 @@ const config: CapacitorConfig = {
   server: {
     url: 'https://imobishare.onrender.com',
     androidScheme: 'https'
-  }
+  },
+  plugins: {
+    FirebaseAuthentication: {
+      skipNativeAuth: false,
+      providers: ['google.com'],
+    },
+  },
 };
 
 export default config;
