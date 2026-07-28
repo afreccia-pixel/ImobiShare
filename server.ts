@@ -15,6 +15,18 @@ dotenv.config();
 
 // Initialize Express app
 const app = express();
+
+// CORS Middleware to allow Capacitor native mobile app and cross-origin clients
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 app.use(express.json({ limit: '10mb' }));
 
 // Lazy init of Gemini API client
@@ -186,7 +198,7 @@ app.post('/api/auth/google', async (req: Request, res: Response) => {
 });
 
 // REST API Database Properties and Brokers endpoints
-app.get('/api/properties', async (req: Request, res: Response) => {
+app.get(['/api/properties', '/api/imoveis'], async (req: Request, res: Response) => {
   try {
     const list = await ServerDb.getImoveis();
     return res.json(list);
@@ -196,7 +208,7 @@ app.get('/api/properties', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/properties', async (req: Request, res: Response) => {
+app.post(['/api/properties', '/api/imoveis'], async (req: Request, res: Response) => {
   try {
     const saved = await ServerDb.saveImovel(req.body);
     return res.json(saved);
@@ -206,7 +218,7 @@ app.post('/api/properties', async (req: Request, res: Response) => {
   }
 });
 
-app.delete('/api/properties/:id', async (req: Request, res: Response) => {
+app.delete(['/api/properties/:id', '/api/imoveis/:id'], async (req: Request, res: Response) => {
   try {
     await ServerDb.deleteImovel(req.params.id);
     return res.json({ success: true });

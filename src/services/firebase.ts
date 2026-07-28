@@ -15,6 +15,7 @@ import {
 } from 'firebase/auth';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
+import { getApiUrl } from '../utils/apiUrl';
 import { 
   getFirestore, 
   doc, 
@@ -127,7 +128,7 @@ export async function syncUserWithNeon(
   };
 
   try {
-    const res = await fetch('/api/auth/sync-firebase-user', {
+    const res = await fetch(getApiUrl('/api/auth/sync-firebase-user'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),

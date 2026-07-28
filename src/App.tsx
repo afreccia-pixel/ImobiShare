@@ -19,6 +19,7 @@ import {
   formatAuthError 
 } from './services/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { getApiUrl } from './utils/apiUrl';
 import { StoryBubble } from './components/StoryBubble';
 import { PropertyCard } from './components/PropertyCard';
 import { CompactPropertyRow } from './components/CompactPropertyRow';
@@ -482,7 +483,7 @@ export default function App() {
       } catch (fbErr: any) {
         // Fallback: check Express backend or local DbService
         try {
-          const response = await fetch('/api/auth/login', {
+          const response = await fetch(getApiUrl('/api/auth/login'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email: authEmail, password: authPassword })

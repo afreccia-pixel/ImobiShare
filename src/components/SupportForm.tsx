@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { Corretor } from '../types';
 import { Mail, Phone, User, MessageCircle, AlertCircle, ArrowLeft, Send, Loader2 } from 'lucide-react';
+import { getApiUrl } from '../utils/apiUrl';
 
 interface SupportFormProps {
   activeCorretor: Corretor;
@@ -33,7 +34,7 @@ export function SupportForm({ activeCorretor, onBack, triggerToast }: SupportFor
     setIsSending(true);
 
     try {
-      const response = await fetch('/api/support/send', {
+      const response = await fetch(getApiUrl('/api/support/send'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

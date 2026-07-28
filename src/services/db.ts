@@ -6,6 +6,7 @@
 import { Imovel, Corretor } from '../types';
 import { INITIAL_IMOVEIS, INTEGRATED_IMOVEIS, MOCK_CORRETORES } from '../data';
 import { sanitizeFotos } from '../utils/imageUtils';
+import { getApiUrl } from '../utils/apiUrl';
 
 const STORAGE_KEYS = {
   IMOVEIS: 'imobishare_imoveis',
@@ -41,7 +42,7 @@ export class DbService {
   static async syncWithServer(): Promise<void> {
     try {
       // 1. Sync Brokers
-      const brokersRes = await fetch('/api/brokers');
+      const brokersRes = await fetch(getApiUrl('/api/brokers'));
       if (brokersRes.ok) {
         const brokers = await brokersRes.json();
         if (brokers && brokers.length > 0) {
@@ -57,7 +58,7 @@ export class DbService {
       }
 
       // 2. Sync Properties
-      const propertiesRes = await fetch('/api/properties');
+      const propertiesRes = await fetch(getApiUrl('/api/properties'));
       if (propertiesRes.ok) {
         const properties = await propertiesRes.json();
         if (properties) {
@@ -68,7 +69,7 @@ export class DbService {
       // 3. Sync Favorites for active broker
       const activeCorretor = this.getActiveCorretor();
       if (activeCorretor && activeCorretor.id) {
-        const favsRes = await fetch(`/api/favorites/${activeCorretor.id}`);
+        const favsRes = await fetch(getApiUrl(`/api/favorites/${activeCorretor.id}`));
         if (favsRes.ok) {
           const favs = await favsRes.json();
           const allFavsRaw = localStorage.getItem(STORAGE_KEYS.FAVORITOS);
@@ -129,7 +130,7 @@ export class DbService {
     }
 
     // Push to server asynchronously
-    fetch('/api/brokers', {
+    fetch(getApiUrl('/api/brokers'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(corretor),
@@ -149,7 +150,7 @@ export class DbService {
     }
     localStorage.setItem(STORAGE_KEYS.CORRETORES, JSON.stringify(corretores));
     
-    fetch('/api/brokers', {
+    fetch(getApiUrl('/api/brokers'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(corretor),
@@ -220,7 +221,7 @@ export class DbService {
     localStorage.setItem(STORAGE_KEYS.FAVORITOS, JSON.stringify(parsed));
 
     // Send favorite toggle to backend
-    fetch('/api/favorites/toggle', {
+    fetch(getApiUrl('/api/favorites/toggle'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ corretorId, imovelId }),
@@ -279,7 +280,7 @@ export class DbService {
     localStorage.setItem(STORAGE_KEYS.IMOVEIS, JSON.stringify(imoveis));
 
     // Post update to Express database
-    fetch('/api/properties', {
+    fetch(getApiUrl('/api/properties'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(finalImovel),
@@ -310,7 +311,7 @@ export class DbService {
     localStorage.setItem(STORAGE_KEYS.IMOVEIS, JSON.stringify(imoveis));
 
     // Save duplicate to backend database
-    fetch('/api/properties', {
+    fetch(getApiUrl('/api/properties'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(duplicated),
@@ -328,7 +329,7 @@ export class DbService {
     localStorage.setItem(STORAGE_KEYS.IMOVEIS, JSON.stringify(updated));
 
     // Delete from database
-    fetch(`/api/properties/${id}`, {
+    fetch(getApiUrl(`/api/properties/${id}`), {
       method: 'DELETE',
     }).then(res => {
       if (res.ok) this.syncWithServer();
@@ -362,7 +363,7 @@ export class DbService {
     valor?: number;
   }): Promise<string> {
     try {
-      const response = await fetch('/api/ai/improve-description', {
+      const response = await fetch(getApiUrl('/api/ai/improve-description'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
