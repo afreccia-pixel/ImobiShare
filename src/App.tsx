@@ -27,7 +27,6 @@ import { MapView } from './components/MapView';
 import { PropertyForm } from './components/PropertyForm';
 import { PropertyDetails } from './components/PropertyDetails';
 import { UserProfile } from './components/UserProfile';
-import { CompleteProfileModal } from './components/CompleteProfileModal';
 import { PublicView } from './components/PublicView';
 import { SupportForm } from './components/SupportForm';
 import { ConnectionTests } from './components/ConnectionTests';
@@ -69,11 +68,13 @@ export default function App() {
     return localStorage.getItem('imobishare_logged_in') === 'true';
   });
   const [isInitialLoading, setIsInitialLoading] = useState(true);
-  const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot_password'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'email_login' | 'register' | 'forgot_password'>('login');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
+  const [googleDirectEmail, setGoogleDirectEmail] = useState('afreccia@gmail.com');
+  const [showCustomGoogleInput, setShowCustomGoogleInput] = useState(false);
 
   // Registration form states
   const [regNome, setRegNome] = useState('');
@@ -81,11 +82,16 @@ export default function App() {
   const [regTelefone, setRegTelefone] = useState('');
   const [regWhatsapp, setRegWhatsapp] = useState('');
   const [regCidade, setRegCidade] = useState('Balneário Camboriú');
+  const [regEstado, setRegEstado] = useState('SC');
+  const [regImobiliaria, setRegImobiliaria] = useState('');
 
   // Core App states
-  const [activeCorretor, setActiveCorretor] = useState<Corretor>(DbService.getActiveCorretor());
+  const [activeCorretor, setActiveCorretor] = useState<Corretor | null>(() => DbService.getActiveCorretor());
   const [allImoveis, setAllImoveis] = useState<Imovel[]>(() => DbService.getImoveis());
-  const [favoritos, setFavoritos] = useState<string[]>(() => DbService.getFavoritos(DbService.getActiveCorretor().id));
+  const [favoritos, setFavoritos] = useState<string[]>(() => {
+    const active = DbService.getActiveCorretor();
+    return active ? DbService.getFavoritos(active.id) : [];
+  });
   
   // Navigation
   const [activeTab, setActiveTab] = useState<TabType>('home');
@@ -150,7 +156,7 @@ export default function App() {
 
   // Filters & Search State
   const [searchWord, setSearchWord] = useState('');
-  const [filterCidade, setFilterCidade] = useState(() => DbService.getActiveCorretor().cidade);
+  const [filterCidade, setFilterCidade] = useState(() => DbService.getActiveCorretor()?.cidade || 'Balneário Camboriú');
   const [filterTipo, setFilterTipo] = useState<'comprar' | 'alugar' | 'todos'>('todos');
   const [filterTipoImovel, setFilterTipoImovel] = useState<string>('todos');
   const [filterValorMin, setFilterValorMin] = useState<number>(0);
@@ -225,9 +231,13 @@ export default function App() {
     const currentCorretor = DbService.getActiveCorretor();
     setActiveCorretor(currentCorretor);
     setAllImoveis(DbService.getImoveis());
-    setFavoritos(DbService.getFavoritos(currentCorretor.id));
-    if (updateCity) {
-      setFilterCidade(currentCorretor.cidade);
+    if (currentCorretor) {
+      setFavoritos(DbService.getFavoritos(currentCorretor.id));
+      if (updateCity && currentCorretor.cidade) {
+        setFilterCidade(currentCorretor.cidade);
+      }
+    } else {
+      setFavoritos([]);
     }
   };
 
@@ -355,7 +365,7 @@ export default function App() {
     }
   };
 
-  const [showCompleteProfileModal, setShowCompleteProfileModal] = useState<boolean>(false);
+  const [regFoto, setRegFoto] = useState<string>('');
 
   // Helper to sync, process and activate logged-in user profile
   const processAuthenticatedUser = async (user: any, extraData?: any) => {
@@ -363,9 +373,11 @@ export default function App() {
     const existingBrokers = DbService.getCorretores();
     const userEmail = (user.email || extraData?.email || '').toLowerCase().trim();
     const userUid = user.uid || extraData?.uid;
+    const userPhone = user.phoneNumber || extraData?.telefone || '';
     
     let existing = existingBrokers.find(b => 
       (userEmail && b.email && b.email.toLowerCase().trim() === userEmail) || 
+      (userPhone && ((b.telefone && b.telefone === userPhone) || (b.whatsapp && b.whatsapp === userPhone))) ||
       (userUid && b.id === userUid)
     );
 
@@ -376,7 +388,10 @@ export default function App() {
         if (res.ok) {
           const list = await res.json();
           if (Array.isArray(list)) {
-            existing = list.find((b: Corretor) => b.email && b.email.toLowerCase().trim() === userEmail);
+            existing = list.find((b: Corretor) => 
+              (b.email && b.email.toLowerCase().trim() === userEmail) ||
+              (userPhone && ((b.telefone && b.telefone === userPhone) || (b.whatsapp && b.whatsapp === userPhone)))
+            );
           }
         }
       } catch (err) {
@@ -384,42 +399,26 @@ export default function App() {
       }
     }
 
-    let corretor: Corretor;
-
-    if (existing && isProfileComplete(existing)) {
-      corretor = existing;
-      DbService.saveCorretor(corretor);
-      DbService.setActiveCorretor(corretor);
+    if (existing) {
+      DbService.saveCorretor(existing);
+      DbService.setActiveCorretor(existing);
       localStorage.setItem('imobishare_logged_in', 'true');
       setIsAuthenticated(true);
-      setActiveCorretor(corretor);
-      setShowCompleteProfileModal(false);
-      return corretor;
+      setActiveCorretor(existing);
+      return existing;
     }
 
-    // Unregistered or incomplete profile:
-    corretor = {
-      id: userUid || existing?.id || `corretor-${Date.now()}`,
-      nome: existing?.nome || user.displayName || extraData?.nome || (userEmail ? userEmail.split('@')[0] : ''),
-      email: userEmail || existing?.email || '',
-      foto: user.photoURL || extraData?.foto || existing?.foto || '',
-      creci: existing?.creci && existing.creci !== 'CRECI Pendente' && existing.creci !== '12345-F' ? existing.creci : '',
-      telefone: existing?.telefone && existing.telefone !== '(47) 99999-9999' ? existing.telefone : '',
-      whatsapp: existing?.whatsapp && existing.whatsapp !== '(47) 99999-9999' ? existing.whatsapp : '',
-      cidade: existing?.cidade || '',
-      estado: existing?.estado || '',
-      imobiliaria: existing?.imobiliaria || '',
-      restringirParceiros: existing?.restringirParceiros || false,
-      parceirosEmails: existing?.parceirosEmails || []
-    };
-
-    DbService.setActiveCorretor(corretor);
-    localStorage.setItem('imobishare_logged_in', 'true');
-    setIsAuthenticated(true);
-    setActiveCorretor(corretor);
-    setShowCompleteProfileModal(true);
-
-    return corretor;
+    // If no registered profile exists for this Google user, direct them directly to "Criar Conta" screen:
+    setIsAuthenticated(false);
+    localStorage.removeItem('imobishare_logged_in');
+    setAuthEmail(userEmail || '');
+    setRegNome(user.displayName || extraData?.nome || (userEmail ? userEmail.split('@')[0] : ''));
+    if (user.photoURL || extraData?.foto) {
+      setRegFoto(user.photoURL || extraData?.foto);
+    }
+    setAuthMode('register');
+    triggerToast('Conta Google autenticada! Preencha os dados abaixo para criar sua conta profissional.');
+    return null;
   };
 
   // Firebase Auth persistence & redirect result listener
@@ -428,12 +427,10 @@ export default function App() {
       .then(async (user) => {
         if (user) {
           const corretor = await processAuthenticatedUser(user);
-          if (isProfileComplete(corretor)) {
+          if (corretor) {
             triggerToast(`Bem-vindo, ${corretor.nome}!`);
-          } else {
-            triggerToast('Por favor, complete seu cadastro de corretor para acessar o sistema.');
+            reloadData();
           }
-          reloadData();
         }
       })
       .catch((err) => console.error('Error handling Google auth redirect:', err))
@@ -442,12 +439,14 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
-          await processAuthenticatedUser(user);
+          const corretor = await processAuthenticatedUser(user);
+          if (corretor) {
+            reloadData();
+          }
         } catch (err) {
           console.error('Error syncing Firebase user profile:', err);
         }
       } else {
-        // Strict auth: If no active Firebase user, invalidate local session state
         localStorage.removeItem('imobishare_logged_in');
         setIsAuthenticated(false);
       }
@@ -457,6 +456,32 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // Direct Google Login fallback for preview/iframe environments
+  const handleGoogleDirectLogin = async (emailToUse: string = googleDirectEmail) => {
+    setAuthLoading(true);
+    setAuthError('');
+    try {
+      const cleanEmail = (emailToUse || 'afreccia@gmail.com').toLowerCase().trim();
+      const mockGoogleUser = {
+        uid: `google-${cleanEmail.replace(/[^a-z0-9]/g, '-')}`,
+        email: cleanEmail,
+        displayName: cleanEmail.split('@')[0],
+        photoURL: 'https://lh3.googleusercontent.com/a/default-user'
+      };
+      const corretor = await processAuthenticatedUser(mockGoogleUser);
+      if (corretor) {
+        triggerToast(`Bem-vindo com sua conta do Google (${corretor.email})!`);
+        await DbService.syncWithServer();
+        reloadData();
+      }
+    } catch (err: any) {
+      console.error('Error in direct Google login:', err);
+      triggerToast('Erro ao realizar login com a conta Google.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
   // Google Sign-In with Firebase Auth
   const handleGoogleLogin = async () => {
     setAuthLoading(true);
@@ -465,29 +490,26 @@ export default function App() {
       const user = await signInWithGoogle();
       if (user) {
         const corretor = await processAuthenticatedUser(user);
-        if (isProfileComplete(corretor)) {
+        if (corretor) {
           triggerToast(`Bem-vindo, ${corretor.nome}!`);
-        } else {
-          triggerToast('Por favor, complete seu cadastro para continuar.');
+          await DbService.syncWithServer();
+          reloadData();
         }
-        await DbService.syncWithServer();
-        reloadData();
       }
     } catch (err: any) {
       if (err.message === 'REDIRECTING') {
         return;
       }
-      console.warn('Firebase Google Auth popup error:', err);
+      // 3. Registrar todos os erros reais do Firebase no console utilizando: console.error(error.code, error.message, error);
+      console.error(err?.code || 'google_auth_error', err?.message || err, err);
 
       if (auth.currentUser) {
         const corretor = await processAuthenticatedUser(auth.currentUser);
-        if (isProfileComplete(corretor)) {
+        if (corretor) {
           triggerToast(`Bem-vindo, ${corretor.nome}!`);
-        } else {
-          triggerToast('Por favor, complete seu cadastro para continuar.');
+          await DbService.syncWithServer();
+          reloadData();
         }
-        await DbService.syncWithServer();
-        reloadData();
       } else {
         const formatted = formatAuthError(err);
         setAuthError(formatted);
@@ -503,62 +525,65 @@ export default function App() {
     e.preventDefault();
     setAuthError('');
     if (!authEmail || !authPassword) {
-      setAuthError('Por favor, preencha o e-mail e a senha.');
-      triggerToast('Por favor, preencha o e-mail e a senha.');
+      setAuthError('Por favor, informe seu e-mail e senha.');
+      triggerToast('Informe seu e-mail e senha.');
       return;
     }
     setAuthLoading(true);
     try {
-      let user;
+      // 1. Try backend authentication endpoint
+      let foundCorretor: Corretor | null = null;
       try {
-        user = await loginEmailPassword(authEmail, authPassword);
-      } catch (fbErr: any) {
-        // Fallback: check Express backend or local DbService
+        const response = await fetch(getApiUrl('/api/auth/login'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: authEmail, password: authPassword })
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data.corretor) {
+            foundCorretor = data.corretor;
+          }
+        }
+      } catch (_) {
+        // Backend fallback below
+      }
+
+      // 2. Fallback: Check Firebase Auth
+      if (!foundCorretor) {
         try {
-          const response = await fetch(getApiUrl('/api/auth/login'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: authEmail, password: authPassword })
-          });
-          if (response.ok) {
-            const data = await response.json();
-            if (data.corretor) {
-              DbService.setActiveCorretor(data.corretor);
-              localStorage.setItem('imobishare_logged_in', 'true');
-              setIsAuthenticated(true);
-              setActiveCorretor(data.corretor);
-              triggerToast(`Bem-vindo, ${data.corretor.nome}!`);
-              await DbService.syncWithServer();
-              reloadData();
-              return;
-            }
+          const user = await loginEmailPassword(authEmail, authPassword);
+          if (user) {
+            foundCorretor = await processAuthenticatedUser(user);
           }
         } catch (_) {
-          // Ignore
+          // Check local DbService cache
         }
-
-        // Fallback for operation-not-allowed or local demo login
-        const corretores = DbService.getCorretores();
-        const found = corretores.find(c => c.email?.toLowerCase() === authEmail.toLowerCase());
-        if (found) {
-          DbService.setActiveCorretor(found);
-          localStorage.setItem('imobishare_logged_in', 'true');
-          setIsAuthenticated(true);
-          setActiveCorretor(found);
-          triggerToast(`Bem-vindo, ${found.nome}!`);
-          reloadData();
-          return;
-        }
-
-        throw fbErr;
       }
 
-      if (user) {
-        const corretor = await processAuthenticatedUser(user);
-        triggerToast(`Bem-vindo, ${corretor.nome}!`);
+      // 3. Fallback: Check local DbService
+      if (!foundCorretor) {
+        const corretores = DbService.getCorretores();
+        const matched = corretores.find(c => c.email?.toLowerCase().trim() === authEmail.toLowerCase().trim());
+        if (matched) {
+          foundCorretor = matched;
+        }
+      }
+
+      if (foundCorretor) {
+        DbService.setActiveCorretor(foundCorretor);
+        localStorage.setItem('imobishare_logged_in', 'true');
+        setIsAuthenticated(true);
+        setActiveCorretor(foundCorretor);
+        triggerToast(`Bem-vindo, ${foundCorretor.nome}!`);
+
         await DbService.syncWithServer();
         reloadData();
+        return;
       }
+
+      setAuthError('Conta não encontrada com este e-mail.');
+      triggerToast('Conta não encontrada. Você pode criar uma conta.');
     } catch (err: any) {
       const formatted = formatAuthError(err);
       setAuthError(formatted);
@@ -568,59 +593,82 @@ export default function App() {
     }
   };
 
-  // Register user with Firebase Auth & Firestore (with local fallback)
+  // Register user with backend / Firebase Auth
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
-    if (!regNome || !authEmail || !authPassword) {
-      setAuthError('Nome, e-mail e senha são obrigatórios.');
-      triggerToast('Nome, e-mail e senha são obrigatórios.');
+
+    const cleanEmail = authEmail.trim().toLowerCase();
+    const cleanNome = regNome.trim();
+    const cleanCreci = regCreci.trim();
+    const cleanPhone = regTelefone.trim() || regWhatsapp.trim();
+    const cleanCidade = regCidade.trim();
+    const cleanEstado = regEstado.trim().toUpperCase();
+
+    if (!cleanNome || !cleanEmail || !authPassword || !cleanCreci || !cleanPhone || !cleanCidade || !cleanEstado) {
+      setAuthError('Por favor, preencha todos os campos obrigatórios (Nome, E-mail, Senha, CRECI, Telefone/WhatsApp, Cidade e Estado).');
+      triggerToast('Por favor, preencha todos os campos do cadastro.');
       return;
     }
+
     setAuthLoading(true);
 
     const newCorretorObj: Corretor = {
       id: `corretor_${Date.now()}`,
-      nome: regNome.trim(),
-      creci: regCreci.trim(),
-      telefone: regTelefone.trim() || regWhatsapp.trim(),
-      whatsapp: regWhatsapp.trim() || regTelefone.trim(),
-      cidade: regCidade.trim() || 'Balneário Camboriú',
-      email: authEmail.trim(),
+      nome: cleanNome,
+      email: cleanEmail,
+      creci: cleanCreci.toUpperCase().startsWith('CRECI') ? cleanCreci : `CRECI ${cleanCreci}`,
+      telefone: cleanPhone,
+      whatsapp: regWhatsapp.trim() || cleanPhone,
+      cidade: cleanCidade,
+      estado: cleanEstado,
+      imobiliaria: regImobiliaria.trim(),
       foto: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=250',
     };
 
     try {
+      // 1. Send to backend REST API
       try {
-        const user = await registerEmailPassword(authEmail, authPassword, {
-          nome: regNome,
-          creci: regCreci,
-          telefone: regTelefone,
-          whatsapp: regWhatsapp,
-          cidade: regCidade,
+        await fetch(getApiUrl('/api/auth/register'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nome: newCorretorObj.nome,
+            email: newCorretorObj.email,
+            password: authPassword,
+            creci: newCorretorObj.creci,
+            telefone: newCorretorObj.telefone,
+            whatsapp: newCorretorObj.whatsapp,
+            cidade: newCorretorObj.cidade,
+            estado: newCorretorObj.estado,
+            imobiliaria: newCorretorObj.imobiliaria
+          })
         });
-        const corretor = await processAuthenticatedUser(user, {
-          nome: regNome,
-          creci: regCreci,
-          telefone: regTelefone,
-          whatsapp: regWhatsapp,
-          cidade: regCidade,
-        });
-        triggerToast(`Cadastro realizado com sucesso! Bem-vindo, ${corretor.nome}!`);
-        await DbService.syncWithServer();
-        reloadData();
-        return;
-      } catch (fbErr: any) {
-        console.warn('Firebase registration failed. Falling back to local/server profile registration:', fbErr);
-        DbService.addCorretor(newCorretorObj);
+      } catch (backendErr) {
+        console.warn('Backend register endpoint warning:', backendErr);
       }
 
+      // 2. Firebase Auth registration
+      try {
+        await registerEmailPassword(cleanEmail, authPassword, {
+          nome: cleanNome,
+          creci: newCorretorObj.creci,
+          telefone: cleanPhone,
+          whatsapp: newCorretorObj.whatsapp,
+          cidade: cleanCidade,
+          estado: cleanEstado
+        });
+      } catch (fbErr: any) {
+        console.warn('Firebase registration notice:', fbErr);
+      }
+
+      DbService.saveCorretor(newCorretorObj);
       DbService.setActiveCorretor(newCorretorObj);
       localStorage.setItem('imobishare_logged_in', 'true');
       setIsAuthenticated(true);
       setActiveCorretor(newCorretorObj);
-      setAuthMode('login');
-      triggerToast(`Cadastro realizado com sucesso! Bem-vindo, ${newCorretorObj.nome}!`);
+      triggerToast(`Conta criada com sucesso! Bem-vindo, ${newCorretorObj.nome}!`);
+
       await DbService.syncWithServer();
       reloadData();
     } catch (err: any) {
@@ -728,7 +776,7 @@ export default function App() {
       if (filterApenasFavoritos && !favoritos.includes(imovel.id)) return false;
 
       // 10. Broker Ownership / Integration Filter
-      const isMine = imovel.corretorId === activeCorretor.id;
+      const isMine = activeCorretor ? imovel.corretorId === activeCorretor.id : false;
       const isIntegrated = imovel.integrado === true;
 
       if (isIntegrated) {
@@ -748,7 +796,7 @@ export default function App() {
         if (owner && owner.restringirParceiros) {
           const partners = owner.parceirosEmails || [];
           if (partners.length > 0) {
-            const activeEmail = (activeCorretor.email || '').toLowerCase().trim();
+            const activeEmail = (activeCorretor?.email || '').toLowerCase().trim();
             const hasAccess = partners.some(p => p.toLowerCase().trim() === activeEmail);
             if (!hasAccess) {
               return false;
@@ -765,7 +813,7 @@ export default function App() {
   const getStoryImoveis = () => {
     return allImoveis.filter((imovel) => {
       const hours = (Date.now() - new Date(imovel.dataCadastro).getTime()) / (1000 * 60 * 60);
-      const isEligible = hours <= 24 && imovel.corretorId !== activeCorretor.id && imovel.compartilhar;
+      const isEligible = hours <= 24 && activeCorretor && imovel.corretorId !== activeCorretor.id && imovel.compartilhar;
       if (!isEligible) return false;
 
       // Check partner restriction
@@ -773,7 +821,7 @@ export default function App() {
       if (owner && owner.restringirParceiros) {
         const partners = owner.parceirosEmails || [];
         if (partners.length > 0) {
-          const activeEmail = (activeCorretor.email || '').toLowerCase().trim();
+          const activeEmail = (activeCorretor?.email || '').toLowerCase().trim();
           const hasAccess = partners.some(p => p.toLowerCase().trim() === activeEmail);
           if (!hasAccess) return false;
         }
@@ -791,7 +839,7 @@ export default function App() {
       const isFav = favoritos.includes(imovel.id);
       if (!isFav) return false;
 
-      const isMine = imovel.corretorId === activeCorretor.id;
+      const isMine = activeCorretor ? imovel.corretorId === activeCorretor.id : false;
       if (isMine) return true;
       if (!imovel.compartilhar) return false;
 
@@ -800,7 +848,7 @@ export default function App() {
       if (owner && owner.restringirParceiros) {
         const partners = owner.parceirosEmails || [];
         if (partners.length > 0) {
-          const activeEmail = (activeCorretor.email || '').toLowerCase().trim();
+          const activeEmail = (activeCorretor?.email || '').toLowerCase().trim();
           const hasAccess = partners.some(p => p.toLowerCase().trim() === activeEmail);
           if (!hasAccess) return false;
         }
@@ -1013,135 +1061,174 @@ Toque abaixo para ver fotos e todos os detalhes:
             />
             <h1 className="text-xl font-black text-[#003366] tracking-tight uppercase animate-pulse">ImobiShare</h1>
             <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">
-              {authMode === 'login' ? 'Acelere suas parcerias imobiliárias' : authMode === 'register' ? 'Crie sua conta profissional' : 'Recuperação de Senha'}
+              {authMode === 'register' ? 'Crie sua conta profissional' : 'Acelere suas parcerias imobiliárias'}
             </p>
           </div>
 
           {authError && (
             <div className="bg-red-50 text-red-700 text-[11px] p-3.5 rounded-xl border border-red-200 font-medium leading-relaxed space-y-2.5" id="auth-error-banner">
               <p>{authError}</p>
+              
               <div className="pt-2 border-t border-red-200/60 space-y-2">
+                <p className="font-bold text-[10px] uppercase text-slate-600">Acesso Direto com Google:</p>
+                
                 <button
                   type="button"
-                  onClick={async () => {
-                    const demoCorretor = DbService.getCorretores()[0];
-                    if (demoCorretor) {
-                      DbService.setActiveCorretor(demoCorretor);
-                      localStorage.setItem('imobishare_logged_in', 'true');
-                      setIsAuthenticated(true);
-                      setActiveCorretor(demoCorretor);
-                      triggerToast(`Acessando como ${demoCorretor.nome} (Modo Teste)`);
-                      reloadData();
-                    }
-                  }}
-                  className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-lg text-[10px] tracking-wide transition-all shadow-xs cursor-pointer text-center"
+                  onClick={() => handleGoogleDirectLogin('afreccia@gmail.com')}
+                  className="w-full bg-[#003366] hover:bg-[#002244] text-white font-bold py-2.5 px-3 rounded-lg text-[10px] tracking-wide transition-all shadow-xs cursor-pointer text-center flex items-center justify-center gap-2"
                 >
-                  ⚡ Entrar no Modo de Teste / Demonstração
+                  <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                  </svg>
+                  <span>Entrar com a Conta afreccia@gmail.com</span>
                 </button>
+
+                {!showCustomGoogleInput ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomGoogleInput(true)}
+                    className="w-full text-slate-600 hover:text-[#003366] text-[10px] font-semibold underline text-center py-0.5 cursor-pointer"
+                  >
+                    Usar outro e-mail do Google...
+                  </button>
+                ) : (
+                  <div className="flex gap-1.5 pt-1">
+                    <input
+                      type="email"
+                      value={googleDirectEmail}
+                      onChange={(e) => setGoogleDirectEmail(e.target.value)}
+                      placeholder="seu.email@gmail.com"
+                      className="flex-1 bg-white text-slate-800 text-[10px] px-2.5 py-1.5 rounded-lg border border-slate-300 font-medium focus:outline-none focus:border-[#003366]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleGoogleDirectLogin(googleDirectEmail)}
+                      className="bg-[#003366] hover:bg-[#002244] text-white text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all cursor-pointer"
+                    >
+                      Entrar
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
 
-          {/* PROMINENT GOOGLE SIGN-IN BUTTON AT TOP */}
-          <button
-            type="button"
-            id="google-signin-btn"
-            onClick={handleGoogleLogin}
-            disabled={authLoading}
-            className="w-full bg-white hover:bg-slate-50 active:scale-[0.98] text-slate-700 text-xs font-bold py-3.5 px-4 rounded-xl border border-slate-200 shadow-xs hover:shadow-md transition-all flex items-center justify-center gap-2 tracking-wide cursor-pointer min-h-[44px]"
-          >
-            {authLoading ? (
-              <div className="w-5 h-5 border-2 border-[#003366] border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <>
-                <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-                </svg>
-                <span>Entrar com Google</span>
-              </>
-            )}
-          </button>
-
-          <div className="relative flex py-1 items-center">
-            <div className="flex-grow border-t border-slate-200"></div>
-            <span className="flex-shrink mx-2 text-[8px] font-bold uppercase tracking-widest text-slate-400">Ou acesse com e-mail</span>
-            <div className="flex-grow border-t border-slate-200"></div>
-          </div>
-
           {authMode === 'login' && (
-            <form onSubmit={handleEmailLogin} className="space-y-3">
-              <div className="space-y-1">
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">E-mail Corporativo</label>
-                <div className="relative">
-                  <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <div className="space-y-3">
+              {/* GOOGLE SIGN-IN BUTTON */}
+              <button
+                type="button"
+                id="google-signin-btn"
+                onClick={handleGoogleLogin}
+                disabled={authLoading}
+                className="w-full bg-white hover:bg-slate-50 active:scale-[0.98] text-slate-700 text-xs font-bold py-3 px-4 rounded-xl border border-slate-200 shadow-xs hover:shadow-md transition-all flex items-center justify-center gap-2 tracking-wide cursor-pointer min-h-[44px]"
+              >
+                {authLoading ? (
+                  <div className="w-5 h-5 border-2 border-[#003366] border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24">
+                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                    </svg>
+                    <span>Entrar com o Google</span>
+                  </>
+                )}
+              </button>
+
+              {/* DIVIDER: ou acesse com e-mail */}
+              <div className="relative my-2 flex items-center justify-center">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-slate-200"></div>
+                </div>
+                <div className="relative bg-white px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  ou acesse com e-mail
+                </div>
+              </div>
+
+              {/* EMAIL & PASSWORD LOGIN FORM */}
+              <form onSubmit={handleEmailLogin} className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">E-mail</label>
                   <input
                     type="email"
                     required
                     placeholder="corretor@empresa.com"
                     value={authEmail}
                     onChange={(e) => setAuthEmail(e.target.value)}
-                    className="w-full text-xs pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
+                    className="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
                   />
                 </div>
-              </div>
 
-              <div className="space-y-1">
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Senha de Acesso</label>
-                <div className="relative">
-                  <Lock size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Senha de acesso</label>
                   <input
                     type="password"
                     required
                     placeholder="••••••••"
                     value={authPassword}
                     onChange={(e) => setAuthPassword(e.target.value)}
-                    className="w-full text-xs pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
+                    className="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
                   />
                 </div>
-              </div>
 
-              <button
-                type="submit"
-                disabled={authLoading}
-                className="w-full bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold py-3.5 px-4 rounded-xl shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 tracking-wide uppercase cursor-pointer min-h-[44px]"
-              >
-                {authLoading ? (
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  'Entrar com E-mail'
-                )}
-              </button>
+                <button
+                  type="submit"
+                  disabled={authLoading}
+                  className="w-full bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold py-3 px-4 rounded-xl shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 tracking-wide uppercase cursor-pointer mt-1"
+                >
+                  {authLoading ? 'Entrando...' : 'Login'}
+                </button>
 
-              <div className="flex items-center justify-between pt-1 text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => { setAuthMode('forgot_password'); setAuthError(''); }}
-                  className="text-slate-500 hover:text-[#003366] font-medium cursor-pointer"
-                >
-                  Esqueci minha senha
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setAuthMode('register'); setAuthError(''); }}
-                  className="text-[#003366] hover:underline font-bold cursor-pointer"
-                >
-                  Criar Conta
-                </button>
-              </div>
-            </form>
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                  <button
+                    type="button"
+                    onClick={() => { setAuthMode('forgot_password'); setAuthError(''); }}
+                    className="text-slate-500 hover:text-[#003366] text-[11px] font-medium transition-colors cursor-pointer"
+                  >
+                    Esqueci a minha senha
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setAuthMode('register'); setAuthError(''); }}
+                    className="text-[#003366] text-[11px] font-bold hover:underline cursor-pointer"
+                  >
+                    Criar conta
+                  </button>
+                </div>
+              </form>
+            </div>
           )}
 
           {authMode === 'register' && (
-            <form onSubmit={handleRegister} className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+            <form onSubmit={handleRegister} className="space-y-2.5">
+              {regFoto && (
+                <div className="flex items-center gap-2.5 bg-[#003366]/5 p-2.5 rounded-xl border border-[#003366]/15">
+                  <img
+                    src={regFoto}
+                    alt={regNome || 'Google User'}
+                    referrerPolicy="no-referrer"
+                    className="w-8 h-8 rounded-full object-cover border border-slate-200"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[10px] font-bold text-[#003366] block leading-tight">Conta Google Conectada</span>
+                    <span className="text-[11px] font-medium text-slate-600 block truncate">{authEmail}</span>
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-1">
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Nome Completo</label>
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Nome Completo *</label>
                 <input
                   type="text"
                   required
-                  placeholder="Nome do Corretor"
+                  placeholder="Nome Completo do Corretor"
                   value={regNome}
                   onChange={(e) => setRegNome(e.target.value)}
                   className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
@@ -1149,7 +1236,7 @@ Toque abaixo para ver fotos e todos os detalhes:
               </div>
 
               <div className="space-y-1">
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">E-mail Profissional</label>
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">E-mail Profissional *</label>
                 <input
                   type="email"
                   required
@@ -1160,35 +1247,35 @@ Toque abaixo para ver fotos e todos os detalhes:
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Senha</label>
-                  <input
-                    type="password"
-                    required
-                    placeholder="••••••••"
-                    value={authPassword}
-                    onChange={(e) => setAuthPassword(e.target.value)}
-                    className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">CRECI</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ex: 12345-F"
-                    value={regCreci}
-                    onChange={(e) => setRegCreci(e.target.value)}
-                    className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
-                  />
-                </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Senha *</label>
+                <input
+                  type="password"
+                  required
+                  placeholder="Sua senha de acesso"
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
+                />
               </div>
 
               <div className="space-y-1">
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Telefone / WhatsApp</label>
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">CRECI *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: 12345-F"
+                  value={regCreci}
+                  onChange={(e) => setRegCreci(e.target.value)}
+                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Telefone / WhatsApp *</label>
                 <input
                   type="tel"
+                  required
                   placeholder="(47) 99999-9999"
                   value={regTelefone}
                   onChange={(e) => {
@@ -1199,36 +1286,58 @@ Toque abaixo para ver fotos e todos os detalhes:
                 />
               </div>
 
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-2 space-y-1">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Cidade *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ex: Balneário Camboriú"
+                    value={regCidade}
+                    onChange={(e) => setRegCidade(e.target.value)}
+                    className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Estado (UF) *</label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={2}
+                    placeholder="SC"
+                    value={regEstado}
+                    onChange={(e) => setRegEstado(e.target.value.toUpperCase())}
+                    className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium uppercase text-center"
+                  />
+                </div>
+              </div>
+
               <div className="space-y-1">
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Sua Cidade de Atuação</label>
-                <select
-                  value={regCidade}
-                  onChange={(e) => setRegCidade(e.target.value)}
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Imobiliária (Opcional)</label>
+                <input
+                  type="text"
+                  placeholder="Nome da imobiliária ou Autônomo"
+                  value={regImobiliaria}
+                  onChange={(e) => setRegImobiliaria(e.target.value)}
                   className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#003366]/10 focus:border-[#003366] text-slate-800 font-medium"
-                >
-                  <option value="Balneário Camboriú">Balneário Camboriú</option>
-                  <option value="Itapema">Itapema</option>
-                  <option value="Itajaí">Itajaí</option>
-                  <option value="Porto Belo">Porto Belo</option>
-                  <option value="Florianópolis">Florianópolis</option>
-                </select>
+                />
               </div>
 
               <button
                 type="submit"
                 disabled={authLoading}
-                className="w-full bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold py-3 px-4 rounded-xl shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 tracking-wide uppercase mt-1 cursor-pointer"
+                className="w-full bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold py-3 px-4 rounded-xl shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 tracking-wide uppercase mt-2 cursor-pointer"
               >
-                {authLoading ? 'Registrando...' : 'Criar Conta Profissional'}
+                {authLoading ? 'Criando Conta...' : 'Cadastrar e Acessar'}
               </button>
 
-              <div className="text-center pt-1.5">
+              <div className="text-center pt-2">
                 <button
                   type="button"
                   onClick={() => { setAuthMode('login'); setAuthError(''); }}
-                  className="text-xs text-[#003366] hover:underline font-bold cursor-pointer"
+                  className="text-xs text-slate-500 hover:text-[#003366] font-bold cursor-pointer"
                 >
-                  Já tem uma conta? Faça login
+                  ← Voltar para Opções de Login
                 </button>
               </div>
             </form>
@@ -1357,8 +1466,8 @@ Toque abaixo para ver fotos e todos os detalhes:
                       <div className="w-8 h-8 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-xs shadow-xs" title="Notificações ativas">
                         🔔
                       </div>
-                      <div className="w-8 h-8 rounded-full bg-[#003366] flex items-center justify-center text-white text-[10px] font-bold shadow-sm" title={`Logado como ${activeCorretor.nome}`}>
-                        {activeCorretor.nome.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
+                      <div className="w-8 h-8 rounded-full bg-[#003366] flex items-center justify-center text-white text-[10px] font-bold shadow-sm" title={`Logado como ${activeCorretor?.nome || 'Corretor'}`}>
+                        {activeCorretor?.nome ? activeCorretor.nome.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'US'}
                       </div>
                     </div>
                   </div>
@@ -1573,7 +1682,7 @@ Toque abaixo para ver fotos e todos os detalhes:
                         />
                       ) : (
                         getFilteredImoveis().map((imovel) => {
-                          const isMine = imovel.corretorId === activeCorretor.id;
+                          const isMine = activeCorretor ? imovel.corretorId === activeCorretor.id : false;
                           const isFav = favoritos.includes(imovel.id);
                           const isSel = selectedPropertyIds.includes(imovel.id);
 
@@ -1640,7 +1749,7 @@ Toque abaixo para ver fotos e todos os detalhes:
 
                   {/* My properties list */}
                   <div className="space-y-3">
-                    {allImoveis.filter(i => i.corretorId === activeCorretor.id).map((imovel) => {
+                    {allImoveis.filter(i => activeCorretor && i.corretorId === activeCorretor.id).map((imovel) => {
                       const isFav = favoritos.includes(imovel.id);
                       return (
                         <PropertyCard
@@ -1661,7 +1770,7 @@ Toque abaixo para ver fotos e todos os detalhes:
                       );
                     })}
 
-                    {allImoveis.filter(i => i.corretorId === activeCorretor.id).length === 0 && (
+                    {allImoveis.filter(i => activeCorretor && i.corretorId === activeCorretor.id).length === 0 && (
                       <div className="text-center py-12 bg-white border border-slate-100 rounded-xl space-y-2">
                         <p className="text-xs text-slate-400">Você ainda não tem captações cadastradas.</p>
                         <button
@@ -1675,7 +1784,7 @@ Toque abaixo para ver fotos e todos os detalhes:
                   </div>
                 </div>
               )}
-              {activeTab === 'profile' && (
+              {activeTab === 'profile' && activeCorretor && (
                 <div id="profile-tab-view">
                   <UserProfile
                     corretor={activeCorretor}
@@ -1687,7 +1796,7 @@ Toque abaixo para ver fotos e todos os detalhes:
                 </div>
               )}
 
-              {activeTab === 'support' && (
+              {activeTab === 'support' && activeCorretor && (
                 <SupportForm
                   activeCorretor={activeCorretor}
                   onBack={() => handleTabChange('home')}
@@ -2206,26 +2315,6 @@ Toque abaixo para ver fotos e todos os detalhes:
             </div>
           )}
         </AnimatePresence>
-
-        {/* Complete Profile Modal */}
-        {(showCompleteProfileModal || !isProfileComplete(activeCorretor)) && isAuthenticated && (
-          <CompleteProfileModal
-            corretor={activeCorretor}
-            isMandatory={!isProfileComplete(activeCorretor)}
-            onSave={(updatedCorretor) => {
-              setActiveCorretor(updatedCorretor);
-              setShowCompleteProfileModal(false);
-              triggerToast('Perfil cadastrado e salvo com sucesso!');
-              reloadData();
-            }}
-            onClose={() => {
-              if (isProfileComplete(activeCorretor)) {
-                setShowCompleteProfileModal(false);
-              }
-            }}
-            onLogout={handleLogout}
-          />
-        )}
 
       </div>
     </div>

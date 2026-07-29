@@ -9,15 +9,15 @@ import { Mail, Phone, User, MessageCircle, AlertCircle, ArrowLeft, Send, Loader2
 import { getApiUrl } from '../utils/apiUrl';
 
 interface SupportFormProps {
-  activeCorretor: Corretor;
+  activeCorretor?: Corretor | null;
   onBack?: () => void;
   triggerToast: (msg: string) => void;
 }
 
 export function SupportForm({ activeCorretor, onBack, triggerToast }: SupportFormProps) {
-  const [nome, setNome] = useState(activeCorretor.nome);
-  const [email, setEmail] = useState(activeCorretor.email);
-  const [telefone, setTelefone] = useState(activeCorretor.telefone || activeCorretor.whatsapp || '');
+  const [nome, setNome] = useState(activeCorretor?.nome || '');
+  const [email, setEmail] = useState(activeCorretor?.email || '');
+  const [telefone, setTelefone] = useState(activeCorretor?.telefone || activeCorretor?.whatsapp || '');
   const [tipo, setTipo] = useState<'problema' | 'melhoria' | 'outros'>('melhoria');
   const [descricao, setDescricao] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -45,8 +45,8 @@ export function SupportForm({ activeCorretor, onBack, triggerToast }: SupportFor
           telefone,
           tipo,
           descricao: descricao.trim(),
-          creci: activeCorretor.creci,
-          cidade: activeCorretor.cidade
+          creci: activeCorretor?.creci || '',
+          cidade: activeCorretor?.cidade || ''
         }),
       });
 

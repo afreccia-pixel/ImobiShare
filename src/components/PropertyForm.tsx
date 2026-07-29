@@ -43,7 +43,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
   // 2. Localização & CEP
   const [cep, setCep] = useState('');
   const [localizacao, setLocalizacao] = useState('');
-  const [cidade, setCidade] = useState(() => DbService.getActiveCorretor().cidade);
+  const [cidade, setCidade] = useState(() => DbService.getActiveCorretor()?.cidade || 'Balneário Camboriú');
   const [bairro, setBairro] = useState('');
 
   // 3. Tipo de imóvel, Negócio e Valor
@@ -101,7 +101,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         setFotos(found.fotos || []);
         setCep(found.cep || '');
         setLocalizacao(found.localizacao || '');
-        setCidade(found.cidade || DbService.getActiveCorretor().cidade);
+        setCidade(found.cidade || DbService.getActiveCorretor()?.cidade || 'Balneário Camboriú');
         setBairro(found.bairro || '');
         setTipoImovel((found.tipoImovel as PropertyTypeOption) || 'Apartamento');
         setTipo(found.tipo || 'venda');

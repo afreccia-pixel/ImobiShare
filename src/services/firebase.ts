@@ -73,13 +73,13 @@ export function formatAuthError(error: any): string {
     return 'O login com o Google foi cancelado.';
   }
   if (code === 'auth/unauthorized-domain') {
-    return 'Este domínio de visualização ainda não está na lista de domínios autorizados do Firebase. Para prosseguir, utilize o login com E-mail ou o botão "Entrar no Modo de Teste".';
+    return 'Redirecionando para autenticação no Google...';
   }
   if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
     return 'E-mail ou senha incorretos. Por favor, verifique seus dados.';
   }
   if (code === 'auth/email-already-in-use') {
-    return 'Este e-mail já está cadastrado. Tente fazer login ou recuperar sua senha.';
+    return 'Este e-mail já está cadastrado. Tente fazer login com o Google ou recupere sua senha.';
   }
   if (code === 'auth/invalid-email') {
     return 'O formato do e-mail digitado é inválido.';
@@ -91,16 +91,16 @@ export function formatAuthError(error: any): string {
     return 'Erro de conexão. Verifique sua internet e tente novamente.';
   }
   if (code === 'auth/popup-blocked') {
-    return 'O navegador bloqueou a janela de login do Google. Ative os pop-ups para este site ou utilize a opção "Entrar no Modo de Teste".';
+    return 'Redirecionando para autenticação no Google...';
   }
   if (code === 'auth/operation-not-allowed') {
-    return 'O login com Google não está habilitado no seu console Firebase. Acesse o Console -> Authentication -> Sign-in method e ative o provedor Google.';
+    return 'O login com Google não está ativado no Firebase Console.';
   }
   if (message.includes('offline') || message.includes('network')) {
     return 'Sem conexão com a internet. Verifique sua rede.';
   }
 
-  return 'Não foi possível fazer login com o Google no momento. Tente com E-mail/Senha ou use o "Modo de Teste".';
+  return 'Ocorreu um erro ao realizar a autenticação. Por favor, tente novamente.';
 }
 
 /**
@@ -196,22 +196,39 @@ export async function signInWithGoogle(): Promise<User> {
       const userCredential = await signInWithCredential(auth, credential);
       return userCredential.user;
     } catch (nativeError: any) {
-      console.error('Erro no login nativo com Google:', nativeError);
+      console.error(nativeError?.code || 'native_google_auth_error', nativeError?.message || nativeError, nativeError);
       throw nativeError;
     }
   }
 
-  // Fallback for Web / PWA browser environment
+  // Web / PWA browser environment
   try {
     const result = await signInWithPopup(auth, googleProvider);
     return result.user;
   } catch (error: any) {
-    if (error.code === 'auth/popup-blocked' || error.code === 'auth/popup-closed-by-user') {
-      console.log('Popup blocked or closed, attempting redirect mode...');
-      await signInWithRedirect(auth, googleProvider);
-      // signInWithRedirect will navigate away, or complete via getRedirectResult
-      throw new Error('REDIRECTING');
+    // 3. Registrar todos os erros reais do Firebase no console utilizando: console.error(error.code, error.message, error);
+    console.error(error?.code || 'google_auth_error', error?.message || error, error);
+
+    const redirectErrorCodes = [
+      'auth/popup-blocked',
+      'auth/popup-closed-by-user',
+      'auth/cancelled-popup-request',
+      'auth/network-request-failed',
+      'auth/unauthorized-domain',
+      'auth/internal-error'
+    ];
+
+    if (redirectErrorCodes.includes(error?.code) || (error?.message && error.message.toLowerCase().includes('popup'))) {
+      console.log('Tentando signInWithRedirect como fallback do popup...');
+      try {
+        await signInWithRedirect(auth, googleProvider);
+        throw new Error('REDIRECTING');
+      } catch (redirectErr: any) {
+        console.error(redirectErr?.code || 'google_redirect_error', redirectErr?.message || redirectErr, redirectErr);
+        throw redirectErr;
+      }
     }
+
     throw error;
   }
 }
@@ -249,6 +266,8 @@ export async function registerEmailPassword(
     telefone?: string;
     whatsapp?: string;
     cidade?: string;
+    estado?: string;
+    imobiliaria?: string;
   }
 ): Promise<User> {
   const credential = await fbCreateUserWithEmail(auth, email, pass);

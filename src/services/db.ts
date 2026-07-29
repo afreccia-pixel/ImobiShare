@@ -20,7 +20,7 @@ type SyncListener = () => void;
 
 export function isProfileComplete(corretor: Partial<Corretor> | null | undefined): boolean {
   if (!corretor) return false;
-  
+
   const hasNome = Boolean(corretor.nome && corretor.nome.trim().length > 0);
   const hasCreci = Boolean(
     corretor.creci && 
@@ -227,7 +227,8 @@ export class DbService {
   }
 
   // Get favorites for current broker
-  static getFavoritos(corretorId: string): string[] {
+  static getFavoritos(corretorId?: string | null): string[] {
+    if (!corretorId) return [];
     const data = localStorage.getItem(STORAGE_KEYS.FAVORITOS);
     if (!data) {
       const initialFavs = INITIAL_IMOVEIS.filter(i => i.favorito).map(i => i.id);
@@ -298,8 +299,8 @@ export class DbService {
           fotos: sanitizedInputFotos,
           id: imovel.id,
           dataCadastro: new Date().toISOString(),
-          corretorId: activeCorretor.id,
-          corretorNome: activeCorretor.nome,
+          corretorId: activeCorretor?.id || 'corretor-anonimo',
+          corretorNome: activeCorretor?.nome || 'Corretor',
         } as Imovel;
         imoveis.unshift(finalImovel);
       }
@@ -310,8 +311,8 @@ export class DbService {
         fotos: sanitizedInputFotos,
         id: `imovel-${Date.now()}`,
         dataCadastro: new Date().toISOString(),
-        corretorId: activeCorretor.id,
-        corretorNome: activeCorretor.nome,
+        corretorId: activeCorretor?.id || 'corretor-anonimo',
+        corretorNome: activeCorretor?.nome || 'Corretor',
       } as Imovel;
       imoveis.unshift(finalImovel); // Add to beginning
     }
@@ -370,8 +371,8 @@ export class DbService {
       id: `imovel-${Date.now()}`,
       titulo: `${found.titulo} (Cópia)`,
       dataCadastro: new Date().toISOString(),
-      corretorId: activeCorretor.id,
-      corretorNome: activeCorretor.nome,
+      corretorId: activeCorretor?.id || 'corretor-anonimo',
+      corretorNome: activeCorretor?.nome || 'Corretor',
     };
 
     imoveis.unshift(duplicated);
