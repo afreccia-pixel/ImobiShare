@@ -482,24 +482,31 @@ export default function App() {
     }
   };
 
-  // Google Sign-In with Firebase Auth
-  const handleGoogleLogin = async () => {
-    setAuthLoading(true);
-    setAuthError('');
-    try {
-      const user = await signInWithGoogle();
-      if (user) {
-        const corretor = await processAuthenticatedUser(user);
-        if (corretor) {
-          triggerToast(`Bem-vindo, ${corretor.nome}!`);
-          await DbService.syncWithServer();
-          reloadData();
-        }
+// Google Sign-In with Firebase Auth
+const handleGoogleLogin = async () => {
+  setAuthLoading(true);
+  setAuthError('');
+  try {
+    const user = await signInWithGoogle();
+    if (user) {
+      const corretor = await processAuthenticatedUser(user);
+      if (corretor) {
+        triggerToast(`Bem-vindo, ${corretor.nome}!`);
+        await DbService.syncWithServer();
+        reloadData();
       }
-    } catch (err: any) {
-      if (err.message === 'REDIRECTING') {
-        return;
-      }
+    }
+    setAuthLoading(false); // encerra loading se login foi direto
+  } catch (err: any) {
+    if (err.message === 'REDIRECTING') {
+      // mantém o loading ativo até o checkRedirectAuth no useEffect resolver
+      return;
+    }
+    setAuthError(formatAuthError(err));
+    setAuthLoading(false); // encerra loading em caso de erro real
+  }
+};
+
       // 3. Registrar todos os erros reais do Firebase no console utilizando: console.error(error.code, error.message, error);
       console.error(err?.code || 'google_auth_error', err?.message || err, err);
 
@@ -1126,9 +1133,12 @@ Toque abaixo para ver fotos e todos os detalhes:
                 disabled={authLoading}
                 className="w-full bg-white hover:bg-slate-50 active:scale-[0.98] text-slate-700 text-xs font-bold py-3 px-4 rounded-xl border border-slate-200 shadow-xs hover:shadow-md transition-all flex items-center justify-center gap-2 tracking-wide cursor-pointer min-h-[44px]"
               >
-                {authLoading ? (
+                {authLoading ? (    <>
                   <div className="w-5 h-5 border-2 border-[#003366] border-t-transparent rounded-full animate-spin" />
-                ) : (
+                  <span className="text-xs font-semibold text-slate-600">                    
+                  </span>
+                </>
+              ) : (
                   <>
                     <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24">
                       <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
