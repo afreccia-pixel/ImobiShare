@@ -481,13 +481,15 @@ export default function App() {
       setAuthLoading(false);
     }
   };
-
+  
 // Google Sign-In with Firebase Auth
 const handleGoogleLogin = async () => {
   setAuthLoading(true);
   setAuthError('');
+
   try {
     const user = await signInWithGoogle();
+
     if (user) {
       const corretor = await processAuthenticatedUser(user);
       if (corretor) {
@@ -496,36 +498,34 @@ const handleGoogleLogin = async () => {
         reloadData();
       }
     }
-    setAuthLoading(false); // encerra loading se login foi direto
   } catch (err: any) {
+    console.error(err?.code || 'google_auth_error', err?.message || err, err);
+
     if (err.message === 'REDIRECTING') {
       // mantém o loading ativo até o checkRedirectAuth no useEffect resolver
       return;
     }
-    setAuthError(formatAuthError(err));
-    setAuthLoading(false); // encerra loading em caso de erro real
-  }
-};
 
-      // 3. Registrar todos os erros reais do Firebase no console utilizando: console.error(error.code, error.message, error);
-      console.error(err?.code || 'google_auth_error', err?.message || err, err);
-
-      if (auth.currentUser) {
+    if (auth.currentUser) {
+      try {
         const corretor = await processAuthenticatedUser(auth.currentUser);
         if (corretor) {
           triggerToast(`Bem-vindo, ${corretor.nome}!`);
           await DbService.syncWithServer();
           reloadData();
         }
-      } else {
-        const formatted = formatAuthError(err);
-        setAuthError(formatted);
-        triggerToast(formatted);
+      } catch (innerErr) {
+        console.error('Erro ao sincronizar usuário após falha de login:', innerErr);
       }
-    } finally {
-      setAuthLoading(false);
+    } else {
+      const formatted = formatAuthError(err);
+      setAuthError(formatted);
+      triggerToast(formatted);
     }
-  };
+  } finally {
+    setAuthLoading(false);
+  }
+};
 
   // Email & Password Login
   const handleEmailLogin = async (e: React.FormEvent) => {
