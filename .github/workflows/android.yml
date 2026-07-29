@@ -174,19 +174,8 @@ jobs:
 
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose \
             android/app/build/outputs/apk/release/imobishare-release.apk
-            steps:
-            
-      - name: Verify Keystore SHA-1
-        run: |
-          keytool -list -v \
-            -keystore "$RUNNER_TEMP/my-release-key.keystore" \
-            -alias ${{ secrets.ANDROID_KEY_ALIAS }} \
-            -storepass ${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
-            | grep SHA1
-
-      - name: Build with Gradle
-        run: ./gradlew assembleRelease            
-
+            steps:            
+ 
       - name: Publicar APK assinado
         uses: actions/upload-artifact@v4
         with:
