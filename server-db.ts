@@ -37,15 +37,18 @@ export class ServerDb {
         console.log('✅ Connected to PostgreSQL database successfully!');
         await this.createTables();
         await this.seedPostgresIfNeeded();
+        await this.clearTestData();
       } catch (err) {
         console.error('❌ Failed to connect to PostgreSQL database. Falling back to JSON database:', err);
         this.isPostgres = false;
         await this.initJsonDb();
+        await this.clearTestData();
       }
     } else {
       console.log('📂 No DATABASE_URL found. Using persistent JSON database fallback...');
       this.isPostgres = false;
       await this.initJsonDb();
+      await this.clearTestData();
     }
   }
 
@@ -414,6 +417,55 @@ export class ServerDb {
       await this.writeJson(db);
       return prop;
     }
+  }
+
+  static async clearTestData(): Promise<{ propertiesRemoved: number; brokersRemoved: number }> {
+    let propertiesRemoved = 0;
+    let brokersRemoved = 0;
+
+    if (this.isPostgres && this.pool) {
+      try {
+        const propRes = await this.pool.query(`
+          DELETE FROM properties 
+          WHERE id LIKE 'imovel-%' OR id LIKE 'integ-%' OR id LIKE 'test-diag-%'
+        `);
+        propertiesRemoved = propRes.rowCount || 0;
+
+        const brokerRes = await this.pool.query(`
+          DELETE FROM brokers 
+          WHERE id IN ('corretor-1', 'corretor-2', 'corretor-3', 'test-broker-diag')
+        `);
+        brokersRemoved = brokerRes.rowCount || 0;
+
+        console.log(`🧹 Purged ${propertiesRemoved} test properties and ${brokersRemoved} test brokers from PostgreSQL.`);
+      } catch (err) {
+        console.error('Error purging test data from PostgreSQL:', err);
+      }
+    } else {
+      try {
+        const db = await this.readJson();
+        const initialPropCount = db.properties.length;
+        const initialBrokerCount = db.brokers.length;
+
+        db.properties = db.properties.filter(p => 
+          p.id && !p.id.startsWith('imovel-') && !p.id.startsWith('integ-') && !p.id.startsWith('test-diag-')
+        );
+
+        db.brokers = db.brokers.filter(b => 
+          b.id && !['corretor-1', 'corretor-2', 'corretor-3', 'test-broker-diag'].includes(b.id)
+        );
+
+        propertiesRemoved = initialPropCount - db.properties.length;
+        brokersRemoved = initialBrokerCount - db.brokers.length;
+
+        await this.writeJson(db);
+        console.log(`🧹 Purged ${propertiesRemoved} test properties and ${brokersRemoved} test brokers from JSON DB.`);
+      } catch (err) {
+        console.error('Error purging test data from JSON DB:', err);
+      }
+    }
+
+    return { propertiesRemoved, brokersRemoved };
   }
 
   static async deleteImovel(id: string): Promise<void> {

@@ -7,6 +7,7 @@ import { Imovel, Corretor } from '../types';
 import { INITIAL_IMOVEIS, INTEGRATED_IMOVEIS, MOCK_CORRETORES } from '../data';
 import { sanitizeFotos } from '../utils/imageUtils';
 import { getApiUrl } from '../utils/apiUrl';
+import { auth } from './firebase';
 
 const STORAGE_KEYS = {
   IMOVEIS: 'imobishare_imoveis',
@@ -90,22 +91,42 @@ export class DbService {
   // Get all brokers
   static getCorretores(): Corretor[] {
     const data = localStorage.getItem(STORAGE_KEYS.CORRETORES);
+    let list: Corretor[] = [];
     if (!data) {
-      localStorage.setItem(STORAGE_KEYS.CORRETORES, JSON.stringify(MOCK_CORRETORES));
-      return MOCK_CORRETORES;
+      list = MOCK_CORRETORES;
+    } else {
+      try {
+        list = JSON.parse(data);
+      } catch {
+        list = MOCK_CORRETORES;
+      }
     }
-    return JSON.parse(data);
+
+    // Filter out old test brokers (corretor-1, corretor-2, corretor-3)
+    const cleanList = list.filter(c => !['corretor-1', 'corretor-2', 'corretor-3'].includes(c.id));
+    const finalList = cleanList.length > 0 ? cleanList : MOCK_CORRETORES;
+
+    localStorage.setItem(STORAGE_KEYS.CORRETORES, JSON.stringify(finalList));
+    return finalList;
   }
 
   // Get currently logged-in broker
   static getActiveCorretor(): Corretor {
     const data = localStorage.getItem(STORAGE_KEYS.ACTIVE_CORRETOR);
-    if (!data) {
-      const defaultCorretor = this.getCorretores()[0]; // Rodrigo Silva
-      localStorage.setItem(STORAGE_KEYS.ACTIVE_CORRETOR, JSON.stringify(defaultCorretor));
-      return defaultCorretor;
+    if (data) {
+      try {
+        const parsed: Corretor = JSON.parse(data);
+        if (parsed && !['corretor-1', 'corretor-2', 'corretor-3'].includes(parsed.id)) {
+          return parsed;
+        }
+      } catch {
+        // Fallback below
+      }
     }
-    return JSON.parse(data);
+    
+    const defaultCorretor = this.getCorretores()[0] || MOCK_CORRETORES[0];
+    localStorage.setItem(STORAGE_KEYS.ACTIVE_CORRETOR, JSON.stringify(defaultCorretor));
+    return defaultCorretor;
   }
 
   // Change logged-in broker
@@ -120,8 +141,10 @@ export class DbService {
     const index = corretores.findIndex(c => c.id === corretor.id);
     if (index !== -1) {
       corretores[index] = corretor;
-      localStorage.setItem(STORAGE_KEYS.CORRETORES, JSON.stringify(corretores));
+    } else {
+      corretores.push(corretor);
     }
+    localStorage.setItem(STORAGE_KEYS.CORRETORES, JSON.stringify(corretores));
     
     // Also update active corretor if they are the active one
     const active = this.getActiveCorretor();
@@ -174,15 +197,22 @@ export class DbService {
       }
     }
     
+    // Filter out test properties (imovel-1 to imovel-6, integ-1 to integ-4, test-diag-*)
+    const cleanList = rawList.filter(item => {
+      if (!item.id) return false;
+      if (item.id.startsWith('imovel-') || item.id.startsWith('integ-') || item.id.startsWith('test-diag-')) {
+        return false;
+      }
+      return true;
+    });
+
     // Sanitize property photos to prevent corrupted or non-URL entries
-    const sanitized = rawList.map(item => ({
+    const sanitized = cleanList.map(item => ({
       ...item,
       fotos: sanitizeFotos(item.fotos)
     }));
 
-    if (!data) {
-      localStorage.setItem(STORAGE_KEYS.IMOVEIS, JSON.stringify(sanitized));
-    }
+    localStorage.setItem(STORAGE_KEYS.IMOVEIS, JSON.stringify(sanitized));
     
     return sanitized;
   }
@@ -283,21 +313,38 @@ export class DbService {
     const apiUrl = getApiUrl('/api/properties');
     console.log(`📡 Sending property POST request to: ${apiUrl}`);
     
-    fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(finalImovel),
-    }).then(async res => {
-      if (res.ok) {
-        console.log('✅ Property persisted successfully on backend');
-        this.syncWithServer();
-      } else {
-        const errText = await res.text().catch(() => '');
-        console.error(`❌ Failed to persist property on backend (Status ${res.status}):`, errText);
+    // Get Firebase ID token if user is logged in
+    const sendPostRequest = async () => {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      
+      try {
+        if (auth.currentUser) {
+          const idToken = await auth.currentUser.getIdToken(/* forceRefresh */ false);
+          headers['Authorization'] = `Bearer ${idToken}`;
+          console.log('🔑 Attached Firebase ID Token to request headers');
+        }
+      } catch (tokenErr) {
+        console.warn('Could not get Firebase ID token:', tokenErr);
       }
-    }).catch(err => {
-      console.error('❌ Network error posting property update to backend:', err);
-    });
+
+      fetch(apiUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(finalImovel),
+      }).then(async res => {
+        if (res.ok) {
+          console.log('✅ Property persisted successfully on backend');
+          this.syncWithServer();
+        } else {
+          const errText = await res.text().catch(() => '');
+          console.error(`❌ Failed to persist property on backend (Status ${res.status}):`, errText);
+        }
+      }).catch(err => {
+        console.error('❌ Network error posting property update to backend:', err);
+      });
+    };
+
+    sendPostRequest();
 
     return finalImovel;
   }

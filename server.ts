@@ -214,6 +214,19 @@ app.get('/api/health', async (req: Request, res: Response) => {
   }
 });
 
+app.post('/api/admin/clear-test-data', async (req: Request, res: Response) => {
+  try {
+    const result = await ServerDb.clearTestData();
+    return res.json({
+      success: true,
+      message: 'Dados de teste removidos com sucesso!',
+      details: result
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Erro ao limpar dados de teste: ' + (err?.message || String(err)) });
+  }
+});
+
 // REST API Database Properties and Brokers endpoints
 app.get(['/api/properties', '/api/imoveis'], async (req: Request, res: Response) => {
   try {
