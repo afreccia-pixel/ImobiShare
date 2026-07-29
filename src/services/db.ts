@@ -18,6 +18,26 @@ const STORAGE_KEYS = {
 
 type SyncListener = () => void;
 
+export function isProfileComplete(corretor: Partial<Corretor> | null | undefined): boolean {
+  if (!corretor) return false;
+  
+  const hasNome = Boolean(corretor.nome && corretor.nome.trim().length > 0);
+  const hasCreci = Boolean(
+    corretor.creci && 
+    corretor.creci.trim().length > 0 && 
+    corretor.creci !== 'CRECI Pendente' && 
+    corretor.creci !== '12345-F'
+  );
+  const hasContact = Boolean(
+    (corretor.whatsapp && corretor.whatsapp.trim().length > 0 && corretor.whatsapp !== '(47) 99999-9999') ||
+    (corretor.telefone && corretor.telefone.trim().length > 0 && corretor.telefone !== '(47) 99999-9999')
+  );
+  const hasCidade = Boolean(corretor.cidade && corretor.cidade.trim().length > 0);
+  const hasEstado = Boolean(corretor.estado && corretor.estado.trim().length > 0);
+
+  return hasNome && hasCreci && hasContact && hasCidade && hasEstado;
+}
+
 export class DbService {
   private static listeners: SyncListener[] = [];
 
@@ -46,14 +66,16 @@ export class DbService {
       const brokersRes = await fetch(getApiUrl('/api/brokers'));
       if (brokersRes.ok) {
         const brokers = await brokersRes.json();
-        if (brokers && brokers.length > 0) {
+        if (Array.isArray(brokers)) {
           localStorage.setItem(STORAGE_KEYS.CORRETORES, JSON.stringify(brokers));
           
           // Also verify active broker profile is in sync
           const active = this.getActiveCorretor();
-          const updatedActive = brokers.find((b: Corretor) => b.id === active.id);
-          if (updatedActive) {
-            localStorage.setItem(STORAGE_KEYS.ACTIVE_CORRETOR, JSON.stringify(updatedActive));
+          if (active && active.id) {
+            const updatedActive = brokers.find((b: Corretor) => b.id === active.id || (b.email && active.email && b.email.toLowerCase() === active.email.toLowerCase()));
+            if (updatedActive) {
+              localStorage.setItem(STORAGE_KEYS.ACTIVE_CORRETOR, JSON.stringify(updatedActive));
+            }
           }
         }
       }
@@ -91,27 +113,17 @@ export class DbService {
   // Get all brokers
   static getCorretores(): Corretor[] {
     const data = localStorage.getItem(STORAGE_KEYS.CORRETORES);
-    let list: Corretor[] = [];
-    if (!data) {
-      list = MOCK_CORRETORES;
-    } else {
-      try {
-        list = JSON.parse(data);
-      } catch {
-        list = MOCK_CORRETORES;
-      }
+    if (!data) return [];
+    try {
+      const list: Corretor[] = JSON.parse(data);
+      return list.filter(c => c && !['corretor-1', 'corretor-2', 'corretor-3'].includes(c.id));
+    } catch {
+      return [];
     }
-
-    // Filter out old test brokers (corretor-1, corretor-2, corretor-3)
-    const cleanList = list.filter(c => !['corretor-1', 'corretor-2', 'corretor-3'].includes(c.id));
-    const finalList = cleanList.length > 0 ? cleanList : MOCK_CORRETORES;
-
-    localStorage.setItem(STORAGE_KEYS.CORRETORES, JSON.stringify(finalList));
-    return finalList;
   }
 
   // Get currently logged-in broker
-  static getActiveCorretor(): Corretor {
+  static getActiveCorretor(): Corretor | null {
     const data = localStorage.getItem(STORAGE_KEYS.ACTIVE_CORRETOR);
     if (data) {
       try {
@@ -123,10 +135,7 @@ export class DbService {
         // Fallback below
       }
     }
-    
-    const defaultCorretor = this.getCorretores()[0] || MOCK_CORRETORES[0];
-    localStorage.setItem(STORAGE_KEYS.ACTIVE_CORRETOR, JSON.stringify(defaultCorretor));
-    return defaultCorretor;
+    return null;
   }
 
   // Change logged-in broker
@@ -148,7 +157,7 @@ export class DbService {
     
     // Also update active corretor if they are the active one
     const active = this.getActiveCorretor();
-    if (active.id === corretor.id) {
+    if (active && active.id === corretor.id) {
       localStorage.setItem(STORAGE_KEYS.ACTIVE_CORRETOR, JSON.stringify(corretor));
     }
 

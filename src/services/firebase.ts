@@ -114,17 +114,21 @@ export async function syncUserWithNeon(
     telefone?: string;
     whatsapp?: string;
     cidade?: string;
+    estado?: string;
+    imobiliaria?: string;
   }
 ): Promise<UserFirestoreData> {
   const payload = {
     uid: user.uid,
-    nome: extraData?.nome || user.displayName || user.email?.split('@')[0] || 'Corretor ImobiShare',
-    email: user.email || '',
-    foto: user.photoURL || 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=250',
+    nome: extraData?.nome || user.displayName || user.email?.split('@')[0] || '',
+    email: (user.email || '').toLowerCase().trim(),
+    foto: user.photoURL || '',
     creci: extraData?.creci !== undefined ? extraData.creci : '',
     telefone: extraData?.telefone !== undefined ? extraData.telefone : '',
     whatsapp: extraData?.whatsapp !== undefined ? extraData.whatsapp : '',
-    cidade: extraData?.cidade || 'Balneário Camboriú',
+    cidade: extraData?.cidade !== undefined ? extraData.cidade : '',
+    estado: extraData?.estado !== undefined ? extraData.estado : '',
+    imobiliaria: extraData?.imobiliaria !== undefined ? extraData.imobiliaria : '',
   };
 
   try {

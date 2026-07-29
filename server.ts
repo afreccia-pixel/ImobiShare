@@ -71,23 +71,25 @@ function decodeGoogleToken(token: string) {
 // REST API for Email/Password Authentication
 app.post('/api/auth/sync-firebase-user', async (req: Request, res: Response) => {
   try {
-    const { uid, email, nome, foto, creci, telefone, whatsapp, cidade } = req.body;
+    const { uid, email, nome, foto, creci, telefone, whatsapp, cidade, estado, imobiliaria } = req.body;
     if (!email) {
       return res.status(400).json({ error: 'E-mail é obrigatório para sincronização.' });
     }
 
-    // Check if broker already exists in Neon PostgreSQL by email or uid
-    let broker = await ServerDb.getCorretorByEmail(email);
+    const cleanEmail = email.toLowerCase().trim();
+    let broker = await ServerDb.getCorretorByEmail(cleanEmail);
     
     const cleanBroker = {
       id: broker ? broker.id : (uid || `corretor-${Date.now()}`),
-      nome: nome || (broker ? broker.nome : email.split('@')[0]),
-      email: email,
+      nome: nome !== undefined ? nome : (broker ? broker.nome : cleanEmail.split('@')[0]),
+      email: cleanEmail,
       creci: creci !== undefined ? creci : (broker ? broker.creci : ''),
-      telefone: telefone || (broker ? broker.telefone : ''),
-      whatsapp: whatsapp || (broker ? broker.whatsapp : ''),
-      foto: foto || (broker ? broker.foto : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'),
-      cidade: cidade || (broker ? broker.cidade : 'Balneário Camboriú'),
+      telefone: telefone !== undefined ? telefone : (broker ? broker.telefone : ''),
+      whatsapp: whatsapp !== undefined ? whatsapp : (broker ? broker.whatsapp : ''),
+      foto: foto !== undefined ? foto : (broker ? broker.foto : ''),
+      cidade: cidade !== undefined ? cidade : (broker ? broker.cidade : ''),
+      estado: estado !== undefined ? estado : (broker ? broker.estado : ''),
+      imobiliaria: imobiliaria !== undefined ? imobiliaria : (broker ? broker.imobiliaria : ''),
       restringirParceiros: broker ? broker.restringirParceiros : false,
       parceirosEmails: broker ? broker.parceirosEmails : []
     };
@@ -125,11 +127,12 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
 // REST API for Email/Password Registration
 app.post('/api/auth/register', async (req: Request, res: Response) => {
   try {
-    const { nome, email, password, creci, telefone, whatsapp, cidade } = req.body;
+    const { nome, email, password, creci, telefone, whatsapp, cidade, estado, imobiliaria } = req.body;
     if (!nome || !email || !password) {
       return res.status(400).json({ error: 'Nome, e-mail e senha são obrigatórios.' });
     }
-    const existing = await ServerDb.getCorretorByEmail(email);
+    const cleanEmail = email.toLowerCase().trim();
+    const existing = await ServerDb.getCorretorByEmail(cleanEmail);
     if (existing) {
       return res.status(400).json({ error: 'Este e-mail já está cadastrado no sistema.' });
     }
@@ -138,13 +141,15 @@ app.post('/api/auth/register', async (req: Request, res: Response) => {
     const newBroker = {
       id,
       nome,
-      email,
+      email: cleanEmail,
       password,
-      creci: creci || 'CRECI Pendente',
+      creci: creci || '',
       telefone: telefone || '',
       whatsapp: whatsapp || '',
-      foto: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-      cidade: cidade || 'Balneário Camboriú',
+      foto: '',
+      cidade: cidade || '',
+      estado: estado || '',
+      imobiliaria: imobiliaria || '',
       restringirParceiros: false,
       parceirosEmails: []
     };
@@ -170,28 +175,39 @@ app.post('/api/auth/google', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Token do Google inválido ou ilegível.' });
     }
     
-    let broker = await ServerDb.getCorretorByEmail(payload.email);
+    const cleanEmail = payload.email.toLowerCase().trim();
+    let broker = await ServerDb.getCorretorByEmail(cleanEmail);
     if (!broker) {
-      // Register new broker automatically via Google credentials
-      const id = `corretor-${Date.now()}`;
-      broker = {
-        id,
-        nome: payload.name || payload.email.split('@')[0],
-        email: payload.email,
-        password: `google_${Date.now()}_auth`, // Secure placeholder password
-        creci: 'CRECI Pendente',
-        telefone: '',
-        whatsapp: '',
-        foto: payload.picture || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-        cidade: 'Balneário Camboriú',
-        restringirParceiros: false,
-        parceirosEmails: []
-      };
-      await ServerDb.saveCorretor(broker);
+      // Do NOT create or save a broker in DB automatically! Return Google basic details
+      return res.json({ 
+        success: true, 
+        isNew: true, 
+        isComplete: false,
+        corretor: {
+          id: payload.sub || `corretor-${Date.now()}`,
+          nome: payload.name || cleanEmail.split('@')[0],
+          email: cleanEmail,
+          foto: payload.picture || '',
+          creci: '',
+          telefone: '',
+          whatsapp: '',
+          cidade: '',
+          estado: '',
+          imobiliaria: ''
+        } 
+      });
     }
     
     const { password: _, ...cleanBroker } = broker;
-    return res.json({ success: true, corretor: cleanBroker });
+    const isComplete = Boolean(
+      cleanBroker.nome && cleanBroker.nome.trim() &&
+      cleanBroker.creci && cleanBroker.creci.trim() && cleanBroker.creci !== 'CRECI Pendente' && cleanBroker.creci !== '12345-F' &&
+      (cleanBroker.whatsapp?.trim() || cleanBroker.telefone?.trim()) &&
+      cleanBroker.cidade && cleanBroker.cidade.trim() &&
+      cleanBroker.estado && cleanBroker.estado.trim()
+    );
+
+    return res.json({ success: true, isNew: false, isComplete, corretor: cleanBroker });
   } catch (error: any) {
     console.error('Erro no login com Google:', error);
     return res.status(500).json({ error: 'Erro interno ao processar login com Google.' });

@@ -100,7 +100,9 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
   const [editCreci, setEditCreci] = useState(corretor.creci || '');
   const [editTelefone, setEditTelefone] = useState(corretor.telefone || '');
   const [editWhatsapp, setEditWhatsapp] = useState(corretor.whatsapp || '');
-  const [editCidade, setEditCidade] = useState(corretor.cidade || 'Balneário Camboriú');
+  const [editCidade, setEditCidade] = useState(corretor.cidade || '');
+  const [editEstado, setEditEstado] = useState(corretor.estado || '');
+  const [editImobiliaria, setEditImobiliaria] = useState(corretor.imobiliaria || '');
 
   // Partner broker sharing states
   const [restringir, setRestringir] = useState(corretor.restringirParceiros || false);
@@ -122,7 +124,9 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
     setEditCreci(corretor.creci || '');
     setEditTelefone(corretor.telefone || '');
     setEditWhatsapp(corretor.whatsapp || '');
-    setEditCidade(corretor.cidade || 'Balneário Camboriú');
+    setEditCidade(corretor.cidade || '');
+    setEditEstado(corretor.estado || '');
+    setEditImobiliaria(corretor.imobiliaria || '');
   }, [corretor]);
 
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -138,7 +142,9 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
       creci: editCreci.trim(),
       telefone: editTelefone.trim() || editWhatsapp.trim(),
       whatsapp: editWhatsapp.trim() || editTelefone.trim(),
-      cidade: editCidade.trim() || 'Balneário Camboriú'
+      cidade: editCidade.trim(),
+      estado: editEstado.trim().toUpperCase(),
+      imobiliaria: editImobiliaria.trim()
     };
 
     DbService.saveCorretor(updatedCorretor);
@@ -158,7 +164,9 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
           creci: updatedCorretor.creci,
           telefone: updatedCorretor.telefone,
           whatsapp: updatedCorretor.whatsapp,
-          cidade: updatedCorretor.cidade
+          cidade: updatedCorretor.cidade,
+          estado: updatedCorretor.estado,
+          imobiliaria: updatedCorretor.imobiliaria
         })
       });
     } catch (err) {
@@ -367,10 +375,22 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
               <div className="flex items-center gap-3 text-xs text-slate-600">
                 <MapPin size={14} className="text-slate-400 shrink-0" />
                 <div>
-                  <span className="text-[10px] text-slate-400 block">Cidade Principal:</span>
-                  <span className="font-medium text-slate-800">{corretor.cidade || 'Balneário Camboriú'}</span>
+                  <span className="text-[10px] text-slate-400 block">Cidade / Estado:</span>
+                  <span className="font-medium text-slate-800">
+                    {corretor.cidade ? `${corretor.cidade}${corretor.estado ? ` - ${corretor.estado}` : ''}` : <span className="text-amber-500 font-bold">Não informado</span>}
+                  </span>
                 </div>
               </div>
+
+              {corretor.imobiliaria && (
+                <div className="flex items-center gap-3 text-xs text-slate-600">
+                  <User size={14} className="text-slate-400 shrink-0" />
+                  <div>
+                    <span className="text-[10px] text-slate-400 block">Imobiliária / Empresa:</span>
+                    <span className="font-medium text-slate-800">{corretor.imobiliaria}</span>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <form onSubmit={handleSaveProfile} className="space-y-3 pt-1">
@@ -389,7 +409,7 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
                 <label className="text-[10px] font-bold text-slate-500 block mb-1">CRECI</label>
                 <input
                   type="text"
-                  placeholder="Ex: CRECI 12345-F"
+                  placeholder="Ex: 28901-F"
                   value={editCreci}
                   onChange={(e) => setEditCreci(e.target.value)}
                   className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-[#003366] font-medium text-slate-800"
@@ -419,13 +439,37 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
                 </div>
               </div>
 
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-2">
+                  <label className="text-[10px] font-bold text-slate-500 block mb-1">Cidade Principal de Atuação</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Balneário Camboriú"
+                    value={editCidade}
+                    onChange={(e) => setEditCidade(e.target.value)}
+                    className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-[#003366] font-medium text-slate-800"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 block mb-1">Estado (UF)</label>
+                  <input
+                    type="text"
+                    maxLength={2}
+                    placeholder="SC"
+                    value={editEstado}
+                    onChange={(e) => setEditEstado(e.target.value.toUpperCase())}
+                    className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-[#003366] font-medium text-slate-800 uppercase text-center"
+                  />
+                </div>
+              </div>
+
               <div>
-                <label className="text-[10px] font-bold text-slate-500 block mb-1">Cidade Principal de Atuação</label>
+                <label className="text-[10px] font-bold text-slate-500 block mb-1">Imobiliária / Empresa (Opcional)</label>
                 <input
                   type="text"
-                  placeholder="Ex: Balneário Camboriú"
-                  value={editCidade}
-                  onChange={(e) => setEditCidade(e.target.value)}
+                  placeholder="Ex: Imobiliária Brasil ou Autônomo"
+                  value={editImobiliaria}
+                  onChange={(e) => setEditImobiliaria(e.target.value)}
                   className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-[#003366] font-medium text-slate-800"
                 />
               </div>

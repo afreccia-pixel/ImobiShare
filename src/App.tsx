@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import logoImg from './assets/images/imobishare_logo_1784239677798.jpg';
 import { Imovel, Corretor } from './types';
-import { DbService } from './services/db';
+import { DbService, isProfileComplete } from './services/db';
 import { 
   auth, 
   signInWithGoogle, 
@@ -359,58 +359,65 @@ export default function App() {
 
   // Helper to sync, process and activate logged-in user profile
   const processAuthenticatedUser = async (user: any, extraData?: any) => {
-    const userData = await syncUserWithFirestore(user, extraData);
+    await DbService.syncWithServer();
     const existingBrokers = DbService.getCorretores();
-    const userEmail = (user.email || userData.email || '').toLowerCase();
+    const userEmail = (user.email || extraData?.email || '').toLowerCase().trim();
+    const userUid = user.uid || extraData?.uid;
     
-    const existing = existingBrokers.find(b => 
-      (userEmail && b.email && b.email.toLowerCase() === userEmail) || 
-      (user.uid && b.id === user.uid)
+    let existing = existingBrokers.find(b => 
+      (userEmail && b.email && b.email.toLowerCase().trim() === userEmail) || 
+      (userUid && b.id === userUid)
     );
+
+    // Also check server directly by email if not found in local cache
+    if (!existing && userEmail) {
+      try {
+        const res = await fetch(getApiUrl(`/api/brokers`));
+        if (res.ok) {
+          const list = await res.json();
+          if (Array.isArray(list)) {
+            existing = list.find((b: Corretor) => b.email && b.email.toLowerCase().trim() === userEmail);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to query brokers by email from server:', err);
+      }
+    }
 
     let corretor: Corretor;
 
-    if (existing) {
-      corretor = {
-        ...existing,
-        id: existing.id || user.uid,
-        nome: user.displayName || userData.nome || existing.nome,
-        foto: user.photoURL || userData.foto || existing.foto,
-        email: userEmail || existing.email,
-        creci: existing.creci || userData.creci || '',
-        telefone: existing.telefone || userData.telefone || '',
-        whatsapp: existing.whatsapp || userData.whatsapp || '',
-        cidade: existing.cidade || userData.cidade || 'Balneário Camboriú'
-      };
-    } else {
-      const cleanCreci = userData.creci && userData.creci !== '12345-F' ? userData.creci : '';
-      const cleanTel = userData.telefone && userData.telefone !== '(47) 99999-9999' ? userData.telefone : '';
-      const cleanWhats = userData.whatsapp && userData.whatsapp !== '(47) 99999-9999' ? userData.whatsapp : '';
-
-      corretor = {
-        id: user.uid || `corretor-${Date.now()}`,
-        nome: userData.nome || user.displayName || (userEmail ? userEmail.split('@')[0] : 'Corretor'),
-        email: userEmail,
-        foto: userData.foto || user.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-        creci: cleanCreci,
-        telefone: cleanTel,
-        whatsapp: cleanWhats,
-        cidade: userData.cidade || 'Balneário Camboriú',
-        restringirParceiros: false,
-        parceirosEmails: []
-      };
+    if (existing && isProfileComplete(existing)) {
+      corretor = existing;
+      DbService.saveCorretor(corretor);
+      DbService.setActiveCorretor(corretor);
+      localStorage.setItem('imobishare_logged_in', 'true');
+      setIsAuthenticated(true);
+      setActiveCorretor(corretor);
+      setShowCompleteProfileModal(false);
+      return corretor;
     }
 
-    DbService.saveCorretor(corretor);
+    // Unregistered or incomplete profile:
+    corretor = {
+      id: userUid || existing?.id || `corretor-${Date.now()}`,
+      nome: existing?.nome || user.displayName || extraData?.nome || (userEmail ? userEmail.split('@')[0] : ''),
+      email: userEmail || existing?.email || '',
+      foto: user.photoURL || extraData?.foto || existing?.foto || '',
+      creci: existing?.creci && existing.creci !== 'CRECI Pendente' && existing.creci !== '12345-F' ? existing.creci : '',
+      telefone: existing?.telefone && existing.telefone !== '(47) 99999-9999' ? existing.telefone : '',
+      whatsapp: existing?.whatsapp && existing.whatsapp !== '(47) 99999-9999' ? existing.whatsapp : '',
+      cidade: existing?.cidade || '',
+      estado: existing?.estado || '',
+      imobiliaria: existing?.imobiliaria || '',
+      restringirParceiros: existing?.restringirParceiros || false,
+      parceirosEmails: existing?.parceirosEmails || []
+    };
+
     DbService.setActiveCorretor(corretor);
     localStorage.setItem('imobishare_logged_in', 'true');
     setIsAuthenticated(true);
     setActiveCorretor(corretor);
-
-    // If profile has missing CRECI or WhatsApp, prompt user to complete registration
-    if (!corretor.creci || corretor.creci === 'CRECI Pendente' || !corretor.whatsapp) {
-      setShowCompleteProfileModal(true);
-    }
+    setShowCompleteProfileModal(true);
 
     return corretor;
   };
@@ -421,7 +428,11 @@ export default function App() {
       .then(async (user) => {
         if (user) {
           const corretor = await processAuthenticatedUser(user);
-          triggerToast(`Bem-vindo, ${corretor.nome}!`);
+          if (isProfileComplete(corretor)) {
+            triggerToast(`Bem-vindo, ${corretor.nome}!`);
+          } else {
+            triggerToast('Por favor, complete seu cadastro de corretor para acessar o sistema.');
+          }
           reloadData();
         }
       })
@@ -446,7 +457,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Google Sign-In with Firebase Auth (with preview fallback)
+  // Google Sign-In with Firebase Auth
   const handleGoogleLogin = async () => {
     setAuthLoading(true);
     setAuthError('');
@@ -454,7 +465,11 @@ export default function App() {
       const user = await signInWithGoogle();
       if (user) {
         const corretor = await processAuthenticatedUser(user);
-        triggerToast(`Bem-vindo, ${corretor.nome}!`);
+        if (isProfileComplete(corretor)) {
+          triggerToast(`Bem-vindo, ${corretor.nome}!`);
+        } else {
+          triggerToast('Por favor, complete seu cadastro para continuar.');
+        }
         await DbService.syncWithServer();
         reloadData();
       }
@@ -462,24 +477,22 @@ export default function App() {
       if (err.message === 'REDIRECTING') {
         return;
       }
-      console.warn('Firebase Google Auth fallback:', err);
-      
-      const userEmail = auth.currentUser?.email || 'afreccia@gmail.com';
-      const userDisplayName = auth.currentUser?.displayName || 'Alexandre Freccia';
-      const userPhoto = auth.currentUser?.photoURL || 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=250';
-      const userUid = auth.currentUser?.uid || 'corretor-alexandre';
+      console.warn('Firebase Google Auth popup error:', err);
 
-      const simulatedGoogleUser = {
-        uid: userUid,
-        email: userEmail,
-        displayName: userDisplayName,
-        photoURL: userPhoto
-      };
-
-      const corretor = await processAuthenticatedUser(simulatedGoogleUser);
-      triggerToast(`Bem-vindo, ${corretor.nome}!`);
-      await DbService.syncWithServer();
-      reloadData();
+      if (auth.currentUser) {
+        const corretor = await processAuthenticatedUser(auth.currentUser);
+        if (isProfileComplete(corretor)) {
+          triggerToast(`Bem-vindo, ${corretor.nome}!`);
+        } else {
+          triggerToast('Por favor, complete seu cadastro para continuar.');
+        }
+        await DbService.syncWithServer();
+        reloadData();
+      } else {
+        const formatted = formatAuthError(err);
+        setAuthError(formatted);
+        triggerToast(formatted);
+      }
     } finally {
       setAuthLoading(false);
     }
@@ -541,21 +554,7 @@ export default function App() {
       }
 
       if (user) {
-        const userData = await syncUserWithFirestore(user);
-        const corretor: Corretor = {
-          id: user.uid,
-          nome: userData.nome || user.displayName || 'Corretor ImobiShare',
-          creci: userData.creci || '12345-F',
-          telefone: userData.telefone || '(47) 99999-9999',
-          whatsapp: userData.whatsapp || '(47) 99999-9999',
-          cidade: userData.cidade || 'Balneário Camboriú',
-          email: user.email || '',
-          foto: userData.foto || user.photoURL || 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=250',
-        };
-        DbService.setActiveCorretor(corretor);
-        localStorage.setItem('imobishare_logged_in', 'true');
-        setIsAuthenticated(true);
-        setActiveCorretor(corretor);
+        const corretor = await processAuthenticatedUser(user);
         triggerToast(`Bem-vindo, ${corretor.nome}!`);
         await DbService.syncWithServer();
         reloadData();
@@ -582,12 +581,12 @@ export default function App() {
 
     const newCorretorObj: Corretor = {
       id: `corretor_${Date.now()}`,
-      nome: regNome,
-      creci: regCreci || '12345-F',
-      telefone: regTelefone || '(47) 99999-9999',
-      whatsapp: regWhatsapp || '(47) 99999-9999',
-      cidade: regCidade || 'Balneário Camboriú',
-      email: authEmail,
+      nome: regNome.trim(),
+      creci: regCreci.trim(),
+      telefone: regTelefone.trim() || regWhatsapp.trim(),
+      whatsapp: regWhatsapp.trim() || regTelefone.trim(),
+      cidade: regCidade.trim() || 'Balneário Camboriú',
+      email: authEmail.trim(),
       foto: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=250',
     };
 
@@ -600,18 +599,19 @@ export default function App() {
           whatsapp: regWhatsapp,
           cidade: regCidade,
         });
-        const userData = await syncUserWithFirestore(user, {
+        const corretor = await processAuthenticatedUser(user, {
           nome: regNome,
           creci: regCreci,
           telefone: regTelefone,
           whatsapp: regWhatsapp,
           cidade: regCidade,
         });
-        newCorretorObj.id = user.uid;
-        newCorretorObj.nome = userData.nome || regNome;
+        triggerToast(`Cadastro realizado com sucesso! Bem-vindo, ${corretor.nome}!`);
+        await DbService.syncWithServer();
+        reloadData();
+        return;
       } catch (fbErr: any) {
-        console.warn('Firebase registration failed (e.g. auth method disabled). Falling back to local/server profile registration:', fbErr);
-        // Fallback registration in local database & server
+        console.warn('Firebase registration failed. Falling back to local/server profile registration:', fbErr);
         DbService.addCorretor(newCorretorObj);
       }
 
@@ -2208,16 +2208,22 @@ Toque abaixo para ver fotos e todos os detalhes:
         </AnimatePresence>
 
         {/* Complete Profile Modal */}
-        {showCompleteProfileModal && (
+        {(showCompleteProfileModal || !isProfileComplete(activeCorretor)) && isAuthenticated && (
           <CompleteProfileModal
             corretor={activeCorretor}
+            isMandatory={!isProfileComplete(activeCorretor)}
             onSave={(updatedCorretor) => {
               setActiveCorretor(updatedCorretor);
               setShowCompleteProfileModal(false);
-              triggerToast('Perfil atualizado com sucesso!');
+              triggerToast('Perfil cadastrado e salvo com sucesso!');
               reloadData();
             }}
-            onClose={() => setShowCompleteProfileModal(false)}
+            onClose={() => {
+              if (isProfileComplete(activeCorretor)) {
+                setShowCompleteProfileModal(false);
+              }
+            }}
+            onLogout={handleLogout}
           />
         )}
 

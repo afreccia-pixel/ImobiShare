@@ -107,6 +107,8 @@ export class ServerDb {
     `);
 
     // Ensure columns exist for existing tables
+    await this.pool.query(`ALTER TABLE brokers ADD COLUMN IF NOT EXISTS estado VARCHAR(100);`);
+    await this.pool.query(`ALTER TABLE brokers ADD COLUMN IF NOT EXISTS imobiliaria VARCHAR(255);`);
     await this.pool.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS tipo_imovel VARCHAR(100);`);
     await this.pool.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS banheiros INTEGER;`);
     await this.pool.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS area_total NUMERIC;`);
@@ -221,6 +223,8 @@ export class ServerDb {
         email: r.email,
         foto: r.foto,
         cidade: r.cidade,
+        estado: r.estado || '',
+        imobiliaria: r.imobiliaria || '',
         restringirParceiros: r.restringir_parceiros,
         parceirosEmails: r.parceiros_emails ? r.parceiros_emails.split(',') : []
       }));
@@ -232,6 +236,7 @@ export class ServerDb {
 
   static async getCorretorByEmail(email: string): Promise<(Corretor & { password?: string }) | null> {
     const cleanEmail = email.toLowerCase().trim();
+    if (!cleanEmail) return null;
     if (this.isPostgres && this.pool) {
       const res = await this.pool.query('SELECT * FROM brokers WHERE LOWER(email) = $1', [cleanEmail]);
       if (res.rows.length === 0) return null;
@@ -245,13 +250,15 @@ export class ServerDb {
         email: r.email,
         foto: r.foto,
         cidade: r.cidade,
+        estado: r.estado || '',
+        imobiliaria: r.imobiliaria || '',
         password: r.password,
         restringirParceiros: r.restringir_parceiros,
         parceirosEmails: r.parceiros_emails ? r.parceiros_emails.split(',') : []
       };
     } else {
       const db = await this.readJson();
-      const found = db.brokers.find(b => b.email.toLowerCase().trim() === cleanEmail);
+      const found = db.brokers.find(b => b.email && b.email.toLowerCase().trim() === cleanEmail);
       return found || null;
     }
   }
@@ -265,21 +272,21 @@ export class ServerDb {
         // Update
         if (broker.password) {
           await this.pool.query(`
-            UPDATE brokers SET nome = $2, creci = $3, telefone = $4, whatsapp = $5, email = $6, password = $7, foto = $8, cidade = $9, restringir_parceiros = $10, parceiros_emails = $11
+            UPDATE brokers SET nome = $2, creci = $3, telefone = $4, whatsapp = $5, email = $6, password = $7, foto = $8, cidade = $9, estado = $10, imobiliaria = $11, restringir_parceiros = $12, parceiros_emails = $13
             WHERE id = $1
-          `, [broker.id, broker.nome, broker.creci, broker.telefone, broker.whatsapp, broker.email, broker.password, broker.foto, broker.cidade, broker.restringirParceiros || false, partners]);
+          `, [broker.id, broker.nome, broker.creci, broker.telefone, broker.whatsapp, broker.email, broker.password, broker.foto, broker.cidade, broker.estado || '', broker.imobiliaria || '', broker.restringirParceiros || false, partners]);
         } else {
           await this.pool.query(`
-            UPDATE brokers SET nome = $2, creci = $3, telefone = $4, whatsapp = $5, email = $6, foto = $7, cidade = $8, restringir_parceiros = $9, parceiros_emails = $10
+            UPDATE brokers SET nome = $2, creci = $3, telefone = $4, whatsapp = $5, email = $6, foto = $7, cidade = $8, estado = $9, imobiliaria = $10, restringir_parceiros = $11, parceiros_emails = $12
             WHERE id = $1
-          `, [broker.id, broker.nome, broker.creci, broker.telefone, broker.whatsapp, broker.email, broker.foto, broker.cidade, broker.restringirParceiros || false, partners]);
+          `, [broker.id, broker.nome, broker.creci, broker.telefone, broker.whatsapp, broker.email, broker.foto, broker.cidade, broker.estado || '', broker.imobiliaria || '', broker.restringirParceiros || false, partners]);
         }
       } else {
         // Insert
         await this.pool.query(`
-          INSERT INTO brokers (id, nome, creci, telefone, whatsapp, email, password, foto, cidade, restringir_parceiros, parceiros_emails)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-        `, [broker.id, broker.nome, broker.creci, broker.telefone, broker.whatsapp, broker.email, broker.password || 'password123', broker.foto, broker.cidade, broker.restringirParceiros || false, partners]);
+          INSERT INTO brokers (id, nome, creci, telefone, whatsapp, email, password, foto, cidade, estado, imobiliaria, restringir_parceiros, parceiros_emails)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        `, [broker.id, broker.nome, broker.creci, broker.telefone, broker.whatsapp, broker.email, broker.password || 'password123', broker.foto, broker.cidade, broker.estado || '', broker.imobiliaria || '', broker.restringirParceiros || false, partners]);
       }
       const { password, ...cleanBroker } = broker;
       return cleanBroker;

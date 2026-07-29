@@ -12,6 +12,8 @@ export interface Corretor {
   email: string;
   foto: string;
   cidade: string;
+  estado?: string;
+  imobiliaria?: string;
   qtdImoveis?: number;
   qtdLocacoes?: number;
   restringirParceiros?: boolean;
