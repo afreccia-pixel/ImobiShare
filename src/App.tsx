@@ -436,22 +436,27 @@ export default function App() {
       .catch((err) => console.error('Error handling Google auth redirect:', err))
       .finally(() => setIsInitialLoading(false));
 
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        try {
-          const corretor = await processAuthenticatedUser(user);
-          if (corretor) {
-            reloadData();
-          }
-        } catch (err) {
-          console.error('Error syncing Firebase user profile:', err);
-        }
-      } else {
-        localStorage.removeItem('imobishare_logged_in');
-        setIsAuthenticated(false);
-      }
-      setIsInitialLoading(false);
-    });
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+     const run = async () => {
+       if (user) {
+         try {
+           const corretor = await processAuthenticatedUser(user);
+           if (corretor) {
+             reloadData();
+           }
+         } catch (err) {
+           console.error('Error syncing Firebase user profile:', err);
+         }
+       } else {
+         localStorage.removeItem('imobishare_logged_in');
+         setIsAuthenticated(false);
+       }
+       setIsInitialLoading(false);
+     };
+
+      run(); // chama a função assíncrona
+   });
 
     return () => unsubscribe();
   }, []);
@@ -481,7 +486,7 @@ export default function App() {
       setAuthLoading(false);
     }
   };
-  
+
 // Google Sign-In with Firebase Auth
 const handleGoogleLogin = async () => {
   setAuthLoading(true);
