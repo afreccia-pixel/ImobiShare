@@ -421,45 +421,44 @@ export default function App() {
     return null;
   };
 
-  // Firebase Auth persistence & redirect result listener
-  useEffect(() => {
-    checkRedirectAuth()
-      .then(async (user) => {
-        if (user) {
-          const corretor = await processAuthenticatedUser(user);
-          if (corretor) {
-            triggerToast(`Bem-vindo, ${corretor.nome}!`);
-            reloadData();
-          }
-        }
-      })
-      .catch((err) => console.error('Error handling Google auth redirect:', err))
-      .finally(() => setIsInitialLoading(false));
+// Função auxiliar para tratar usuário autenticado
+const handleAuthenticatedUser = async (user: User | null) => {
+  if (!user) {
+    localStorage.removeItem('imobishare_logged_in');
+    setIsAuthenticated(false);
+    setIsInitialLoading(false);
+    return;
+  }
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-     const run = async () => {
-       if (user) {
-         try {
-           const corretor = await processAuthenticatedUser(user);
-           if (corretor) {
-             reloadData();
-           }
-         } catch (err) {
-           console.error('Error syncing Firebase user profile:', err);
-         }
-       } else {
-         localStorage.removeItem('imobishare_logged_in');
-         setIsAuthenticated(false);
-       }
-       setIsInitialLoading(false);
-     };
+  try {
+    const corretor = await processAuthenticatedUser(user);
+    if (corretor) {
+      triggerToast(`Bem-vindo, ${corretor.nome}!`);
+      reloadData();
+      setIsAuthenticated(true);
+    }
+  } catch (err) {
+    console.error('Error syncing Firebase user profile:', err);
+  } finally {
+    setIsInitialLoading(false);
+  }
+};
 
-      run(); // chama a função assíncrona
-   });
+// Firebase Auth persistence & redirect result listener
+useEffect(() => {
+  checkRedirectAuth()
+    .then(handleAuthenticatedUser)
+    .catch((err) => console.error('Error handling Google auth redirect:', err));
+}, []);
 
-    return () => unsubscribe();
-  }, []);
+// Listener para mudanças de autenticação
+useEffect(() => {
+  const unsubscribe = onAuthStateChanged(auth, (user) => {
+    handleAuthenticatedUser(user);
+  });
+
+  return () => unsubscribe();
+}, []);
 
   // Direct Google Login fallback for preview/iframe environments
   const handleGoogleDirectLogin = async (emailToUse: string = googleDirectEmail) => {
