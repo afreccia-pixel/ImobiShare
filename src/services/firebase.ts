@@ -121,9 +121,9 @@ export async function syncUserWithNeon(
     nome: extraData?.nome || user.displayName || user.email?.split('@')[0] || 'Corretor ImobiShare',
     email: user.email || '',
     foto: user.photoURL || 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=250',
-    creci: extraData?.creci || '12345-F',
-    telefone: extraData?.telefone || '(47) 99999-9999',
-    whatsapp: extraData?.whatsapp || '(47) 99999-9999',
+    creci: extraData?.creci !== undefined ? extraData.creci : '',
+    telefone: extraData?.telefone !== undefined ? extraData.telefone : '',
+    whatsapp: extraData?.whatsapp !== undefined ? extraData.whatsapp : '',
     cidade: extraData?.cidade || 'Balneário Camboriú',
   };
 

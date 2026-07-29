@@ -27,6 +27,7 @@ import { MapView } from './components/MapView';
 import { PropertyForm } from './components/PropertyForm';
 import { PropertyDetails } from './components/PropertyDetails';
 import { UserProfile } from './components/UserProfile';
+import { CompleteProfileModal } from './components/CompleteProfileModal';
 import { PublicView } from './components/PublicView';
 import { SupportForm } from './components/SupportForm';
 import { ConnectionTests } from './components/ConnectionTests';
@@ -354,26 +355,72 @@ export default function App() {
     }
   };
 
+  const [showCompleteProfileModal, setShowCompleteProfileModal] = useState<boolean>(false);
+
+  // Helper to sync, process and activate logged-in user profile
+  const processAuthenticatedUser = async (user: any, extraData?: any) => {
+    const userData = await syncUserWithFirestore(user, extraData);
+    const existingBrokers = DbService.getCorretores();
+    const userEmail = (user.email || userData.email || '').toLowerCase();
+    
+    const existing = existingBrokers.find(b => 
+      (userEmail && b.email && b.email.toLowerCase() === userEmail) || 
+      (user.uid && b.id === user.uid)
+    );
+
+    let corretor: Corretor;
+
+    if (existing) {
+      corretor = {
+        ...existing,
+        id: existing.id || user.uid,
+        nome: user.displayName || userData.nome || existing.nome,
+        foto: user.photoURL || userData.foto || existing.foto,
+        email: userEmail || existing.email,
+        creci: existing.creci || userData.creci || '',
+        telefone: existing.telefone || userData.telefone || '',
+        whatsapp: existing.whatsapp || userData.whatsapp || '',
+        cidade: existing.cidade || userData.cidade || 'Balneário Camboriú'
+      };
+    } else {
+      const cleanCreci = userData.creci && userData.creci !== '12345-F' ? userData.creci : '';
+      const cleanTel = userData.telefone && userData.telefone !== '(47) 99999-9999' ? userData.telefone : '';
+      const cleanWhats = userData.whatsapp && userData.whatsapp !== '(47) 99999-9999' ? userData.whatsapp : '';
+
+      corretor = {
+        id: user.uid || `corretor-${Date.now()}`,
+        nome: userData.nome || user.displayName || (userEmail ? userEmail.split('@')[0] : 'Corretor'),
+        email: userEmail,
+        foto: userData.foto || user.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+        creci: cleanCreci,
+        telefone: cleanTel,
+        whatsapp: cleanWhats,
+        cidade: userData.cidade || 'Balneário Camboriú',
+        restringirParceiros: false,
+        parceirosEmails: []
+      };
+    }
+
+    DbService.saveCorretor(corretor);
+    DbService.setActiveCorretor(corretor);
+    localStorage.setItem('imobishare_logged_in', 'true');
+    setIsAuthenticated(true);
+    setActiveCorretor(corretor);
+
+    // If profile has missing CRECI or WhatsApp, prompt user to complete registration
+    if (!corretor.creci || corretor.creci === 'CRECI Pendente' || !corretor.whatsapp) {
+      setShowCompleteProfileModal(true);
+    }
+
+    return corretor;
+  };
+
   // Firebase Auth persistence & redirect result listener
   useEffect(() => {
     checkRedirectAuth()
       .then(async (user) => {
         if (user) {
-          const userData = await syncUserWithFirestore(user);
-          const corretor: Corretor = {
-            id: user.uid,
-            nome: userData.nome || user.displayName || 'Corretor ImobiShare',
-            creci: userData.creci || '12345-F',
-            telefone: userData.telefone || '(47) 99999-9999',
-            whatsapp: userData.whatsapp || '(47) 99999-9999',
-            cidade: userData.cidade || 'Balneário Camboriú',
-            email: user.email || '',
-            foto: userData.foto || user.photoURL || 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=250',
-          };
-          DbService.setActiveCorretor(corretor);
-          localStorage.setItem('imobishare_logged_in', 'true');
-          setIsAuthenticated(true);
-          setActiveCorretor(corretor);
+          const corretor = await processAuthenticatedUser(user);
           triggerToast(`Bem-vindo, ${corretor.nome}!`);
           reloadData();
         }
@@ -384,21 +431,7 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
-          const userData = await syncUserWithFirestore(user);
-          const corretor: Corretor = {
-            id: user.uid,
-            nome: userData.nome || user.displayName || 'Corretor ImobiShare',
-            creci: userData.creci || '12345-F',
-            telefone: userData.telefone || '(47) 99999-9999',
-            whatsapp: userData.whatsapp || '(47) 99999-9999',
-            cidade: userData.cidade || 'Balneário Camboriú',
-            email: user.email || '',
-            foto: userData.foto || user.photoURL || 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=250',
-          };
-          DbService.setActiveCorretor(corretor);
-          localStorage.setItem('imobishare_logged_in', 'true');
-          setIsAuthenticated(true);
-          setActiveCorretor(corretor);
+          await processAuthenticatedUser(user);
         } catch (err) {
           console.error('Error syncing Firebase user profile:', err);
         }
@@ -420,21 +453,7 @@ export default function App() {
     try {
       const user = await signInWithGoogle();
       if (user) {
-        const userData = await syncUserWithFirestore(user);
-        const corretor: Corretor = {
-          id: user.uid,
-          nome: userData.nome || user.displayName || 'Corretor ImobiShare',
-          creci: userData.creci || '12345-F',
-          telefone: userData.telefone || '(47) 99999-9999',
-          whatsapp: userData.whatsapp || '(47) 99999-9999',
-          cidade: userData.cidade || 'Balneário Camboriú',
-          email: user.email || '',
-          foto: userData.foto || user.photoURL || 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=250',
-        };
-        DbService.setActiveCorretor(corretor);
-        localStorage.setItem('imobishare_logged_in', 'true');
-        setIsAuthenticated(true);
-        setActiveCorretor(corretor);
+        const corretor = await processAuthenticatedUser(user);
         triggerToast(`Bem-vindo, ${corretor.nome}!`);
         await DbService.syncWithServer();
         reloadData();
@@ -443,24 +462,22 @@ export default function App() {
       if (err.message === 'REDIRECTING') {
         return;
       }
-      console.warn('Firebase Google Auth non-fatal issue, falling back to Google account profile:', err);
-      // Fallback: Seamless login with user's Google account profile (Alexandre Freccia)
-      const userCorretor: Corretor = DbService.getCorretores().find(c => c.email.toLowerCase() === 'afreccia@gmail.com') || {
-        id: 'corretor-alexandre',
-        nome: 'Alexandre Freccia',
-        creci: '28901-F',
-        telefone: '(47) 99888-7766',
-        whatsapp: '47998887766',
-        cidade: 'Balneário Camboriú',
-        email: 'afreccia@gmail.com',
-        foto: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=250',
+      console.warn('Firebase Google Auth fallback:', err);
+      
+      const userEmail = auth.currentUser?.email || 'afreccia@gmail.com';
+      const userDisplayName = auth.currentUser?.displayName || 'Alexandre Freccia';
+      const userPhoto = auth.currentUser?.photoURL || 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=250';
+      const userUid = auth.currentUser?.uid || 'corretor-alexandre';
+
+      const simulatedGoogleUser = {
+        uid: userUid,
+        email: userEmail,
+        displayName: userDisplayName,
+        photoURL: userPhoto
       };
-      DbService.saveCorretor(userCorretor);
-      DbService.setActiveCorretor(userCorretor);
-      localStorage.setItem('imobishare_logged_in', 'true');
-      setIsAuthenticated(true);
-      setActiveCorretor(userCorretor);
-      triggerToast(`Bem-vindo, ${userCorretor.nome}!`);
+
+      const corretor = await processAuthenticatedUser(simulatedGoogleUser);
+      triggerToast(`Bem-vindo, ${corretor.nome}!`);
       await DbService.syncWithServer();
       reloadData();
     } finally {
@@ -2189,6 +2206,20 @@ Toque abaixo para ver fotos e todos os detalhes:
             </div>
           )}
         </AnimatePresence>
+
+        {/* Complete Profile Modal */}
+        {showCompleteProfileModal && (
+          <CompleteProfileModal
+            corretor={activeCorretor}
+            onSave={(updatedCorretor) => {
+              setActiveCorretor(updatedCorretor);
+              setShowCompleteProfileModal(false);
+              triggerToast('Perfil atualizado com sucesso!');
+              reloadData();
+            }}
+            onClose={() => setShowCompleteProfileModal(false)}
+          />
+        )}
 
       </div>
     </div>

@@ -6,8 +6,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Corretor } from '../types';
 import { DbService } from '../services/db';
-import { User, Phone, Mail, MapPin, Award, Check, RefreshCw, LogOut, CheckCircle2, Users, Plus, Trash2, Camera } from 'lucide-react';
+import { User, Phone, Mail, MapPin, Award, Check, RefreshCw, LogOut, CheckCircle2, Users, Plus, Trash2, Camera, Edit2, Save, X } from 'lucide-react';
 import { motion } from 'motion/react';
+import { getApiUrl } from '../utils/apiUrl';
 
 interface UserProfileProps {
   corretor: Corretor;
@@ -93,6 +94,14 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
     }
   };
 
+  // Profile editing state
+  const [isEditing, setIsEditing] = useState(false);
+  const [editNome, setEditNome] = useState(corretor.nome || '');
+  const [editCreci, setEditCreci] = useState(corretor.creci || '');
+  const [editTelefone, setEditTelefone] = useState(corretor.telefone || '');
+  const [editWhatsapp, setEditWhatsapp] = useState(corretor.whatsapp || '');
+  const [editCidade, setEditCidade] = useState(corretor.cidade || 'Balneário Camboriú');
+
   // Partner broker sharing states
   const [restringir, setRestringir] = useState(corretor.restringirParceiros || false);
   const [parceiros, setParceiros] = useState<string[]>(corretor.parceirosEmails || []);
@@ -103,12 +112,62 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
     setAllCorretores(DbService.getCorretores());
     setStats(DbService.getBrokerStats(corretor.id));
     
-    // Sync partner states when corretor changes
+    // Sync partner & profile states when corretor changes
     setRestringir(corretor.restringirParceiros || false);
     setParceiros(corretor.parceirosEmails || []);
     setNewEmail('');
     setInputError('');
+
+    setEditNome(corretor.nome || '');
+    setEditCreci(corretor.creci || '');
+    setEditTelefone(corretor.telefone || '');
+    setEditWhatsapp(corretor.whatsapp || '');
+    setEditCidade(corretor.cidade || 'Balneário Camboriú');
   }, [corretor]);
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editNome.trim()) {
+      alert('Por favor, informe seu nome.');
+      return;
+    }
+
+    const updatedCorretor: Corretor = {
+      ...corretor,
+      nome: editNome.trim(),
+      creci: editCreci.trim(),
+      telefone: editTelefone.trim() || editWhatsapp.trim(),
+      whatsapp: editWhatsapp.trim() || editTelefone.trim(),
+      cidade: editCidade.trim() || 'Balneário Camboriú'
+    };
+
+    DbService.saveCorretor(updatedCorretor);
+    onProfileSwitched(updatedCorretor);
+    setIsEditing(false);
+
+    // Sync updated info to server
+    try {
+      await fetch(getApiUrl('/api/auth/sync-firebase-user'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: updatedCorretor.id,
+          email: updatedCorretor.email,
+          nome: updatedCorretor.nome,
+          foto: updatedCorretor.foto,
+          creci: updatedCorretor.creci,
+          telefone: updatedCorretor.telefone,
+          whatsapp: updatedCorretor.whatsapp,
+          cidade: updatedCorretor.cidade
+        })
+      });
+    } catch (err) {
+      console.warn('Could not sync updated profile to backend:', err);
+    }
+
+    setSuccessMsg('Dados do perfil salvos com sucesso!');
+    setTimeout(() => setSuccessMsg(''), 4000);
+  };
 
   const handleToggleRestringir = (checked: boolean) => {
     setRestringir(checked);
@@ -255,33 +314,140 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
           </div>
         </div>
 
-        {/* Contact info list */}
+        {/* Contact info list & Edit profile section */}
         <div className="bg-white border border-slate-100 rounded-xl p-4 shadow-xs space-y-3.5">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Dados de Contato</h3>
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Dados Profissionais</h3>
+            {!isEditing ? (
+              <button
+                type="button"
+                onClick={() => setIsEditing(true)}
+                className="text-[#003366] hover:bg-[#003366]/5 px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all"
+              >
+                <Edit2 size={13} />
+                <span>Editar Dados</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsEditing(false)}
+                className="text-slate-400 hover:bg-slate-100 p-1 rounded-lg text-xs font-bold flex items-center gap-1"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
           
-          <div className="flex items-center gap-3 text-xs text-slate-600">
-            <Phone size={14} className="text-slate-400" />
-            <div>
-              <span className="text-[10px] text-slate-400 block">WhatsApp / Celular:</span>
-              <span className="font-medium text-slate-800">{corretor.telefone}</span>
-            </div>
-          </div>
+          {!isEditing ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 text-xs text-slate-600">
+                <Award size={14} className="text-slate-400 shrink-0" />
+                <div>
+                  <span className="text-[10px] text-slate-400 block">CRECI:</span>
+                  <span className="font-medium text-slate-800">{corretor.creci || <span className="text-amber-500 font-bold">Não informado (Clique em Editar)</span>}</span>
+                </div>
+              </div>
 
-          <div className="flex items-center gap-3 text-xs text-slate-600">
-            <Mail size={14} className="text-slate-400" />
-            <div>
-              <span className="text-[10px] text-slate-400 block">E-mail Corporativo:</span>
-              <span className="font-medium text-slate-800">{corretor.email}</span>
-            </div>
-          </div>
+              <div className="flex items-center gap-3 text-xs text-slate-600">
+                <Phone size={14} className="text-slate-400 shrink-0" />
+                <div>
+                  <span className="text-[10px] text-slate-400 block">WhatsApp / Celular:</span>
+                  <span className="font-medium text-slate-800">{corretor.whatsapp || corretor.telefone || <span className="text-amber-500 font-bold">Não informado</span>}</span>
+                </div>
+              </div>
 
-          <div className="flex items-center gap-3 text-xs text-slate-600">
-            <MapPin size={14} className="text-slate-400" />
-            <div>
-              <span className="text-[10px] text-slate-400 block">Cidade Principal:</span>
-              <span className="font-medium text-slate-800">{corretor.cidade}</span>
+              <div className="flex items-center gap-3 text-xs text-slate-600">
+                <Mail size={14} className="text-slate-400 shrink-0" />
+                <div>
+                  <span className="text-[10px] text-slate-400 block">E-mail Corporativo:</span>
+                  <span className="font-medium text-slate-800">{corretor.email}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 text-xs text-slate-600">
+                <MapPin size={14} className="text-slate-400 shrink-0" />
+                <div>
+                  <span className="text-[10px] text-slate-400 block">Cidade Principal:</span>
+                  <span className="font-medium text-slate-800">{corretor.cidade || 'Balneário Camboriú'}</span>
+                </div>
+              </div>
             </div>
-          </div>
+          ) : (
+            <form onSubmit={handleSaveProfile} className="space-y-3 pt-1">
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 block mb-1">Seu Nome Completo</label>
+                <input
+                  type="text"
+                  required
+                  value={editNome}
+                  onChange={(e) => setEditNome(e.target.value)}
+                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-[#003366] font-medium text-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 block mb-1">CRECI</label>
+                <input
+                  type="text"
+                  placeholder="Ex: CRECI 12345-F"
+                  value={editCreci}
+                  onChange={(e) => setEditCreci(e.target.value)}
+                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-[#003366] font-medium text-slate-800"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 block mb-1">WhatsApp</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: (47) 99999-8888"
+                    value={editWhatsapp}
+                    onChange={(e) => setEditWhatsapp(e.target.value)}
+                    className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-[#003366] font-medium text-slate-800"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 block mb-1">Telefone Alternativo</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: (47) 3333-2222"
+                    value={editTelefone}
+                    onChange={(e) => setEditTelefone(e.target.value)}
+                    className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-[#003366] font-medium text-slate-800"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 block mb-1">Cidade Principal de Atuação</label>
+                <input
+                  type="text"
+                  placeholder="Ex: Balneário Camboriú"
+                  value={editCidade}
+                  onChange={(e) => setEditCidade(e.target.value)}
+                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-[#003366] font-medium text-slate-800"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(false)}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold py-2.5 rounded-xl transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-1.5 shadow-xs transition-all"
+                >
+                  <Save size={14} />
+                  <span>Salvar Alterações</span>
+                </button>
+              </div>
+            </form>
+          )}
         </div>
 
         {/* Grupo de Corretores Parceiros Panel */}

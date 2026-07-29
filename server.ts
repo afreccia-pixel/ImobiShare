@@ -83,7 +83,7 @@ app.post('/api/auth/sync-firebase-user', async (req: Request, res: Response) => 
       id: broker ? broker.id : (uid || `corretor-${Date.now()}`),
       nome: nome || (broker ? broker.nome : email.split('@')[0]),
       email: email,
-      creci: creci || (broker ? broker.creci : 'CRECI Pendente'),
+      creci: creci !== undefined ? creci : (broker ? broker.creci : ''),
       telefone: telefone || (broker ? broker.telefone : ''),
       whatsapp: whatsapp || (broker ? broker.whatsapp : ''),
       foto: foto || (broker ? broker.foto : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'),
