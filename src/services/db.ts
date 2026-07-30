@@ -273,9 +273,10 @@ export class DbService {
   }
 
   // Save / update a property
-  static saveImovel(imovel: Omit<Imovel, 'id' | 'dataCadastro' | 'corretorId' | 'corretorNome'> & { id?: string }): Imovel {
+  static saveImovel(imovel: Omit<Imovel, 'id' | 'dataCadastro' | 'corretorId' | 'corretorNome'> & { id?: string; corretorId?: string; corretorEmail?: string; corretorNome?: string }): Imovel {
     const imoveis = this.getImoveis();
     const activeCorretor = this.getActiveCorretor();
+    const userEmail = (imovel.corretorEmail || activeCorretor?.email || auth.currentUser?.email || '').toLowerCase().trim();
     let finalImovel: Imovel;
     
     const sanitizedInputFotos = sanitizeFotos(imovel.fotos);
@@ -290,6 +291,7 @@ export class DbService {
           ...imovel,
           fotos: sanitizedInputFotos,
           id: imovel.id, // guarantee same id
+          corretorEmail: userEmail || existing.corretorEmail,
         } as Imovel;
         imoveis[index] = finalImovel;
       } else {
@@ -299,8 +301,9 @@ export class DbService {
           fotos: sanitizedInputFotos,
           id: imovel.id,
           dataCadastro: new Date().toISOString(),
-          corretorId: activeCorretor?.id || 'corretor-anonimo',
-          corretorNome: activeCorretor?.nome || 'Corretor',
+          corretorId: activeCorretor?.id || imovel.corretorId || 'corretor-anonimo',
+          corretorEmail: userEmail,
+          corretorNome: activeCorretor?.nome || imovel.corretorNome || 'Corretor',
         } as Imovel;
         imoveis.unshift(finalImovel);
       }
@@ -311,8 +314,9 @@ export class DbService {
         fotos: sanitizedInputFotos,
         id: `imovel-${Date.now()}`,
         dataCadastro: new Date().toISOString(),
-        corretorId: activeCorretor?.id || 'corretor-anonimo',
-        corretorNome: activeCorretor?.nome || 'Corretor',
+        corretorId: activeCorretor?.id || imovel.corretorId || 'corretor-anonimo',
+        corretorEmail: userEmail,
+        corretorNome: activeCorretor?.nome || imovel.corretorNome || 'Corretor',
       } as Imovel;
       imoveis.unshift(finalImovel); // Add to beginning
     }
@@ -366,12 +370,14 @@ export class DbService {
     if (!found) return null;
 
     const activeCorretor = this.getActiveCorretor();
+    const userEmail = (activeCorretor?.email || auth.currentUser?.email || '').toLowerCase().trim();
     const duplicated: Imovel = {
       ...found,
       id: `imovel-${Date.now()}`,
       titulo: `${found.titulo} (Cópia)`,
       dataCadastro: new Date().toISOString(),
       corretorId: activeCorretor?.id || 'corretor-anonimo',
+      corretorEmail: userEmail || found.corretorEmail,
       corretorNome: activeCorretor?.nome || 'Corretor',
     };
 
@@ -405,9 +411,13 @@ export class DbService {
   }
 
   // Get Broker Stats
-  static getBrokerStats(corretorId: string) {
+  static getBrokerStats(corretorId: string, corretorEmail?: string) {
     const imoveis = this.getImoveis();
-    const brokerImoveis = imoveis.filter(i => i.corretorId === corretorId);
+    const cleanEmail = (corretorEmail || this.getActiveCorretor()?.email || '').toLowerCase().trim();
+    const brokerImoveis = imoveis.filter(i => 
+      (cleanEmail && i.corretorEmail && i.corretorEmail.toLowerCase().trim() === cleanEmail) ||
+      i.corretorId === corretorId
+    );
     const qtdImoveis = brokerImoveis.length;
     const qtdLocacoes = brokerImoveis.filter(i => i.tipo === 'locação').length;
     const qtdVendas = brokerImoveis.filter(i => i.tipo === 'venda').length;

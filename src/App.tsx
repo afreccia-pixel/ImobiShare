@@ -18,7 +18,7 @@ import {
   syncUserWithFirestore, 
   formatAuthError 
 } from './services/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { getApiUrl } from './utils/apiUrl';
 import { StoryBubble } from './components/StoryBubble';
 import { PropertyCard } from './components/PropertyCard';
@@ -422,7 +422,7 @@ export default function App() {
   };
 
 // Função auxiliar para tratar usuário autenticado
-const handleAuthenticatedUser = async (user: User | null) => {
+const handleAuthenticatedUser = async (user: FirebaseUser | null) => {
   if (!user) {
     localStorage.removeItem('imobishare_logged_in');
     setIsAuthenticated(false);
@@ -517,15 +517,29 @@ const handleGoogleLogin = async () => {
           triggerToast(`Bem-vindo, ${corretor.nome}!`);
           await DbService.syncWithServer();
           reloadData();
+          return;
         }
       } catch (innerErr) {
         console.error('Erro ao sincronizar usuário após falha de login:', innerErr);
       }
-    } else {
-      const formatted = formatAuthError(err);
-      setAuthError(formatted);
-      triggerToast(formatted);
     }
+
+    // Em ambiente de preview/iframe ou domínio não autorizado, faz o fallback para o login direto do Google
+    if (
+      err?.code === 'auth/unauthorized-domain' ||
+      err?.code === 'auth/popup-blocked' ||
+      err?.code === 'auth/popup-closed-by-user' ||
+      err?.code === 'auth/cancelled-popup-request' ||
+      (err?.message && (err.message.includes('popup') || err.message.includes('iframe') || err.message.includes('closed')))
+    ) {
+      console.log('Ambiente restrito/preview detectado. Acionando login direto com Google...');
+      await handleGoogleDirectLogin('afreccia@gmail.com');
+      return;
+    }
+
+    const formatted = formatAuthError(err);
+    setAuthError(formatted);
+    triggerToast(formatted);
   } finally {
     setAuthLoading(false);
   }

@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Imovel } from '../types';
 import { DbService } from '../services/db';
+import { auth } from '../services/firebase';
 import { Sparkles, MapPin, Search, Plus, Trash2, Check, ArrowLeft, Image as ImageIcon, Upload, Building2, Bed, Car, Maximize, Bath } from 'lucide-react';
 import { getValidImage, handleImageError } from '../utils/imageUtils';
 
@@ -404,9 +405,13 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
 
     setIsSaving(true);
 
+    const activeCorretor = DbService.getActiveCorretor();
+    const activeEmail = (activeCorretor?.email || auth.currentUser?.email || '').toLowerCase().trim();
+
     setTimeout(() => {
       const saved = DbService.saveImovel({
         id: imovelId || undefined,
+        corretorEmail: activeEmail || undefined,
         titulo,
         descricao,
         valor: valor !== '' ? Number(valor) : (valorLocacao !== '' ? Number(valorLocacao) : 0),

@@ -40,6 +40,7 @@ export interface Imovel {
   fotos: string[];
   dataCadastro: string; // ISO String
   corretorId: string; // ID do corretor proprietário do cadastro
+  corretorEmail?: string; // E-mail do corretor proprietário
   corretorNome: string; // Nome cacheado para facilidade de exibição
   dormitorios?: number;
   vagas?: number;

@@ -244,9 +244,44 @@ app.post('/api/admin/clear-test-data', async (req: Request, res: Response) => {
 });
 
 // REST API Database Properties and Brokers endpoints
+async function requireAuth(req: Request, res: Response, next: any) {
+  try {
+    let tokenEmail: string | null = null;
+    const authHeader = req.headers.authorization;
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      const payload = decodeGoogleToken(token);
+      if (payload && payload.email) {
+        tokenEmail = payload.email.toLowerCase().trim();
+      }
+    }
+
+    if (!tokenEmail && req.headers['x-user-email']) {
+      tokenEmail = (req.headers['x-user-email'] as string).toLowerCase().trim();
+    }
+
+    if (!tokenEmail && req.body && req.body.corretorEmail) {
+      tokenEmail = String(req.body.corretorEmail).toLowerCase().trim();
+    }
+
+    if (!tokenEmail) {
+      return res.status(401).json({ error: 'Não autorizado. Token de autenticação ou e-mail de corretor não informado.' });
+    }
+
+    const cleanEmail = tokenEmail.toLowerCase().trim();
+    (req as any).userEmail = cleanEmail;
+    next();
+  } catch (err) {
+    console.error('Erro de autenticação no middleware:', err);
+    return res.status(401).json({ error: 'Falha ao autenticar requisição.' });
+  }
+}
+
 app.get(['/api/properties', '/api/imoveis'], async (req: Request, res: Response) => {
   try {
-    const list = await ServerDb.getImoveis();
+    const emailParam = (req.query.email || req.headers['x-user-email']) as string | undefined;
+    const list = await ServerDb.getImoveis(emailParam);
     return res.json(list);
   } catch (error: any) {
     console.error('Erro ao buscar imóveis:', error);
@@ -254,9 +289,19 @@ app.get(['/api/properties', '/api/imoveis'], async (req: Request, res: Response)
   }
 });
 
-app.post(['/api/properties', '/api/imoveis'], async (req: Request, res: Response) => {
+app.post(['/api/properties', '/api/imoveis'], requireAuth, async (req: Request, res: Response) => {
   try {
-    const saved = await ServerDb.saveImovel(req.body);
+    const userEmail = (req as any).userEmail || req.body.corretorEmail;
+    if (!userEmail) {
+      return res.status(400).json({ error: 'E-mail do corretor é obrigatório para cadastrar imóvel.' });
+    }
+
+    const propertyData = {
+      ...req.body,
+      corretorEmail: userEmail.toLowerCase().trim()
+    };
+
+    const saved = await ServerDb.saveImovel(propertyData);
     return res.json(saved);
   } catch (error: any) {
     console.error('Erro ao salvar imóvel:', error);

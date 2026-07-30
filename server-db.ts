@@ -113,6 +113,33 @@ export class ServerDb {
     await this.pool.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS banheiros INTEGER;`);
     await this.pool.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS area_total NUMERIC;`);
     await this.pool.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS cep VARCHAR(20);`);
+    await this.pool.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS corretor_email VARCHAR(255);`);
+
+    // Migration: Populate corretor_email from brokers.email for legacy properties
+    try {
+      await this.pool.query(`
+        UPDATE properties p
+        SET corretor_email = LOWER(TRIM(b.email))
+        FROM brokers b
+        WHERE (p.corretor_email IS NULL OR TRIM(p.corretor_email) = '')
+          AND p.corretor_id = b.id;
+      `);
+
+      // Validation: Check orphan properties without corretor_email
+      const orphans = await this.pool.query(`
+        SELECT COUNT(*) AS count 
+        FROM properties 
+        WHERE corretor_email IS NULL OR TRIM(corretor_email) = ''
+      `);
+      const orphanCount = parseInt(orphans.rows[0].count, 10);
+      if (orphanCount > 0) {
+        console.warn(`⚠️ [MIGRATION] Existem ${orphanCount} imóvel(is) órfão(s) sem corretor_email preenchido.`);
+      } else {
+        console.log(`✅ [MIGRATION] 100% dos imóveis possuem corretor_email vinculado.`);
+      }
+    } catch (migErr) {
+      console.warn('⚠️ Migration for corretor_email skipped or failed:', migErr);
+    }
 
     // Favorites table
     await this.pool.query(`
@@ -264,49 +291,65 @@ export class ServerDb {
   }
 
   static async saveCorretor(broker: Corretor & { password?: string }): Promise<Corretor> {
+    const cleanEmail = (broker.email || '').toLowerCase().trim();
     if (this.isPostgres && this.pool) {
-      // Check if exists
-      const check = await this.pool.query('SELECT id FROM brokers WHERE id = $1', [broker.id]);
+      // Check if broker exists by id OR by LOWER(email) to avoid duplicate broker records
+      const checkById = await this.pool.query('SELECT id FROM brokers WHERE id = $1', [broker.id]);
+      const checkByEmail = cleanEmail ? await this.pool.query('SELECT id FROM brokers WHERE LOWER(email) = $1', [cleanEmail]) : { rows: [] };
+      
+      const existingId = checkById.rows.length > 0 ? checkById.rows[0].id : (checkByEmail.rows.length > 0 ? checkByEmail.rows[0].id : broker.id);
+      broker.id = existingId;
+      
       const partners = broker.parceirosEmails ? broker.parceirosEmails.join(',') : '';
+      
+      const check = await this.pool.query('SELECT id FROM brokers WHERE id = $1', [existingId]);
       if (check.rows.length > 0) {
         // Update
         if (broker.password) {
           await this.pool.query(`
             UPDATE brokers SET nome = $2, creci = $3, telefone = $4, whatsapp = $5, email = $6, password = $7, foto = $8, cidade = $9, estado = $10, imobiliaria = $11, restringir_parceiros = $12, parceiros_emails = $13
             WHERE id = $1
-          `, [broker.id, broker.nome, broker.creci, broker.telefone, broker.whatsapp, broker.email, broker.password, broker.foto, broker.cidade, broker.estado || '', broker.imobiliaria || '', broker.restringirParceiros || false, partners]);
+          `, [existingId, broker.nome, broker.creci, broker.telefone, broker.whatsapp, cleanEmail, broker.password, broker.foto, broker.cidade, broker.estado || '', broker.imobiliaria || '', broker.restringirParceiros || false, partners]);
         } else {
           await this.pool.query(`
             UPDATE brokers SET nome = $2, creci = $3, telefone = $4, whatsapp = $5, email = $6, foto = $7, cidade = $8, estado = $9, imobiliaria = $10, restringir_parceiros = $11, parceiros_emails = $12
             WHERE id = $1
-          `, [broker.id, broker.nome, broker.creci, broker.telefone, broker.whatsapp, broker.email, broker.foto, broker.cidade, broker.estado || '', broker.imobiliaria || '', broker.restringirParceiros || false, partners]);
+          `, [existingId, broker.nome, broker.creci, broker.telefone, broker.whatsapp, cleanEmail, broker.foto, broker.cidade, broker.estado || '', broker.imobiliaria || '', broker.restringirParceiros || false, partners]);
         }
       } else {
         // Insert
         await this.pool.query(`
           INSERT INTO brokers (id, nome, creci, telefone, whatsapp, email, password, foto, cidade, estado, imobiliaria, restringir_parceiros, parceiros_emails)
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-        `, [broker.id, broker.nome, broker.creci, broker.telefone, broker.whatsapp, broker.email, broker.password || 'password123', broker.foto, broker.cidade, broker.estado || '', broker.imobiliaria || '', broker.restringirParceiros || false, partners]);
+        `, [existingId, broker.nome, broker.creci, broker.telefone, broker.whatsapp, cleanEmail, broker.password || 'password123', broker.foto, broker.cidade, broker.estado || '', broker.imobiliaria || '', broker.restringirParceiros || false, partners]);
       }
       const { password, ...cleanBroker } = broker;
-      return cleanBroker;
+      return { ...cleanBroker, email: cleanEmail };
     } else {
       const db = await this.readJson();
-      const idx = db.brokers.findIndex(b => b.id === broker.id);
+      const idx = db.brokers.findIndex(b => b.id === broker.id || (cleanEmail && b.email && b.email.toLowerCase().trim() === cleanEmail));
       if (idx !== -1) {
-        db.brokers[idx] = { ...db.brokers[idx], ...broker };
+        db.brokers[idx] = { ...db.brokers[idx], ...broker, email: cleanEmail };
       } else {
-        db.brokers.push({ ...broker, password: broker.password || 'password123' });
+        db.brokers.push({ ...broker, email: cleanEmail, password: broker.password || 'password123' });
       }
       await this.writeJson(db);
       const { password, ...cleanBroker } = broker;
-      return cleanBroker;
+      return { ...cleanBroker, email: cleanEmail };
     }
   }
 
-  static async getImoveis(): Promise<Imovel[]> {
+  static async getImoveis(corretorEmail?: string): Promise<Imovel[]> {
+    const cleanEmail = corretorEmail ? corretorEmail.toLowerCase().trim() : '';
     if (this.isPostgres && this.pool) {
-      const res = await this.pool.query('SELECT * FROM properties ORDER BY data_cadastro DESC');
+      let query = 'SELECT * FROM properties';
+      const params: any[] = [];
+      if (cleanEmail) {
+        query += ' WHERE LOWER(TRIM(corretor_email)) = $1';
+        params.push(cleanEmail);
+      }
+      query += ' ORDER BY data_cadastro DESC';
+      const res = await this.pool.query(query, params);
       return res.rows.map(r => ({
         id: r.id,
         titulo: r.titulo,
@@ -332,6 +375,7 @@ export class ServerDb {
         })(),
         dataCadastro: r.data_cadastro,
         corretorId: r.corretor_id,
+        corretorEmail: r.corretor_email || undefined,
         corretorNome: r.corretor_nome,
         dormitorios: r.dormitorios,
         vagas: r.vagas,
@@ -347,32 +391,71 @@ export class ServerDb {
       }));
     } else {
       const db = await this.readJson();
+      if (cleanEmail) {
+        return db.properties.filter(p => p.corretorEmail && p.corretorEmail.toLowerCase().trim() === cleanEmail);
+      }
       return db.properties;
     }
   }
 
-  static async saveImovel(prop: Imovel): Promise<Imovel> {
-    if (this.isPostgres && this.pool) {
-      // Ensure broker exists in brokers table to prevent FK constraint violations
-      if (prop.corretorId) {
-        try {
-          const brokerCheck = await this.pool.query('SELECT id FROM brokers WHERE id = $1', [prop.corretorId]);
-          if (brokerCheck.rows.length === 0) {
-            await this.pool.query(`
-              INSERT INTO brokers (id, nome, email, password)
-              VALUES ($1, $2, $3, $4)
-              ON CONFLICT (id) DO NOTHING
-            `, [
-              prop.corretorId, 
-              prop.corretorNome || 'Corretor', 
-              `${prop.corretorId}@imobishare.com`, 
-              'password123'
-            ]);
-          }
-        } catch (e) {
-          console.warn('⚠️ Could not verify/upsert broker before property save:', e);
+  private static async ensureBrokerExists(corretorId?: string, email?: string, nome?: string): Promise<string> {
+    if (!this.isPostgres || !this.pool) {
+      return corretorId || 'corretor-anonimo';
+    }
+
+    const cleanEmail = (email || '').toLowerCase().trim();
+    const cleanId = (corretorId || '').trim();
+
+    try {
+      // 1. Check if broker exists by email
+      if (cleanEmail) {
+        const byEmail = await this.pool.query('SELECT id FROM brokers WHERE LOWER(TRIM(email)) = $1 LIMIT 1', [cleanEmail]);
+        if (byEmail.rows.length > 0) {
+          return byEmail.rows[0].id;
         }
       }
+
+      // 2. Check if broker exists by id
+      if (cleanId) {
+        const byId = await this.pool.query('SELECT id FROM brokers WHERE id = $1 LIMIT 1', [cleanId]);
+        if (byId.rows.length > 0) {
+          return byId.rows[0].id;
+        }
+      }
+
+      // 3. Create missing broker record safely
+      const targetId = cleanId || (cleanEmail ? `broker-${cleanEmail.replace(/[^a-z0-9]/gi, '_')}` : `broker-${Date.now()}`);
+      const targetEmail = cleanEmail || `${targetId}@imobishare.com`;
+      const targetNome = nome || (cleanEmail ? cleanEmail.split('@')[0] : 'Corretor');
+
+      await this.pool.query(`
+        INSERT INTO brokers (id, nome, email, password)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (id) DO UPDATE SET 
+          email = COALESCE(NULLIF(EXCLUDED.email, ''), brokers.email),
+          nome = COALESCE(NULLIF(EXCLUDED.nome, ''), brokers.nome)
+      `, [targetId, targetNome, targetEmail, 'password123']);
+
+      return targetId;
+    } catch (e) {
+      console.warn('⚠️ Error in ensureBrokerExists:', e);
+      try {
+        const fallback = await this.pool.query('SELECT id FROM brokers LIMIT 1');
+        if (fallback.rows.length > 0) {
+          return fallback.rows[0].id;
+        }
+      } catch {
+        // ignore
+      }
+      return cleanId || 'corretor-anonimo';
+    }
+  }
+
+  static async saveImovel(prop: Imovel): Promise<Imovel> {
+    const cleanEmail = (prop.corretorEmail || '').toLowerCase().trim();
+
+    if (this.isPostgres && this.pool) {
+      const effectiveBrokerId = await this.ensureBrokerExists(prop.corretorId, cleanEmail, prop.corretorNome);
 
       const fotosStr = JSON.stringify(prop.fotos || []);
       const check = await this.pool.query('SELECT id FROM properties WHERE id = $1', [prop.id]);
@@ -384,15 +467,17 @@ export class ServerDb {
             localizacao = $8, nome_edificio = $9, nome_proprietario = $10, telefone_proprietario = $11, 
             favorito = $12, compartilhar = $13, fotos = $14, data_cadastro = $15, corretor_id = $16, 
             corretor_nome = $17, dormitorios = $18, vagas = $19, metragem = $20, integrado = $21, 
-            integracao_origem = $22, latitude = $23, longitude = $24, tipo_imovel = $25, banheiros = $26, area_total = $27, cep = $28
+            integracao_origem = $22, latitude = $23, longitude = $24, tipo_imovel = $25, banheiros = $26, 
+            area_total = $27, cep = $28, corretor_email = $29
           WHERE id = $1
         `, [
           prop.id, prop.titulo, prop.descricao, prop.valor, prop.tipo, prop.cidade, prop.bairro, 
           prop.localizacao, prop.nomeEdificio || '', prop.nomeProprietario, prop.telefoneProprietario, 
           prop.favorito || false, prop.compartilhar !== false, fotosStr, prop.dataCadastro, 
-          prop.corretorId, prop.corretorNome, prop.dormitorios || 0, prop.vagas || 0, prop.metragem || 0, 
+          effectiveBrokerId, prop.corretorNome, prop.dormitorios || 0, prop.vagas || 0, prop.metragem || 0, 
           prop.integrado || false, prop.integracaoOrigem || '', prop.latitude || null, prop.longitude || null,
-          prop.tipoImovel || null, prop.banheiros || null, prop.areaTotal || null, prop.cep || null
+          prop.tipoImovel || null, prop.banheiros || null, prop.areaTotal || null, prop.cep || null,
+          cleanEmail || null
         ]);
       } else {
         // Insert
@@ -401,28 +486,30 @@ export class ServerDb {
             id, titulo, descricao, valor, tipo, cidade, bairro, localizacao, nome_edificio, 
             nome_proprietario, telefone_proprietario, favorito, compartilhar, fotos, 
             data_cadastro, corretor_id, corretor_nome, dormitorios, vagas, metragem, 
-            integrado, integracao_origem, latitude, longitude, tipo_imovel, banheiros, area_total, cep
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
+            integrado, integracao_origem, latitude, longitude, tipo_imovel, banheiros, area_total, cep, corretor_email
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
         `, [
           prop.id, prop.titulo, prop.descricao, prop.valor, prop.tipo, prop.cidade, prop.bairro, 
           prop.localizacao, prop.nomeEdificio || '', prop.nomeProprietario, prop.telefoneProprietario, 
           prop.favorito || false, prop.compartilhar !== false, fotosStr, prop.dataCadastro, 
-          prop.corretorId, prop.corretorNome, prop.dormitorios || 0, prop.vagas || 0, prop.metragem || 0, 
+          effectiveBrokerId, prop.corretorNome, prop.dormitorios || 0, prop.vagas || 0, prop.metragem || 0, 
           prop.integrado || false, prop.integracaoOrigem || '', prop.latitude || null, prop.longitude || null,
-          prop.tipoImovel || null, prop.banheiros || null, prop.areaTotal || null, prop.cep || null
+          prop.tipoImovel || null, prop.banheiros || null, prop.areaTotal || null, prop.cep || null,
+          cleanEmail || null
         ]);
       }
-      return prop;
+      return { ...prop, corretorId: effectiveBrokerId, corretorEmail: cleanEmail };
     } else {
       const db = await this.readJson();
       const idx = db.properties.findIndex(p => p.id === prop.id);
+      const finalProp = { ...prop, corretorEmail: cleanEmail };
       if (idx !== -1) {
-        db.properties[idx] = prop;
+        db.properties[idx] = finalProp;
       } else {
-        db.properties.unshift(prop);
+        db.properties.unshift(finalProp);
       }
       await this.writeJson(db);
-      return prop;
+      return finalProp;
     }
   }
 

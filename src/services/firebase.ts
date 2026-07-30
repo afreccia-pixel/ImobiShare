@@ -73,7 +73,7 @@
       return 'O login com o Google foi cancelado.';
     }
     if (code === 'auth/unauthorized-domain') {
-      return 'Redirecionando para autenticação no Google...';
+      return 'Este domínio não está autorizados no Firebase Console (Authentication > Settings > Authorized domains).';
     }
     if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
       return 'E-mail ou senha incorretos. Por favor, verifique seus dados.';
@@ -91,7 +91,7 @@
       return 'Erro de conexão. Verifique sua internet e tente novamente.';
     }
     if (code === 'auth/popup-blocked') {
-      return 'Redirecionando para autenticação no Google...';
+      return 'O navegador bloqueou o popup de login. Por favor, permita popups para este site.';
     }
     if (code === 'auth/operation-not-allowed') {
       return 'O login com Google não está ativado no Firebase Console.';
@@ -172,12 +172,24 @@ return {
   
   /**
    * Sign in with Google using native Capacitor Auth on Android / iOS or Web fallback
+   * 
+   * CHECKLIST DE AUTENTICAÇÃO NO FIREBASE CONSOLE:
+   * 1. Domínios Autorizados (Authorized Domains):
+   *    - Adicione o domínio da web app (ex: imobishare.onrender.com ou seu domínio de hospedagem).
+   *    - Para Android com Capacitor, garanta que o schema de redirect / localhost / domínios do app estejam autorizados.
+   * 2. Android SHA-1 e SHA-256:
+   *    - Cadastre a chave SHA-1 do keystore (ex: 43:88:6C:EB:F4:D4:81:67:5E:21:9D:CD:26:C0:D5:5D:16:BD:CB:B4) no app Android no Firebase Console.
+   *    - Baixe e substitua o google-services.json atualizado em /android/app/google-services.json.
    */
   export async function signInWithGoogle(): Promise<User> {
+    const platform = Capacitor.getPlatform();
+    const isNative = Capacitor.isNativePlatform();
+    console.log(`signInWithGoogle - Platform: ${platform}, isNativePlatform: ${isNative}`);
+
     // Use native Google Sign-In when running on Android/iOS native Capacitor container
-    if (Capacitor.isNativePlatform() || Capacitor.getPlatform() === 'android') {
+    if (isNative || platform === 'android' || platform === 'ios') {
       try {
-        console.log('Iniciando login nativo com Google via @capacitor-firebase/authentication...');
+        console.log(`Iniciando login nativo com Google (${platform}) via @capacitor-firebase/authentication...`);
         const result = await FirebaseAuthentication.signInWithGoogle();
         
         const idToken = result.credential?.idToken;
@@ -200,7 +212,7 @@ return {
       const result = await signInWithPopup(auth, googleProvider);
       return result.user;
     } catch (error: any) {
-      // 3. Registrar todos os erros reais do Firebase no console utilizando: console.error(error.code, error.message, error);
+      // Registrar erros reais do Firebase no console
       console.error(error?.code || 'google_auth_error', error?.message || error, error);
   
       const redirectErrorCodes = [
@@ -216,11 +228,12 @@ return {
         console.log('Tentando signInWithRedirect como fallback do popup...');
         try {
           await signInWithRedirect(auth, googleProvider);
-          throw new Error('REDIRECTING');
         } catch (redirectErr: any) {
           console.error(redirectErr?.code || 'google_redirect_error', redirectErr?.message || redirectErr, redirectErr);
           throw redirectErr;
         }
+        // Throw control signal after try/catch so it is not caught as a fake error
+        throw new Error('REDIRECTING');
       }
   
       throw error;
