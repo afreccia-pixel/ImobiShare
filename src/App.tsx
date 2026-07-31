@@ -92,6 +92,18 @@ export default function App() {
     const active = DbService.getActiveCorretor();
     return active ? DbService.getFavoritos(active.id) : [];
   });
+
+  // Helper: determines if a given property belongs to the currently active broker.
+  // Uses corretorEmail (normalized) as the primary source of truth, falling back to
+  // the legacy corretorId comparison for older records that predate the email migration.
+  const isMyProperty = (imovel: Imovel): boolean => {
+    if (!activeCorretor) return false;
+    if (imovel.corretorId === activeCorretor.id) return true;
+    if (imovel.corretorEmail && activeCorretor.email) {
+      return imovel.corretorEmail.toLowerCase().trim() === activeCorretor.email.toLowerCase().trim();
+    }
+    return false;
+  };
   
   // Navigation
   const [activeTab, setActiveTab] = useState<TabType>('home');
@@ -801,7 +813,7 @@ const handleGoogleLogin = async () => {
       if (filterApenasFavoritos && !favoritos.includes(imovel.id)) return false;
 
       // 10. Broker Ownership / Integration Filter
-      const isMine = activeCorretor ? imovel.corretorId === activeCorretor.id : false;
+      const isMine = isMyProperty(imovel);
       const isIntegrated = imovel.integrado === true;
 
       if (isIntegrated) {
@@ -838,7 +850,7 @@ const handleGoogleLogin = async () => {
   const getStoryImoveis = () => {
     return allImoveis.filter((imovel) => {
       const hours = (Date.now() - new Date(imovel.dataCadastro).getTime()) / (1000 * 60 * 60);
-      const isEligible = hours <= 24 && activeCorretor && imovel.corretorId !== activeCorretor.id && imovel.compartilhar;
+      const isEligible = hours <= 24 && activeCorretor && !isMyProperty(imovel) && imovel.compartilhar;
       if (!isEligible) return false;
 
       // Check partner restriction
@@ -864,7 +876,7 @@ const handleGoogleLogin = async () => {
       const isFav = favoritos.includes(imovel.id);
       if (!isFav) return false;
 
-      const isMine = activeCorretor ? imovel.corretorId === activeCorretor.id : false;
+      const isMine = isMyProperty(imovel);
       if (isMine) return true;
       if (!imovel.compartilhar) return false;
 
@@ -1710,7 +1722,7 @@ Toque abaixo para ver fotos e todos os detalhes:
                         />
                       ) : (
                         getFilteredImoveis().map((imovel) => {
-                          const isMine = activeCorretor ? imovel.corretorId === activeCorretor.id : false;
+                          const isMine = isMyProperty(imovel);
                           const isFav = favoritos.includes(imovel.id);
                           const isSel = selectedPropertyIds.includes(imovel.id);
 
@@ -1777,7 +1789,7 @@ Toque abaixo para ver fotos e todos os detalhes:
 
                   {/* My properties list */}
                   <div className="space-y-3">
-                    {allImoveis.filter(i => activeCorretor && i.corretorId === activeCorretor.id).map((imovel) => {
+                    {allImoveis.filter(i => isMyProperty(i)).map((imovel) => {
                       const isFav = favoritos.includes(imovel.id);
                       return (
                         <PropertyCard
@@ -1798,7 +1810,7 @@ Toque abaixo para ver fotos e todos os detalhes:
                       );
                     })}
 
-                    {allImoveis.filter(i => activeCorretor && i.corretorId === activeCorretor.id).length === 0 && (
+                    {allImoveis.filter(i => isMyProperty(i)).length === 0 && (
                       <div className="text-center py-12 bg-white border border-slate-100 rounded-xl space-y-2">
                         <p className="text-xs text-slate-400">Você ainda não tem captações cadastradas.</p>
                         <button
