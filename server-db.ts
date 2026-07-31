@@ -204,6 +204,30 @@ export class ServerDb {
 
   // --- CORRETORES ---
 
+  static async getAllCorretores(): Promise<Corretor[]> {
+    if (this.isPostgres && this.pool) {
+      const res = await this.pool.query('SELECT * FROM corretores');
+      return res.rows.map(r => ({
+        id: r.id || `broker-${r.email.toLowerCase().replace(/[^a-z0-9]/gi, '_')}`,
+        email: r.email,
+        nome: r.nome,
+        creci: r.creci || '',
+        telefone: r.telefone || '',
+        whatsapp: r.telefone || '',
+        cidade: r.cidade || '',
+        estado: r.estado || '',
+        imobiliaria: r.imobiliaria_ou_autonomo || '',
+        tipoAtuacao: r.imobiliaria_ou_autonomo === 'autonomo' ? 'autonomo' : 'imobiliaria',
+        foto: r.foto_url || '',
+        slugSite: r.slug_site || '',
+        isAdmin: Boolean(r.is_admin)
+      }));
+    } else {
+      const db = await this.readJson();
+      return db.brokers || [];
+    }
+  }
+
   static async getCorretorByEmail(email: string): Promise<Corretor | null> {
     const cleanEmail = email.toLowerCase().trim();
     if (!cleanEmail) return null;
@@ -349,6 +373,8 @@ export class ServerDb {
         const isOwner = cleanUserEmail && (p.corretorEmail || '').toLowerCase().trim() === cleanUserEmail;
         return {
           ...p,
+          corretorId: p.corretorId || `broker-${(p.corretorEmail || '').toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+          compartilhar: p.compartilhar !== false,
           dadosProprietario: isOwner ? p.dadosProprietario : undefined,
           nomeProprietario: isOwner ? p.nomeProprietario : 'Confidencial',
           telefoneProprietario: isOwner ? p.telefoneProprietario : 'Confidencial'
@@ -506,6 +532,9 @@ export class ServerDb {
   // Helper for PostgreSQL row conversion
   private static mapPostgresRowToImovel(r: any, cleanUserEmail: string, forceIncludeOwnerData = false): Imovel {
     const isOwner = forceIncludeOwnerData || (cleanUserEmail && r.corretor_email && r.corretor_email.toLowerCase().trim() === cleanUserEmail);
+    const emailClean = (r.corretor_email || '').toLowerCase().trim();
+    const isShared = r.visibilidade !== 'exclusivo' && r.visibilidade !== 'privado';
+
     let fotosArr: string[] = [];
     try {
       if (r.imagens) {
@@ -520,8 +549,10 @@ export class ServerDb {
 
     return {
       id: r.id,
+      corretorId: r.corretor_id || `broker-${emailClean.replace(/[^a-z0-9]/g, '_')}`,
       corretorEmail: r.corretor_email,
-      corretorNome: r.corretor_nome_db || r.corretor_email.split('@')[0],
+      corretorNome: r.corretor_nome_db || (emailClean ? emailClean.split('@')[0] : 'Corretor'),
+      compartilhar: isShared,
       cep: r.cep || '',
       endereco: r.endereco || '',
       localizacao: r.endereco || `${r.bairro}, ${r.cidade}`,

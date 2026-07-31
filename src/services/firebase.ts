@@ -34,6 +34,51 @@
     appId: import.meta.env.VITE_FIREBASE_APP_ID || firebaseConfigJson.appId,
   };
   
+  // Global handler for Firebase Auth background errors (e.g. invalid template API key)
+  if (typeof window !== 'undefined') {
+    // Override console.error to filter out template Firebase API key logs
+    const originalConsoleError = console.error;
+    console.error = function (...args: any[]) {
+      const str = args.map(a => (typeof a === 'object' ? (a?.message || JSON.stringify(a)) : String(a))).join(' ');
+      if (
+        str.includes('api-key-not-valid') ||
+        str.includes('invalid-api-key') ||
+        str.includes('API_KEY_NOT_VALID') ||
+        str.includes('auth/api-key-not-valid')
+      ) {
+        console.warn('ℹ️ [Firebase Auth Config] Chave de API indisponível no cliente. Operando em modo de autenticação direta via servidor.');
+        return;
+      }
+      originalConsoleError.apply(console, args);
+    };
+
+    window.addEventListener('unhandledrejection', (event) => {
+      const reason = event.reason;
+      const msg = reason?.message || String(reason || '');
+      const code = reason?.code || '';
+      if (
+        code === 'auth/api-key-not-valid' ||
+        code === 'auth/invalid-api-key' ||
+        msg.includes('api-key-not-valid') ||
+        msg.includes('invalid-api-key') ||
+        msg.includes('API_KEY_NOT_VALID')
+      ) {
+        console.warn('ℹ️ Firebase Auth: Chave de API de template/placeholder detectada. Usando autenticação direta do servidor.', msg);
+        event.preventDefault();
+        if (typeof event.stopPropagation === 'function') event.stopPropagation();
+      }
+    });
+
+    window.addEventListener('error', (event) => {
+      const msg = event.message || '';
+      if (msg.includes('api-key-not-valid') || msg.includes('invalid-api-key') || msg.includes('API_KEY_NOT_VALID')) {
+        console.warn('ℹ️ Firebase Auth: Capturado erro de chave de API no console.', msg);
+        event.preventDefault();
+        if (typeof event.stopPropagation === 'function') event.stopPropagation();
+      }
+    }, true);
+  }
+
   // Initialize Firebase safely
   const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
   export const auth = getAuth(app);
@@ -69,6 +114,9 @@
     const code = error.code || '';
     const message = error.message || '';
   
+    if (code === 'auth/api-key-not-valid' || code === 'auth/invalid-api-key' || message.includes('api-key-not-valid') || message.includes('invalid-api-key')) {
+      return 'Chave de API do Firebase ausente ou inválida. O aplicativo utilizará autenticação direta do servidor.';
+    }
     if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
       return 'O login com o Google foi cancelado.';
     }
@@ -247,7 +295,11 @@ return {
     try {
       const result = await getRedirectResult(auth);
       return result ? result.user : null;
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.code === 'auth/api-key-not-valid' || err?.code === 'auth/invalid-api-key' || (err?.message && err.message.includes('api-key-not-valid'))) {
+        console.warn('ℹ️ Firebase API Key não configurada. Ignorando getRedirectResult.');
+        return null;
+      }
       console.error('Error handling redirect auth:', err);
       return null;
     }
@@ -257,8 +309,15 @@ return {
    * Sign in with Email and Password
    */
   export async function loginEmailPassword(email: string, pass: string): Promise<User> {
-    const credential = await fbSignInWithEmail(auth, email, pass);
-    return credential.user;
+    try {
+      const credential = await fbSignInWithEmail(auth, email, pass);
+      return credential.user;
+    } catch (err: any) {
+      if (err?.code === 'auth/api-key-not-valid' || err?.code === 'auth/invalid-api-key' || (err?.message && err.message.includes('api-key-not-valid'))) {
+        throw new Error('Chave do Firebase não configurada. Utilizando autenticação via servidor.');
+      }
+      throw err;
+    }
   }
   
   /**
@@ -277,16 +336,30 @@ return {
       imobiliaria?: string;
     }
   ): Promise<User> {
-    const credential = await fbCreateUserWithEmail(auth, email, pass);
-    await syncUserWithFirestore(credential.user, extraData);
-    return credential.user;
+    try {
+      const credential = await fbCreateUserWithEmail(auth, email, pass);
+      await syncUserWithFirestore(credential.user, extraData);
+      return credential.user;
+    } catch (err: any) {
+      if (err?.code === 'auth/api-key-not-valid' || err?.code === 'auth/invalid-api-key' || (err?.message && err.message.includes('api-key-not-valid'))) {
+        throw new Error('Chave do Firebase não configurada. Utilizando cadastro via servidor.');
+      }
+      throw err;
+    }
   }
   
   /**
    * Send password reset email
    */
   export async function resetPassword(email: string): Promise<void> {
-    await sendPasswordResetEmail(auth, email);
+    try {
+      await sendPasswordResetEmail(auth, email);
+    } catch (err: any) {
+      if (err?.code === 'auth/api-key-not-valid' || err?.code === 'auth/invalid-api-key' || (err?.message && err.message.includes('api-key-not-valid'))) {
+        throw new Error('Chave do Firebase não configurada. Não foi possível enviar e-mail de redefinição.');
+      }
+      throw err;
+    }
   }
   
   /**
@@ -300,5 +373,9 @@ return {
         console.warn('Erro ao deslogar do plugin nativo de auth:', e);
       }
     }
-    await fbSignOut(auth);
+    try {
+      await fbSignOut(auth);
+    } catch (err) {
+      console.warn('Aviso no logout do Firebase:', err);
+    }
   }

@@ -56,7 +56,8 @@ import {
   Car,
   Maximize,
   LogOut,
-  Activity
+  Activity,
+  Eye
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -73,7 +74,7 @@ export default function App() {
   const [authPassword, setAuthPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
-  const [googleDirectEmail, setGoogleDirectEmail] = useState('afreccia@gmail.com');
+  const [googleDirectEmail, setGoogleDirectEmail] = useState('');
   const [showCustomGoogleInput, setShowCustomGoogleInput] = useState(false);
 
   // Registration form states
@@ -97,24 +98,19 @@ export default function App() {
   // Uses corretorEmail (normalized) as the primary source of truth, falling back to
   // the legacy corretorId comparison for older records or active Firebase user context.
   const isMyProperty = (imovel: Imovel): boolean => {
-    const userEmail = (activeCorretor?.email || auth.currentUser?.email || 'afreccia@gmail.com').toLowerCase().trim();
-    const userId = activeCorretor?.id || auth.currentUser?.uid || 'broker-afreccia_gmail_com';
+    if (!activeCorretor) return false;
+    const userEmail = (activeCorretor.email || '').toLowerCase().trim();
+    const userId = activeCorretor.id;
 
     const propEmail = (imovel.corretorEmail || '').toLowerCase().trim();
+    const propId = imovel.corretorId;
 
     if (userEmail && propEmail && propEmail === userEmail) {
       return true;
     }
 
-    if (userId && imovel.corretorId && (imovel.corretorId === userId || imovel.corretorId === 'broker-afreccia_gmail_com')) {
+    if (userId && propId && propId === userId) {
       return true;
-    }
-
-    // Comprehensive fallback for primary user account afreccia@gmail.com
-    if (userEmail === 'afreccia@gmail.com') {
-      if (!propEmail || propEmail === 'afreccia@gmail.com' || !imovel.corretorId || imovel.corretorId === 'corretor-anonimo' || imovel.corretorId.includes('afreccia')) {
-        return true;
-      }
     }
 
     return false;
@@ -402,11 +398,15 @@ export default function App() {
     const userUid = user.uid || extraData?.uid;
     const userPhone = user.phoneNumber || extraData?.telefone || '';
     
-    let existing = existingBrokers.find(b => 
-      (userEmail && b.email && b.email.toLowerCase().trim() === userEmail) || 
-      (userPhone && ((b.telefone && b.telefone === userPhone) || (b.whatsapp && b.whatsapp === userPhone))) ||
-      (userUid && b.id === userUid)
-    );
+    let existing = existingBrokers.find(b => {
+      const emailMatch = userEmail && b.email && b.email.toLowerCase().trim() === userEmail;
+      const uidMatch = userUid && b.id && b.id === userUid;
+      const phoneMatch = userPhone && (
+        (b.telefone && b.telefone.replace(/\D/g, '') === userPhone.replace(/\D/g, '') && userPhone.replace(/\D/g, '').length > 7) ||
+        (b.whatsapp && b.whatsapp.replace(/\D/g, '') === userPhone.replace(/\D/g, '') && userPhone.replace(/\D/g, '').length > 7)
+      );
+      return Boolean(emailMatch || uidMatch || phoneMatch);
+    });
 
     // Also check server directly by email if not found in local cache
     if (!existing && userEmail) {
@@ -415,10 +415,15 @@ export default function App() {
         if (res.ok) {
           const list = await res.json();
           if (Array.isArray(list)) {
-            existing = list.find((b: Corretor) => 
-              (b.email && b.email.toLowerCase().trim() === userEmail) ||
-              (userPhone && ((b.telefone && b.telefone === userPhone) || (b.whatsapp && b.whatsapp === userPhone)))
-            );
+            existing = list.find((b: Corretor) => {
+              const emailMatch = userEmail && b.email && b.email.toLowerCase().trim() === userEmail;
+              const uidMatch = userUid && b.id && b.id === userUid;
+              const phoneMatch = userPhone && (
+                (b.telefone && b.telefone.replace(/\D/g, '') === userPhone.replace(/\D/g, '') && userPhone.replace(/\D/g, '').length > 7) ||
+                (b.whatsapp && b.whatsapp.replace(/\D/g, '') === userPhone.replace(/\D/g, '') && userPhone.replace(/\D/g, '').length > 7)
+              );
+              return Boolean(emailMatch || uidMatch || phoneMatch);
+            });
           }
         }
       } catch (err) {
@@ -461,13 +466,12 @@ export default function App() {
 
     // Fallback if no email
     setIsAuthenticated(false);
-    localStorage.removeItem('imobishare_logged_in');
     setAuthEmail(userEmail || '');
     setRegNome(user.displayName || extraData?.nome || (userEmail ? userEmail.split('@')[0] : ''));
     if (user.photoURL || extraData?.foto) {
       setRegFoto(user.photoURL || extraData?.foto);
     }
-    setAuthMode('register');
+    setAuthMode('login');
     triggerToast('Conta Google autenticada!');
     return null;
   };
@@ -475,8 +479,16 @@ export default function App() {
 // Função auxiliar para tratar usuário autenticado
 const handleAuthenticatedUser = async (user: FirebaseUser | null) => {
   if (!user) {
-    localStorage.removeItem('imobishare_logged_in');
+    const isLoggedInLocally = localStorage.getItem('imobishare_logged_in') === 'true';
+    const activeCorretor = DbService.getActiveCorretor();
+    if (isLoggedInLocally && activeCorretor) {
+      setIsAuthenticated(true);
+      setActiveCorretor(activeCorretor);
+      setIsInitialLoading(false);
+      return;
+    }
     setIsAuthenticated(false);
+    setAuthMode('login');
     setIsInitialLoading(false);
     return;
   }
@@ -499,24 +511,42 @@ const handleAuthenticatedUser = async (user: FirebaseUser | null) => {
 useEffect(() => {
   checkRedirectAuth()
     .then(handleAuthenticatedUser)
-    .catch((err) => console.error('Error handling Google auth redirect:', err));
+    .catch((err) => console.warn('ℹ️ Auth redirect handler fallback:', err?.message || err));
 }, []);
 
 // Listener para mudanças de autenticação
 useEffect(() => {
-  const unsubscribe = onAuthStateChanged(auth, (user) => {
-    handleAuthenticatedUser(user);
-  });
+  let unsubscribe = () => {};
+  try {
+    unsubscribe = onAuthStateChanged(
+      auth, 
+      (user) => {
+        handleAuthenticatedUser(user);
+      },
+      (error) => {
+        console.warn('Firebase Auth listener encountered error (using server/local auth fallback):', error);
+        setIsInitialLoading(false);
+      }
+    );
+  } catch (err) {
+    console.warn('Failed to bind onAuthStateChanged listener:', err);
+    setIsInitialLoading(false);
+  }
 
   return () => unsubscribe();
 }, []);
 
   // Direct Google Login fallback for preview/iframe environments
-  const handleGoogleDirectLogin = async (emailToUse: string = googleDirectEmail) => {
+  const handleGoogleDirectLogin = async (emailToUse?: string) => {
     setAuthLoading(true);
     setAuthError('');
     try {
-      const cleanEmail = (emailToUse || 'afreccia@gmail.com').toLowerCase().trim();
+      const cleanEmail = (emailToUse || authEmail || googleDirectEmail || '').toLowerCase().trim();
+      if (!cleanEmail) {
+        setAuthError('Informe seu e-mail do Gmail para acessar.');
+        triggerToast('Informe seu e-mail do Gmail.');
+        return;
+      }
       const mockGoogleUser = {
         uid: `google-${cleanEmail.replace(/[^a-z0-9]/g, '-')}`,
         email: cleanEmail,
@@ -581,10 +611,18 @@ const handleGoogleLogin = async () => {
       err?.code === 'auth/popup-blocked' ||
       err?.code === 'auth/popup-closed-by-user' ||
       err?.code === 'auth/cancelled-popup-request' ||
-      (err?.message && (err.message.includes('popup') || err.message.includes('iframe') || err.message.includes('closed')))
+      err?.code === 'auth/api-key-not-valid' ||
+      err?.code === 'auth/invalid-api-key' ||
+      (err?.message && (
+        err.message.includes('popup') || 
+        err.message.includes('iframe') || 
+        err.message.includes('closed') ||
+        err.message.includes('api-key-not-valid') ||
+        err.message.includes('invalid-api-key')
+      ))
     ) {
       console.log('Ambiente restrito/preview detectado. Acionando login direto com Google...');
-      await handleGoogleDirectLogin('afreccia@gmail.com');
+      await handleGoogleDirectLogin(authEmail || googleDirectEmail);
       return;
     }
 
@@ -658,12 +696,11 @@ const handleGoogleLogin = async () => {
         return;
       }
 
-      setAuthError('Conta não encontrada com este e-mail.');
-      triggerToast('Conta não encontrada. Você pode criar uma conta.');
+      setAuthError('Usuário não encontrado ou senha incorreta. Verifique seus dados ou crie uma conta.');
+      triggerToast('Usuário não encontrado ou senha incorreta.');
     } catch (err: any) {
-      const formatted = formatAuthError(err);
-      setAuthError(formatted);
-      triggerToast(formatted);
+      setAuthError('Usuário não encontrado ou senha incorreta. Verifique seus dados ou crie uma conta.');
+      triggerToast('Usuário não encontrado ou senha incorreta.');
     } finally {
       setAuthLoading(false);
     }
@@ -789,7 +826,32 @@ const handleGoogleLogin = async () => {
     localStorage.removeItem('imobishare_logged_in');
     localStorage.removeItem('imobishare_active_corretor');
     setIsAuthenticated(false);
+    setAuthMode('login');
+    setAuthError('');
+    setAuthEmail('');
+    setAuthPassword('');
     triggerToast('Sessão encerrada com sucesso.');
+  };
+
+  // Continuar navegação como Visitante (Guest)
+  const handleContinueAsGuest = () => {
+    const guestCorretor: Corretor = {
+      id: 'corretor_visitante',
+      nome: 'Corretor Visitante',
+      email: 'visitante@imobishare.com.br',
+      creci: 'CRECI Pendente',
+      telefone: '(47) 99999-9999',
+      whatsapp: '(47) 99999-9999',
+      cidade: 'Balneário Camboriú',
+      estado: 'SC',
+      imobiliaria: 'Visitante ImobiShare',
+      foto: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=250'
+    };
+    DbService.setActiveCorretor(guestCorretor);
+    localStorage.setItem('imobishare_logged_in', 'true');
+    setIsAuthenticated(true);
+    setActiveCorretor(guestCorretor);
+    triggerToast('Acessando como Visitante. Explore o catálogo de imóveis.');
   };
 
 
@@ -864,11 +926,15 @@ const handleGoogleLogin = async () => {
         // If it belongs to someone else, check "Outros corretores" switch
         if (!filterOutrosCorretores) return false;
         // Also must be SHARED to be visible to others
-        if (!imovel.compartilhar) return false;
+        const isShared = imovel.compartilhar !== false;
+        if (!isShared) return false;
 
         // --- PARTNER GROUP EXCLUSIVITY RESTRICTION ---
         // Find owner broker's settings
-        const owner = DbService.getCorretores().find(c => c.id === imovel.corretorId);
+        const owner = DbService.getCorretores().find(c => 
+          (c.id && imovel.corretorId && c.id === imovel.corretorId) ||
+          (c.email && imovel.corretorEmail && c.email.toLowerCase().trim() === imovel.corretorEmail.toLowerCase().trim())
+        );
         if (owner && owner.restringirParceiros) {
           const partners = owner.parceirosEmails || [];
           if (partners.length > 0) {
@@ -889,11 +955,15 @@ const handleGoogleLogin = async () => {
   const getStoryImoveis = () => {
     return allImoveis.filter((imovel) => {
       const hours = (Date.now() - new Date(imovel.dataCadastro).getTime()) / (1000 * 60 * 60);
-      const isEligible = hours <= 24 && activeCorretor && !isMyProperty(imovel) && imovel.compartilhar;
+      const isShared = imovel.compartilhar !== false;
+      const isEligible = hours <= 24 && activeCorretor && !isMyProperty(imovel) && isShared;
       if (!isEligible) return false;
 
       // Check partner restriction
-      const owner = DbService.getCorretores().find(c => c.id === imovel.corretorId);
+      const owner = DbService.getCorretores().find(c => 
+        (c.id && imovel.corretorId && c.id === imovel.corretorId) ||
+        (c.email && imovel.corretorEmail && c.email.toLowerCase().trim() === imovel.corretorEmail.toLowerCase().trim())
+      );
       if (owner && owner.restringirParceiros) {
         const partners = owner.parceirosEmails || [];
         if (partners.length > 0) {
@@ -917,10 +987,15 @@ const handleGoogleLogin = async () => {
 
       const isMine = isMyProperty(imovel);
       if (isMine) return true;
-      if (!imovel.compartilhar) return false;
+
+      const isShared = imovel.compartilhar !== false;
+      if (!isShared) return false;
 
       // Check partner restriction
-      const owner = DbService.getCorretores().find(c => c.id === imovel.corretorId);
+      const owner = DbService.getCorretores().find(c => 
+        (c.id && imovel.corretorId && c.id === imovel.corretorId) ||
+        (c.email && imovel.corretorEmail && c.email.toLowerCase().trim() === imovel.corretorEmail.toLowerCase().trim())
+      );
       if (owner && owner.restringirParceiros) {
         const partners = owner.parceirosEmails || [];
         if (partners.length > 0) {
@@ -1142,53 +1217,8 @@ Toque abaixo para ver fotos e todos os detalhes:
           </div>
 
           {authError && (
-            <div className="bg-red-50 text-red-700 text-[11px] p-3.5 rounded-xl border border-red-200 font-medium leading-relaxed space-y-2.5" id="auth-error-banner">
+            <div className="bg-red-50 text-red-700 text-xs p-3.5 rounded-xl border border-red-200 font-medium leading-relaxed" id="auth-error-banner">
               <p>{authError}</p>
-              
-              <div className="pt-2 border-t border-red-200/60 space-y-2">
-                <p className="font-bold text-[10px] uppercase text-slate-600">Acesso Direto com Google:</p>
-                
-                <button
-                  type="button"
-                  onClick={() => handleGoogleDirectLogin('afreccia@gmail.com')}
-                  className="w-full bg-[#003366] hover:bg-[#002244] text-white font-bold py-2.5 px-3 rounded-lg text-[10px] tracking-wide transition-all shadow-xs cursor-pointer text-center flex items-center justify-center gap-2"
-                >
-                  <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 24 24">
-                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-                  </svg>
-                  <span>Entrar com a Conta afreccia@gmail.com</span>
-                </button>
-
-                {!showCustomGoogleInput ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowCustomGoogleInput(true)}
-                    className="w-full text-slate-600 hover:text-[#003366] text-[10px] font-semibold underline text-center py-0.5 cursor-pointer"
-                  >
-                    Usar outro e-mail do Google...
-                  </button>
-                ) : (
-                  <div className="flex gap-1.5 pt-1">
-                    <input
-                      type="email"
-                      value={googleDirectEmail}
-                      onChange={(e) => setGoogleDirectEmail(e.target.value)}
-                      placeholder="seu.email@gmail.com"
-                      className="flex-1 bg-white text-slate-800 text-[10px] px-2.5 py-1.5 rounded-lg border border-slate-300 font-medium focus:outline-none focus:border-[#003366]"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleGoogleDirectLogin(googleDirectEmail)}
-                      className="bg-[#003366] hover:bg-[#002244] text-white text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all cursor-pointer"
-                    >
-                      Entrar
-                    </button>
-                  </div>
-                )}
-              </div>
             </div>
           )}
 
@@ -1463,9 +1493,6 @@ Toque abaixo para ver fotos e todos os detalhes:
             </form>
           )}
 
-          <div className="text-center pt-1">
-            <p className="text-[9px] text-slate-400">Balneário Camboriú • Itapema • Região Marítima</p>
-          </div>
         </div>
       </div>
     );
@@ -1552,13 +1579,10 @@ Toque abaixo para ver fotos e todos os detalhes:
                     </div>
                   </div>
 
-                  {/* STORIES CAROUSEL: "New listings from other brokers" */}
+                  {/* STORIES BUBBLES CAROUSEL */}
                   {getStoryImoveis().length > 0 && (
-                    <div className="bg-white py-3 border-b border-slate-100">
-                      <div className="px-4 pb-2">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Novidades das Últimas 24h</span>
-                      </div>
-                      <div className="flex gap-4 px-4 overflow-x-auto scrollbar-none pb-1">
+                    <div className="bg-white py-2.5 border-b border-slate-100">
+                      <div className="flex gap-4 px-4 overflow-x-auto scrollbar-none pb-0.5">
                         {getStoryImoveis().map((imovel) => (
                           <StoryBubble
                             key={imovel.id}

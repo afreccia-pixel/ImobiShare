@@ -405,9 +405,15 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
     setIsSaving(true);
 
     const activeCorretor = DbService.getActiveCorretor();
-    const activeEmail = (activeCorretor?.email || auth.currentUser?.email || 'afreccia@gmail.com').toLowerCase().trim();
-    const activeId = activeCorretor?.id || auth.currentUser?.uid || 'broker-afreccia_gmail_com';
-    const activeNome = activeCorretor?.nome || auth.currentUser?.displayName || 'Alexandre Freccia';
+    if (!activeCorretor && !auth.currentUser) {
+      setErrorMsg('Você precisa estar logado para salvar um imóvel.');
+      setIsSaving(false);
+      return;
+    }
+
+    const activeEmail = (activeCorretor?.email || auth.currentUser?.email || '').toLowerCase().trim();
+    const activeId = activeCorretor?.id || auth.currentUser?.uid || `broker-${activeEmail.replace(/[^a-z0-9]/g, '_')}`;
+    const activeNome = activeCorretor?.nome || auth.currentUser?.displayName || (activeEmail ? activeEmail.split('@')[0] : 'Corretor');
 
     try {
       const saved = await DbService.saveImovel({

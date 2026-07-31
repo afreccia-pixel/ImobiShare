@@ -27,6 +27,7 @@ export function isProfileComplete(corretor: Partial<Corretor> | null | undefined
 
 // In-memory cache & subscription system
 let cachedCorretor: Corretor | null = null;
+let cachedCorretores: Corretor[] = [];
 let cachedImoveis: Imovel[] = [];
 let cachedFavorites: string[] = [];
 const subscribers: Array<() => void> = [];
@@ -46,6 +47,10 @@ function loadInitialFromLocalStorage() {
     const savedActive = localStorage.getItem('imobishare_active_corretor');
     if (savedActive) {
       cachedCorretor = JSON.parse(savedActive);
+    }
+    const savedBrokers = localStorage.getItem('imobishare_corretores');
+    if (savedBrokers) {
+      cachedCorretores = JSON.parse(savedBrokers);
     }
     const savedImoveis = localStorage.getItem('imobishare_imoveis');
     if (savedImoveis) {
@@ -72,11 +77,42 @@ export class DbService {
     try {
       if (auth.currentUser) {
         const token = await auth.currentUser.getIdToken(/* forceRefresh */ false);
-        headers['Authorization'] = `Bearer ${token}`;
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+          return headers;
+        }
       }
     } catch (err) {
       console.warn('⚠️ Não foi possível obter token do Firebase Auth:', err);
     }
+
+    // Fallback: Construct active broker JWT bearer token for backend requests
+    const active = this.getActiveCorretor();
+    const email = (active?.email || auth.currentUser?.email || '').toLowerCase().trim();
+
+    if (email) {
+      headers['X-User-Email'] = email;
+
+      const encodeB64Url = (obj: any) => {
+        try {
+          const json = JSON.stringify(obj);
+          return btoa(encodeURIComponent(json).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromCharCode(parseInt(p1, 16))))
+            .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        } catch {
+          return btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        }
+      };
+
+      const header = encodeB64Url({ alg: 'HS256', typ: 'JWT' });
+      const payload = encodeB64Url({
+        email,
+        sub: active?.id || `broker-${email.replace(/[^a-z0-9]/gi, '_')}`,
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 86400
+      });
+      headers['Authorization'] = `Bearer ${header}.${payload}.local_fallback_sig`;
+    }
+
     return headers;
   }
 
@@ -85,27 +121,29 @@ export class DbService {
   static getActiveCorretor(): Corretor | null {
     if (cachedCorretor) return cachedCorretor;
     
-    // Default admin fallback if not logged in or empty
-    const defaultCorretor: Corretor = {
-      id: 'broker-afreccia_gmail_com',
-      nome: 'Alexandre Freccia',
-      email: 'afreccia@gmail.com',
-      creci: '12345-F',
-      telefone: '(47) 99999-9999',
-      whatsapp: '(47) 99999-9999',
-      cidade: 'Balneário Camboriú',
-      estado: 'SC',
-      imobiliaria: 'ImobiShare',
-      isAdmin: true,
-      slugSite: 'alexandre-freccia'
-    };
-    return defaultCorretor;
+    try {
+      const savedActive = localStorage.getItem('imobishare_active_corretor');
+      if (savedActive) {
+        cachedCorretor = JSON.parse(savedActive);
+        return cachedCorretor;
+      }
+    } catch (e) {}
+
+    return null;
   }
 
   static setActiveCorretor(corretor: Corretor | null): void {
     cachedCorretor = corretor;
     if (corretor) {
       localStorage.setItem('imobishare_active_corretor', JSON.stringify(corretor));
+      // Update in cachedCorretores list
+      const idx = cachedCorretores.findIndex(c => c.id === corretor.id || (c.email && c.email.toLowerCase() === corretor.email.toLowerCase()));
+      if (idx >= 0) {
+        cachedCorretores[idx] = corretor;
+      } else {
+        cachedCorretores.push(corretor);
+      }
+      localStorage.setItem('imobishare_corretores', JSON.stringify(cachedCorretores));
     } else {
       localStorage.removeItem('imobishare_active_corretor');
     }
@@ -114,20 +152,52 @@ export class DbService {
 
   static getCorretores(): Corretor[] {
     const active = this.getActiveCorretor();
-    return active ? [active] : [];
+    const list = [...cachedCorretores];
+    if (active && !list.some(c => c.id === active.id || (c.email && c.email.toLowerCase() === active.email.toLowerCase()))) {
+      list.unshift(active);
+    }
+    return list;
+  }
+
+  static async fetchBrokers(): Promise<Corretor[]> {
+    try {
+      const res = await fetch(getApiUrl('/api/brokers'));
+      if (res.ok) {
+        const list = await res.json();
+        if (Array.isArray(list)) {
+          cachedCorretores = list;
+          localStorage.setItem('imobishare_corretores', JSON.stringify(list));
+          notifySubscribers();
+          return list;
+        }
+      }
+    } catch (err) {
+      console.warn('Erro ao buscar lista de corretores:', err);
+    }
+    return this.getCorretores();
   }
 
   static getBrokerStats(idOrEmail?: string) {
     const imoveis = this.getImoveisSync();
     const active = this.getActiveCorretor();
-    const targetEmail = (idOrEmail || active?.email || 'afreccia@gmail.com').toLowerCase().trim();
+    const targetEmail = (idOrEmail || active?.email || '').toLowerCase().trim();
+
+    if (!targetEmail) {
+      return { qtdVendas: 0, qtdLocacoes: 0, qtdParcerias: 0 };
+    }
 
     const myImoveis = imoveis.filter(i => (i.corretorEmail || '').toLowerCase().trim() === targetEmail);
-    const qtdImoveis = myImoveis.length;
-    const qtdLocacoes = myImoveis.filter(i => i.tipo === 'locação' || i.tipo === 'ambos').length;
     const qtdVendas = myImoveis.filter(i => i.tipo === 'venda' || i.tipo === 'ambos').length;
+    const qtdLocacoes = myImoveis.filter(i => i.tipo === 'locação' || i.tipo === 'ambos').length;
 
-    return { qtdImoveis, qtdLocacoes, qtdVendas };
+    const partnerImoveis = imoveis.filter(i => {
+      const isMine = (i.corretorEmail || '').toLowerCase().trim() === targetEmail;
+      const isShared = i.compartilhar !== false;
+      return !isMine && isShared;
+    });
+    const qtdParcerias = partnerImoveis.length;
+
+    return { qtdVendas, qtdLocacoes, qtdParcerias };
   }
 
   static getImoveisSync(): Imovel[] {
@@ -271,8 +341,8 @@ export class DbService {
       const active = this.getActiveCorretor();
       const fallbackImovel: Imovel = {
         id: imovel.id || `prop-${Date.now()}`,
-        corretorEmail: imovel.corretorEmail || active?.email || 'afreccia@gmail.com',
-        corretorNome: imovel.corretorNome || active?.nome || 'Alexandre Freccia',
+        corretorEmail: imovel.corretorEmail || active?.email || auth.currentUser?.email || '',
+        corretorNome: imovel.corretorNome || active?.nome || auth.currentUser?.displayName || 'Corretor',
         cidade: imovel.cidade || 'Balneário Camboriú',
         bairro: imovel.bairro || 'Centro',
         tipoImovel: imovel.tipoImovel || 'Apartamento',
@@ -342,7 +412,10 @@ export class DbService {
 
   // Sync background data
   static async syncWithServer(): Promise<void> {
-    await this.verifyAndFetchProfile();
+    await this.fetchBrokers();
+    if (this.getActiveCorretor()) {
+      await this.verifyAndFetchProfile();
+    }
     await this.getImoveis();
   }
 

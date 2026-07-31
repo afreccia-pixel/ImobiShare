@@ -18,7 +18,7 @@ interface UserProfileProps {
 
 export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfileProps) {
   const [allCorretores, setAllCorretores] = useState<Corretor[]>([]);
-  const [stats, setStats] = useState({ qtdImoveis: 0, qtdLocacoes: 0, qtdVendas: 0 });
+  const [stats, setStats] = useState({ qtdVendas: 0, qtdLocacoes: 0, qtdParcerias: 0 });
   const [successMsg, setSuccessMsg] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -300,7 +300,6 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
               onChange={handlePhotoChange}
             />
           </div>
-          <span className="text-[9px] text-[#003366] font-bold mt-1.5 hover:underline cursor-pointer" onClick={() => fileInputRef.current?.click()}>Alterar foto de perfil</span>
 
           <h2 className="font-bold text-slate-800 text-base mt-3">{corretor.nome}</h2>
           
@@ -310,14 +309,18 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
           </div>
 
           {/* Dynamic broker stats counters */}
-          <div className="grid grid-cols-2 gap-4 w-full mt-5 pt-4 border-t border-slate-100">
-            <div className="bg-slate-50 p-3 rounded-lg text-center">
-              <span className="text-[10px] text-slate-400 font-bold uppercase block">Imóveis Cadastrados</span>
-              <span className="text-xl font-bold text-slate-900">{stats.qtdImoveis}</span>
+          <div className="grid grid-cols-3 gap-2 sm:gap-3 w-full mt-5 pt-4 border-t border-slate-100">
+            <div className="bg-slate-50 p-2.5 rounded-lg text-center">
+              <span className="text-[9px] sm:text-[10px] text-slate-400 font-bold uppercase block leading-tight">Imóveis a Venda</span>
+              <span className="text-lg sm:text-xl font-bold text-slate-900 mt-1 block">{stats.qtdVendas}</span>
             </div>
-            <div className="bg-slate-50 p-3 rounded-lg text-center">
-              <span className="text-[10px] text-slate-400 font-bold uppercase block">Para Locação</span>
-              <span className="text-xl font-bold text-slate-900">{stats.qtdLocacoes}</span>
+            <div className="bg-slate-50 p-2.5 rounded-lg text-center">
+              <span className="text-[9px] sm:text-[10px] text-slate-400 font-bold uppercase block leading-tight">Para Locação</span>
+              <span className="text-lg sm:text-xl font-bold text-slate-900 mt-1 block">{stats.qtdLocacoes}</span>
+            </div>
+            <div className="bg-slate-50 p-2.5 rounded-lg text-center">
+              <span className="text-[9px] sm:text-[10px] text-slate-400 font-bold uppercase block leading-tight">Imóveis de Parceria</span>
+              <span className="text-lg sm:text-xl font-bold text-slate-900 mt-1 block">{stats.qtdParcerias}</span>
             </div>
           </div>
         </div>

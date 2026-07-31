@@ -21,7 +21,10 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
   const [whatsappSent, setWhatsappSent] = useState(false);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
 
-  const isOwner = imovel.corretorId === activeCorretor.id;
+  const activeEmailClean = (activeCorretor?.email || '').toLowerCase().trim();
+  const imovelEmailClean = (imovel.corretorEmail || '').toLowerCase().trim();
+  const isOwner = (imovel.corretorId && imovel.corretorId === activeCorretor?.id) || 
+                  (imovelEmailClean && activeEmailClean && imovelEmailClean === activeEmailClean);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchStartX(e.touches[0].clientX);
@@ -260,17 +263,16 @@ Toque abaixo para ver fotos e todos os detalhes:
           </div>
         </div>
 
-        {/* Broker Information */}
-        {(() => {
+        {/* Broker Information - ONLY shown if it's NOT the user's own property */}
+        {!isOwner && (() => {
           const corretores = DbService.getCorretores();
-          const responsibleBroker = isOwner 
-            ? activeCorretor 
-            : (corretores.find(c => c.id === imovel.corretorId) || {
-                nome: imovel.corretorNome,
-                telefone: '(47) 99888-7766',
-                whatsapp: '47998887766',
-                creci: 'Corretor Parceiro'
-              });
+          const responsibleBroker = corretores.find(c => (c.id && c.id === imovel.corretorId) || (c.email && c.email.toLowerCase().trim() === imovelEmailClean)) || {
+            nome: imovel.corretorNome || 'Corretor ImobiShare',
+            telefone: '(47) 99888-7766',
+            whatsapp: '47998887766',
+            creci: 'Corretor Parceiro',
+            foto: ''
+          };
           
           const rawPhone = responsibleBroker.telefone || '(47) 99888-7766';
           const rawWhatsapp = responsibleBroker.whatsapp || responsibleBroker.telefone || '47998887766';
@@ -283,20 +285,20 @@ Toque abaixo para ver fotos e todos os detalhes:
               <div className="flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
                 <div className="flex items-center gap-2.5 min-w-0 flex-1">
                   <div className="w-9 h-9 rounded-full bg-slate-100 overflow-hidden border border-slate-200 flex-shrink-0">
-                    {isOwner ? (
-                      <img src={activeCorretor.foto} alt="Você" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    {responsibleBroker.foto ? (
+                      <img src={responsibleBroker.foto} alt={responsibleBroker.nome} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                     ) : (
                       <div className="w-full h-full bg-[#003366] flex items-center justify-center text-white font-bold text-xs">
-                        {imovel.corretorNome.charAt(0)}
+                        {(responsibleBroker.nome || imovel.corretorNome || 'C').charAt(0).toUpperCase()}
                       </div>
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
                     <span className="font-semibold text-slate-800 text-xs sm:text-sm block truncate">
-                      {isOwner ? `Você (${activeCorretor.nome})` : imovel.corretorNome}
+                      {responsibleBroker.nome || imovel.corretorNome || 'Corretor Parceiro'}
                     </span>
                     <span className="text-[10px] sm:text-xs text-slate-400 block truncate">
-                      {isOwner ? activeCorretor.creci : (responsibleBroker.creci || 'Parceria Autorizada')}
+                      {responsibleBroker.creci || 'Parceria Autorizada'}
                     </span>
                   </div>
                 </div>
