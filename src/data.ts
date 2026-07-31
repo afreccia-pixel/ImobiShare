@@ -14,9 +14,7 @@ export const MOCK_CORRETORES: Corretor[] = [
     whatsapp: '47998887766',
     email: 'afreccia@gmail.com',
     foto: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=150&auto=format&fit=crop&q=80',
-    cidade: 'Balneário Camboriú',
-    qtdImoveis: 0,
-    qtdLocacoes: 0
+    cidade: 'Balneário Camboriú'
   }
 ];
 

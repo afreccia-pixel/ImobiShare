@@ -87,7 +87,7 @@ export default function App() {
 
   // Core App states
   const [activeCorretor, setActiveCorretor] = useState<Corretor | null>(() => DbService.getActiveCorretor());
-  const [allImoveis, setAllImoveis] = useState<Imovel[]>(() => DbService.getImoveis());
+  const [allImoveis, setAllImoveis] = useState<Imovel[]>(() => DbService.getImoveisSync());
   const [favoritos, setFavoritos] = useState<string[]>(() => {
     const active = DbService.getActiveCorretor();
     return active ? DbService.getFavoritos(active.id) : [];
@@ -143,7 +143,7 @@ export default function App() {
     }
 
     if (imovelId) {
-      const imoveis = DbService.getImoveis();
+      const imoveis = DbService.getImoveisSync();
       const found = imoveis.find(i => 
         i.id === imovelId || 
         i.id === `imovel-${imovelId}` || 
@@ -171,7 +171,7 @@ export default function App() {
 
     if (imoveisRaw) {
       const ids = imoveisRaw.split(',');
-      const imoveis = DbService.getImoveis();
+      const imoveis = DbService.getImoveisSync();
       const foundList = imoveis.filter(i => 
         ids.includes(i.id) || 
         ids.includes(i.id.replace('imovel-', ''))
@@ -257,7 +257,7 @@ export default function App() {
   const reloadData = (updateCity = false) => {
     const currentCorretor = DbService.getActiveCorretor();
     setActiveCorretor(currentCorretor);
-    setAllImoveis(DbService.getImoveis());
+    setAllImoveis(DbService.getImoveisSync());
     if (currentCorretor) {
       setFavoritos(DbService.getFavoritos(currentCorretor.id));
       if (updateCity && currentCorretor.cidade) {
@@ -346,27 +346,27 @@ export default function App() {
   };
 
   // Toggle Favorite
-  const handleFavoriteToggle = (imovelId: string) => {
-    const updatedFavs = DbService.toggleFavorite(activeCorretor.id, imovelId);
+  const handleFavoriteToggle = async (imovelId: string) => {
+    const corretorId = activeCorretor?.id || 'broker-afreccia_gmail_com';
+    const updatedFavs = await DbService.toggleFavorite(corretorId, imovelId);
     setFavoritos(updatedFavs);
     
-    const imoveis = DbService.getImoveis();
     const isFavNow = updatedFavs.includes(imovelId);
     triggerToast(isFavNow ? 'Imóvel adicionado aos favoritos!' : 'Imóvel removido dos favoritos.');
   };
 
   // Toggle Property Share status
-  const handleShareToggle = (imovelId: string) => {
-    const imoveis = DbService.getImoveis();
+  const handleShareToggle = async (imovelId: string) => {
+    const imoveis = DbService.getImoveisSync();
     const found = imoveis.find(i => i.id === imovelId);
     if (found) {
-      const updated = DbService.saveImovel({
+      const updated = await DbService.saveImovel({
         ...found,
         compartilhar: !found.compartilhar
       });
       reloadData();
       triggerToast(
-        updated.compartilhar 
+        updated?.compartilhar 
           ? 'Imóvel compartilhado com a rede de corretores!' 
           : 'Imóvel privado. Apenas você pode visualizar.'
       );
@@ -374,9 +374,9 @@ export default function App() {
   };
 
   // Delete property
-  const handleDeleteProperty = (imovelId: string) => {
+  const handleDeleteProperty = async (imovelId: string) => {
     if (window.confirm('Tem certeza que deseja excluir este imóvel permanentemente?')) {
-      DbService.deleteImovel(imovelId);
+      await DbService.deleteImovel(imovelId);
       setSelectedPropertyIds(prev => prev.filter(id => id !== imovelId));
       reloadData();
       triggerToast('Imóvel excluído com sucesso.');
@@ -384,8 +384,8 @@ export default function App() {
   };
 
   // Duplicate property
-  const handleDuplicateProperty = (imovelId: string) => {
-    const duplicated = DbService.duplicateImovel(imovelId);
+  const handleDuplicateProperty = async (imovelId: string) => {
+    const duplicated = await DbService.duplicateImovel(imovelId);
     if (duplicated) {
       reloadData();
       triggerToast(`Imóvel duplicado com sucesso: ${duplicated.titulo}`);

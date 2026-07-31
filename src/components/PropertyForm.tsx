@@ -96,7 +96,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
 
   useEffect(() => {
     if (imovelId) {
-      const imoveis = DbService.getImoveis();
+      const imoveis = DbService.getImoveisSync();
       const found = imoveis.find(i => i.id === imovelId);
       if (found) {
         setFotos(found.fotos || []);
@@ -207,7 +207,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
     try {
       const improved = await DbService.improveDescription({
         text: descricao,
-        type: tipo,
+        modalidade: tipo,
         tipoImovel: tipoImovel || 'Imóvel',
         titulo: titulo || nomeEdificio || 'Imóvel Exclusivo',
         localizacao: localizacao || cidade,
@@ -215,8 +215,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         dormitorios: dormitorios !== '' ? Number(dormitorios) : undefined,
         vagas: vagas !== '' ? Number(vagas) : undefined,
         banheiros: banheiros !== '' ? Number(banheiros) : undefined,
-        metragem: metragem !== '' ? Number(metragem) : undefined,
-        areaTotal: areaTotal !== '' ? Number(areaTotal) : undefined,
+        metragem: metragem !== '' ? Number(metragem) : (areaTotal !== '' ? Number(areaTotal) : undefined),
         valor: valor !== '' ? Number(valor) : undefined,
       });
 
@@ -311,7 +310,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
     setFotos(fotos.filter((_, i) => i !== index));
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
 
@@ -410,8 +409,8 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
     const activeId = activeCorretor?.id || auth.currentUser?.uid || 'broker-afreccia_gmail_com';
     const activeNome = activeCorretor?.nome || auth.currentUser?.displayName || 'Alexandre Freccia';
 
-    setTimeout(() => {
-      const saved = DbService.saveImovel({
+    try {
+      const saved = await DbService.saveImovel({
         id: imovelId || undefined,
         corretorEmail: activeEmail,
         corretorId: activeId,
@@ -440,7 +439,11 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
       });
 
       onSave(saved);
-    }, 400);
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Erro ao salvar imóvel.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (

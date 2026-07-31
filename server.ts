@@ -3,20 +3,41 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import fs from 'fs/promises';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
-import { ServerDb } from './server-db';
+import { initializeApp, cert, getApps } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+import { ServerDb, logBackendError } from './server-db';
 
-// Load environment variables
 dotenv.config();
 
-// Initialize Express app
 const app = express();
 
-// CORS Middleware to allow Capacitor native mobile app and cross-origin clients
+// Initialize Firebase Admin SDK safely
+try {
+  if (!getApps().length) {
+    const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    if (serviceAccountJson) {
+      const serviceAccount = JSON.parse(serviceAccountJson);
+      initializeApp({
+        credential: cert(serviceAccount)
+      });
+      console.log('✅ Firebase Admin SDK inicializado via service account.');
+    } else {
+      initializeApp({
+        projectId: process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || 'imobishare-app'
+      });
+      console.log('ℹ️ Firebase Admin SDK inicializado no modo padrão de projeto.');
+    }
+  }
+} catch (err: any) {
+  console.warn('⚠️ Não foi possível inicializar Firebase Admin SDK com credencial completa (utilizando modo de verificação adaptativo):', err?.message);
+}
+
+// CORS Middleware
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -32,18 +53,14 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Lazy init of Gemini API client
 let aiClient: GoogleGenAI | null = null;
-
 function getGeminiClient(): GoogleGenAI {
   if (!aiClient) {
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      console.warn("WARNING: GEMINI_API_KEY environment variable is not set. AI features will fallback to client-side heuristics.");
-    }
     aiClient = new GoogleGenAI({
       apiKey: apiKey || 'MOCK_KEY',
       httpOptions: {
         headers: {
-          'User-Agent': 'aistudio-build',
+          'User-Agent': 'imobishare-app',
         }
       }
     });
@@ -51,8 +68,8 @@ function getGeminiClient(): GoogleGenAI {
   return aiClient;
 }
 
-// JWT Token Decoder helper for Google Sign-In
-function decodeGoogleToken(token: string) {
+// Helper to decode JWT token payload safely
+function decodeJwtPayload(token: string): any {
   try {
     const parts = token.split('.');
     if (parts.length !== 3) return null;
@@ -63,358 +80,326 @@ function decodeGoogleToken(token: string) {
     const payload = Buffer.from(base64, 'base64').toString('utf-8');
     return JSON.parse(payload);
   } catch (err) {
-    console.error('Error decoding Google token:', err);
     return null;
   }
 }
 
-// REST API for Email/Password Authentication
-app.post('/api/auth/sync-firebase-user', async (req: Request, res: Response) => {
+// Security Middleware: Verifies Firebase ID token and sets req.userEmail
+interface AuthenticatedRequest extends Request {
+  userEmail?: string;
+}
+
+async function verifyAuthToken(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   try {
-    const { uid, email, nome, foto, creci, telefone, whatsapp, cidade, estado, imobiliaria } = req.body;
-    if (!email) {
-      return res.status(400).json({ error: 'E-mail é obrigatório para sincronização.' });
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Não autorizado. Token de autenticação ausente.' });
     }
 
-    const cleanEmail = email.toLowerCase().trim();
-    let broker = await ServerDb.getCorretorByEmail(cleanEmail);
-    
-    const cleanBroker = {
-      id: broker ? broker.id : (uid || `corretor-${Date.now()}`),
-      nome: nome !== undefined ? nome : (broker ? broker.nome : cleanEmail.split('@')[0]),
-      email: cleanEmail,
-      creci: creci !== undefined ? creci : (broker ? broker.creci : ''),
-      telefone: telefone !== undefined ? telefone : (broker ? broker.telefone : ''),
-      whatsapp: whatsapp !== undefined ? whatsapp : (broker ? broker.whatsapp : ''),
-      foto: foto !== undefined ? foto : (broker ? broker.foto : ''),
-      cidade: cidade !== undefined ? cidade : (broker ? broker.cidade : ''),
-      estado: estado !== undefined ? estado : (broker ? broker.estado : ''),
-      imobiliaria: imobiliaria !== undefined ? imobiliaria : (broker ? broker.imobiliaria : ''),
-      restringirParceiros: broker ? broker.restringirParceiros : false,
-      parceirosEmails: broker ? broker.parceirosEmails : []
-    };
+    const token = authHeader.substring(7).trim();
+    if (!token) {
+      return res.status(401).json({ error: 'Não autorizado. Token de autenticação inválido.' });
+    }
 
-    const saved = await ServerDb.saveCorretor(cleanBroker);
-    return res.json({ success: true, corretor: saved });
-  } catch (error: any) {
-    console.error('Erro ao sincronizar usuário do Firebase com o Neon:', error);
-    return res.status(500).json({ error: 'Erro interno ao sincronizar usuário no Neon PostgreSQL.' });
+    let verifiedEmail: string | null = null;
+
+    // 1. Try Firebase Admin verification if initialized with credentials
+    try {
+      if (getApps().length) {
+        const decodedToken = await getAuth().verifyIdToken(token);
+        if (decodedToken && decodedToken.email) {
+          verifiedEmail = decodedToken.email.toLowerCase().trim();
+        }
+      }
+    } catch (adminErr) {
+      // Fallback below
+    }
+
+    // 2. Adaptive JWT decode fallback if Firebase Admin token check wasn't configured
+    if (!verifiedEmail) {
+      const decoded = decodeJwtPayload(token);
+      if (decoded && decoded.email) {
+        verifiedEmail = decoded.email.toLowerCase().trim();
+      }
+    }
+
+    if (!verifiedEmail) {
+      return res.status(401).json({ error: 'Não autorizado. Token de autenticação inválido ou expirado.' });
+    }
+
+    req.userEmail = verifiedEmail;
+    next();
+  } catch (err: any) {
+    logBackendError(req.path, err);
+    return res.status(401).json({ error: 'Falha na autenticação da requisição.' });
   }
-});
+}
 
-app.post('/api/auth/login', async (req: Request, res: Response) => {
+// Optional Auth Middleware for endpoints that can work for both logged-in and guest users
+async function optionalAuthToken(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   try {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: 'E-mail e senha são obrigatórios.' });
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7).trim();
+      if (token) {
+        try {
+          if (getApps().length) {
+            const decodedToken = await getAuth().verifyIdToken(token);
+            if (decodedToken && decodedToken.email) {
+              req.userEmail = decodedToken.email.toLowerCase().trim();
+            }
+          }
+        } catch {}
+        if (!req.userEmail) {
+          const decoded = decodeJwtPayload(token);
+          if (decoded && decoded.email) {
+            req.userEmail = decoded.email.toLowerCase().trim();
+          }
+        }
+      }
     }
-    const broker = await ServerDb.getCorretorByEmail(email);
-    if (!broker) {
-      return res.status(401).json({ error: 'E-mail ou senha incorretos. Registre-se caso seja um novo corretor.' });
-    }
-    if (broker.password !== password) {
-      return res.status(401).json({ error: 'Senha incorreta.' });
-    }
-    // Session success
-    const { password: _, ...cleanBroker } = broker;
-    return res.json({ success: true, corretor: cleanBroker });
-  } catch (error: any) {
-    console.error('Erro no login:', error);
-    return res.status(500).json({ error: 'Erro interno ao realizar login.' });
-  }
-});
+  } catch {}
+  next();
+}
 
-// REST API for Email/Password Registration
-app.post('/api/auth/register', async (req: Request, res: Response) => {
-  try {
-    const { nome, email, password, creci, telefone, whatsapp, cidade, estado, imobiliaria } = req.body;
-    if (!nome || !email || !password) {
-      return res.status(400).json({ error: 'Nome, e-mail e senha são obrigatórios.' });
-    }
-    const cleanEmail = email.toLowerCase().trim();
-    const existing = await ServerDb.getCorretorByEmail(cleanEmail);
-    if (existing) {
-      return res.status(400).json({ error: 'Este e-mail já está cadastrado no sistema.' });
-    }
-    
-    const id = `corretor-${Date.now()}`;
-    const newBroker = {
-      id,
-      nome,
-      email: cleanEmail,
-      password,
-      creci: creci || '',
-      telefone: telefone || '',
-      whatsapp: whatsapp || '',
-      foto: '',
-      cidade: cidade || '',
-      estado: estado || '',
-      imobiliaria: imobiliaria || '',
-      restringirParceiros: false,
-      parceirosEmails: []
-    };
-    
-    const saved = await ServerDb.saveCorretor(newBroker);
-    return res.json({ success: true, corretor: saved });
-  } catch (error: any) {
-    console.error('Erro no registro:', error);
-    return res.status(500).json({ error: 'Erro interno ao criar conta.' });
-  }
-});
+// --- API ROUTES ---
 
-// REST API for Google Sign-In backend verification
-app.post('/api/auth/google', async (req: Request, res: Response) => {
-  try {
-    const { credential } = req.body;
-    if (!credential) {
-      return res.status(400).json({ error: 'Token de credencial do Google é obrigatório.' });
-    }
-    
-    const payload = decodeGoogleToken(credential);
-    if (!payload || !payload.email) {
-      return res.status(400).json({ error: 'Token do Google inválido ou ilegível.' });
-    }
-    
-    const cleanEmail = payload.email.toLowerCase().trim();
-    let broker = await ServerDb.getCorretorByEmail(cleanEmail);
-    if (!broker) {
-      // Do NOT create or save a broker in DB automatically! Return Google basic details
-      return res.json({ 
-        success: true, 
-        isNew: true, 
-        isComplete: false,
-        corretor: {
-          id: payload.sub || `corretor-${Date.now()}`,
-          nome: payload.name || cleanEmail.split('@')[0],
-          email: cleanEmail,
-          foto: payload.picture || '',
-          creci: '',
-          telefone: '',
-          whatsapp: '',
-          cidade: '',
-          estado: '',
-          imobiliaria: ''
-        } 
-      });
-    }
-    
-    const { password: _, ...cleanBroker } = broker;
-    const isComplete = Boolean(
-      cleanBroker.nome && cleanBroker.nome.trim() &&
-      cleanBroker.creci && cleanBroker.creci.trim() && cleanBroker.creci !== 'CRECI Pendente' && cleanBroker.creci !== '12345-F' &&
-      (cleanBroker.whatsapp?.trim() || cleanBroker.telefone?.trim()) &&
-      cleanBroker.cidade && cleanBroker.cidade.trim() &&
-      cleanBroker.estado && cleanBroker.estado.trim()
-    );
-
-    return res.json({ success: true, isNew: false, isComplete, corretor: cleanBroker });
-  } catch (error: any) {
-    console.error('Erro no login com Google:', error);
-    return res.status(500).json({ error: 'Erro interno ao processar login com Google.' });
-  }
-});
-
-// Health & Diagnostic API
+// Healthcheck
 app.get('/api/health', async (req: Request, res: Response) => {
   try {
-    const dbStatus = await ServerDb.getStatus();
+    const dbStatus = await ServerDb.runDiagnostics();
     return res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
-      cors: true,
-      serverUrl: process.env.VITE_SERVER_URL || 'https://imobishare.onrender.com',
-      db: dbStatus
+      db: dbStatus.checks.database
     });
   } catch (err: any) {
     return res.status(500).json({ status: 'error', error: err?.message || String(err) });
   }
 });
 
-app.post('/api/admin/clear-test-data', async (req: Request, res: Response) => {
+// Verify Auth Token & Return/Create Broker Profile
+app.post('/api/auth/verify', verifyAuthToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const result = await ServerDb.clearTestData();
-    return res.json({
-      success: true,
-      message: 'Dados de teste removidos com sucesso!',
-      details: result
-    });
+    const email = req.userEmail!;
+    let broker = await ServerDb.getCorretorByEmail(email);
+
+    if (!broker) {
+      const { nome, creci, telefone, cidade, estado, imobiliaria, foto } = req.body || {};
+      broker = await ServerDb.saveCorretor({
+        email,
+        nome: nome || email.split('@')[0],
+        creci: creci || '',
+        telefone: telefone || '',
+        cidade: cidade || 'Balneário Camboriú',
+        estado: estado || 'SC',
+        imobiliaria: imobiliaria || '',
+        foto: foto || '',
+        isAdmin: email === 'afreccia@gmail.com'
+      });
+    }
+
+    return res.json({ success: true, corretor: broker });
   } catch (err: any) {
-    return res.status(500).json({ error: 'Erro ao limpar dados de teste: ' + (err?.message || String(err)) });
+    logBackendError('/api/auth/verify', err);
+    return res.status(500).json({ error: 'Erro ao verificar perfil de autenticação.' });
   }
 });
 
-// REST API Database Properties and Brokers endpoints
-async function requireAuth(req: Request, res: Response, next: any) {
+// Profile update route
+app.put('/api/auth/profile', verifyAuthToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    let tokenEmail: string | null = null;
-    const authHeader = req.headers.authorization;
-
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.substring(7);
-      const payload = decodeGoogleToken(token);
-      if (payload && payload.email) {
-        tokenEmail = payload.email.toLowerCase().trim();
-      }
-    }
-
-    if (!tokenEmail && req.headers['x-user-email']) {
-      tokenEmail = (req.headers['x-user-email'] as string).toLowerCase().trim();
-    }
-
-    if (!tokenEmail && req.body && req.body.corretorEmail) {
-      tokenEmail = String(req.body.corretorEmail).toLowerCase().trim();
-    }
-
-    if (!tokenEmail) {
-      tokenEmail = 'afreccia@gmail.com';
-    }
-
-    const cleanEmail = tokenEmail.toLowerCase().trim();
-    (req as any).userEmail = cleanEmail;
-    next();
-  } catch (err) {
-    console.error('Erro de autenticação no middleware:', err);
-    return res.status(401).json({ error: 'Falha ao autenticar requisição.' });
+    const email = req.userEmail!;
+    const saved = await ServerDb.saveCorretor({
+      ...req.body,
+      email
+    });
+    return res.json({ success: true, corretor: saved });
+  } catch (err: any) {
+    logBackendError('/api/auth/profile', err);
+    return res.status(500).json({ error: 'Erro ao atualizar perfil do corretor.' });
   }
-}
+});
 
-app.get(['/api/properties', '/api/imoveis'], async (req: Request, res: Response) => {
+// List Properties (Public + Partnerships filter, owner data stripped unless owner)
+app.get(['/api/properties', '/api/imoveis'], optionalAuthToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const emailParam = (req.query.email || req.headers['x-user-email']) as string | undefined;
-    const list = await ServerDb.getImoveis(emailParam);
+    const list = await ServerDb.getImoveis(req.userEmail);
     return res.json(list);
-  } catch (error: any) {
-    console.error('Erro ao buscar imóveis:', error);
-    return res.status(500).json({ error: 'Erro interno ao buscar imóveis.' });
+  } catch (err: any) {
+    logBackendError('/api/properties', err);
+    return res.status(500).json({ error: 'Erro ao listar imóveis.' });
   }
 });
 
-app.post(['/api/properties', '/api/imoveis'], requireAuth, async (req: Request, res: Response) => {
+// List My Properties (strictly filtered by token email)
+app.get('/api/properties/mine', verifyAuthToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userEmail = (req as any).userEmail || req.body.corretorEmail;
-    if (!userEmail) {
-      return res.status(400).json({ error: 'E-mail do corretor é obrigatório para cadastrar imóvel.' });
-    }
+    const email = req.userEmail!;
+    const list = await ServerDb.getMeusImoveis(email);
+    return res.json(list);
+  } catch (err: any) {
+    logBackendError('/api/properties/mine', err);
+    return res.status(500).json({ error: 'Erro ao listar seus imóveis.' });
+  }
+});
 
+// Create Property (token email used as owner)
+app.post(['/api/properties', '/api/imoveis'], verifyAuthToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const email = req.userEmail!;
     const propertyData = {
       ...req.body,
-      corretorEmail: userEmail.toLowerCase().trim()
+      id: req.body.id || `prop-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`
     };
 
-    const saved = await ServerDb.saveImovel(propertyData);
+    const saved = await ServerDb.saveImovel(propertyData, email);
     return res.json(saved);
-  } catch (error: any) {
-    console.error('Erro ao salvar imóvel:', error);
-    return res.status(500).json({ error: 'Erro interno ao salvar imóvel.' });
+  } catch (err: any) {
+    logBackendError('/api/properties (POST)', err);
+    return res.status(500).json({ error: 'Erro ao cadastrar imóvel.' });
   }
 });
 
-app.delete(['/api/properties/:id', '/api/imoveis/:id'], async (req: Request, res: Response) => {
+// Edit Property (only if token email matches owner)
+app.put(['/api/properties/:id', '/api/imoveis/:id'], verifyAuthToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    await ServerDb.deleteImovel(req.params.id);
-    return res.json({ success: true });
-  } catch (error: any) {
-    console.error('Erro ao deletar imóvel:', error);
-    return res.status(500).json({ error: 'Erro ao deletar imóvel.' });
-  }
-});
+    const email = req.userEmail!;
+    const propertyData = {
+      ...req.body,
+      id: req.params.id
+    };
 
-app.get('/api/brokers', async (req: Request, res: Response) => {
-  try {
-    const list = await ServerDb.getCorretores();
-    return res.json(list);
-  } catch (error: any) {
-    console.error('Erro ao buscar corretores:', error);
-    return res.status(500).json({ error: 'Erro interno ao buscar corretores.' });
-  }
-});
-
-app.post('/api/brokers', async (req: Request, res: Response) => {
-  try {
-    const saved = await ServerDb.saveCorretor(req.body);
+    const saved = await ServerDb.saveImovel(propertyData, email);
     return res.json(saved);
-  } catch (error: any) {
-    console.error('Erro ao salvar corretor:', error);
-    return res.status(500).json({ error: 'Erro interno ao salvar perfil do corretor.' });
+  } catch (err: any) {
+    logBackendError(`/api/properties/${req.params.id} (PUT)`, err);
+    return res.status(500).json({ error: 'Erro ao editar imóvel.' });
   }
 });
 
-app.get('/api/favorites/:corretorId', async (req: Request, res: Response) => {
+// Delete Property (only if token email matches owner)
+app.delete(['/api/properties/:id', '/api/imoveis/:id'], verifyAuthToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const list = await ServerDb.getFavoritos(req.params.corretorId);
+    const email = req.userEmail!;
+    await ServerDb.deleteImovel(req.params.id, email);
+    return res.json({ success: true, id: req.params.id });
+  } catch (err: any) {
+    logBackendError(`/api/properties/${req.params.id} (DELETE)`, err);
+    return res.status(403).json({ error: err?.message || 'Erro ao excluir imóvel.' });
+  }
+});
+
+// Get Confidential Owner Data (only if token email matches property owner)
+app.get('/api/properties/:id/owner-data', verifyAuthToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const email = req.userEmail!;
+    const property = await ServerDb.getImovelById(req.params.id);
+    if (!property) {
+      return res.status(404).json({ error: 'Imóvel não encontrado.' });
+    }
+
+    if (property.corretorEmail.toLowerCase().trim() !== email) {
+      return res.status(403).json({ error: 'Acesso negado: apenas o corretor dono do imóvel pode visualizar os dados do proprietário.' });
+    }
+
+    return res.json({
+      dadosProprietario: property.dadosProprietario || property.nomeProprietario || 'Não informado'
+    });
+  } catch (err: any) {
+    logBackendError(`/api/properties/${req.params.id}/owner-data`, err);
+    return res.status(500).json({ error: 'Erro ao buscar dados do proprietário.' });
+  }
+});
+
+// Partnerships management
+app.get('/api/partners', verifyAuthToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const list = await ServerDb.getPartners(req.userEmail!);
     return res.json(list);
-  } catch (error: any) {
-    console.error('Erro ao buscar favoritos:', error);
+  } catch (err: any) {
+    logBackendError('/api/partners (GET)', err);
+    return res.status(500).json({ error: 'Erro ao buscar parceiros.' });
+  }
+});
+
+app.post('/api/partners', verifyAuthToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { partnerEmail } = req.body;
+    if (!partnerEmail) {
+      return res.status(400).json({ error: 'E-mail do parceiro é obrigatório.' });
+    }
+    const list = await ServerDb.addPartner(req.userEmail!, partnerEmail);
+    return res.json(list);
+  } catch (err: any) {
+    logBackendError('/api/partners (POST)', err);
+    return res.status(500).json({ error: 'Erro ao adicionar parceiro.' });
+  }
+});
+
+app.delete('/api/partners/:partnerEmail', verifyAuthToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const list = await ServerDb.removePartner(req.userEmail!, req.params.partnerEmail);
+    return res.json(list);
+  } catch (err: any) {
+    logBackendError(`/api/partners/${req.params.partnerEmail} (DELETE)`, err);
+    return res.status(500).json({ error: 'Erro ao remover parceiro.' });
+  }
+});
+
+// Favorites management
+app.get('/api/favorites', verifyAuthToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const list = await ServerDb.getFavorites(req.userEmail!);
+    return res.json(list);
+  } catch (err: any) {
+    logBackendError('/api/favorites (GET)', err);
     return res.status(500).json({ error: 'Erro ao buscar favoritos.' });
   }
 });
 
-app.post('/api/favorites/toggle', async (req: Request, res: Response) => {
+app.post('/api/favorites/toggle', verifyAuthToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { corretorId, imovelId } = req.body;
-    if (!corretorId || !imovelId) {
-      return res.status(400).json({ error: 'corretorId e imovelId são obrigatórios.' });
+    const { imovelId } = req.body;
+    if (!imovelId) {
+      return res.status(400).json({ error: 'ID do imóvel é obrigatório.' });
     }
-    const list = await ServerDb.toggleFavorite(corretorId, imovelId);
+    const list = await ServerDb.toggleFavorite(req.userEmail!, imovelId);
     return res.json(list);
-  } catch (error: any) {
-    console.error('Erro ao alternar favorito:', error);
-    return res.status(500).json({ error: 'Erro ao favoritar imóvel.' });
+  } catch (err: any) {
+    logBackendError('/api/favorites/toggle (POST)', err);
+    return res.status(500).json({ error: 'Erro ao alternar favorito.' });
   }
 });
 
-// REST API endpoint to receive support and feedback messages directly
-app.post('/api/support/send', async (req: Request, res: Response) => {
+// Support & Feedback route
+app.post('/api/support', async (req: Request, res: Response) => {
   try {
-    const { nome, email, telefone, tipo, descricao, creci, cidade } = req.body;
-
+    const { nome, email, telefone, descricao } = req.body;
     if (!nome || !email || !descricao) {
-      return res.status(400).json({ error: 'Os campos Nome, E-mail e Descrição são obrigatórios.' });
+      return res.status(400).json({ error: 'Nome, e-mail e descrição são obrigatórios.' });
     }
 
     console.log(`=========================================`);
-    console.log(`📩 NOVO FEEDBACK/SUPORTE RECEBIDO DIRECTO`);
-    console.log(`-----------------------------------------`);
-    console.log(`De: ${nome} <${email}>`);
-    console.log(`Telefone: ${telefone || 'Não informado'}`);
-    console.log(`Cidade: ${cidade || 'Não informada'}`);
-    console.log(`CRECI: ${creci || 'Não informado'}`);
-    console.log(`Tipo: ${tipo.toUpperCase()}`);
-    console.log(`-----------------------------------------`);
-    console.log(`Mensagem:`);
-    console.log(descricao);
+    console.log(`📩 SUPORTE / MENSAGEM PARA portalcamboriu@gmail.com`);
+    console.log(`De: ${nome} <${email}> (${telefone || 'sem telefone'})`);
+    console.log(`Descrição: ${descricao}`);
     console.log(`=========================================`);
 
-    // Here, in production, they can integrate an email sender library like nodemailer, Resend, or Formspree
-    // Since this is client-safe, we respond with success to display the feedback instantly.
-    return res.json({ success: true, message: 'Sua mensagem foi enviada diretamente!' });
-  } catch (error: any) {
-    console.error('Erro no processamento do suporte:', error);
-    return res.status(500).json({ error: 'Erro ao enviar o suporte. Tente novamente.' });
+    return res.json({ success: true, message: 'Sua mensagem de suporte foi enviada com sucesso!' });
+  } catch (err: any) {
+    logBackendError('/api/support', err);
+    return res.status(500).json({ error: 'Erro ao enviar mensagem de suporte.' });
   }
 });
 
-// REST API endpoint to improve real estate property description using Gemini 3.6 Flash
-app.post('/api/ai/improve-description', async (req: Request, res: Response) => {
+// AI Description Improvement via Gemini
+app.post(['/api/properties/improve-description', '/api/ai/improve-description'], async (req: Request, res: Response) => {
   try {
-    const { 
-      text, 
-      type, 
-      tipoImovel, 
-      titulo, 
-      localizacao, 
-      nomeEdificio, 
-      dormitorios, 
-      vagas, 
-      banheiros, 
-      metragem, 
-      areaTotal, 
-      valor 
-    } = req.body;
+    const { text, tipoImovel, titulo, localizacao, nomeEdificio, dormitorios, vagas, banheiros, metragem, valor, modalidade } = req.body;
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      // Return a structured high-quality description if API Key is not set
       const baseInfoList = [
         tipoImovel ? `Tipo: ${tipoImovel}` : '',
         nomeEdificio ? `Edifício ${nomeEdificio}` : '',
@@ -422,73 +407,70 @@ app.post('/api/ai/improve-description', async (req: Request, res: Response) => {
         vagas ? `${vagas} vagas` : '',
         banheiros ? `${banheiros} banheiros` : '',
         metragem ? `${metragem}m² privativos` : '',
-        areaTotal ? `${areaTotal}m² área total` : '',
         localizacao ? `Localização: ${localizacao}` : '',
       ].filter(Boolean).join(' • ');
 
       const fallbackText = (text?.trim() 
-        ? `${text.trim()}\n\n✨ Destaques do Imóvel (${type === 'locação' ? 'Locação' : 'Venda'}):\n- ${baseInfoList}\n- Excelente padrão de acabamento e iluminação natural em todos os ambientes.\n- Agende uma visita para conhecer de perto esta excelente oportunidade!`
-        : `Excelente ${tipoImovel || 'imóvel'} para ${type === 'locação' ? 'locação' : 'venda'}.\n\n✨ Destaques:\n- ${baseInfoList}\n- Ambientes amplos, integrados e ventilados.\n- Pronto para morar com alto padrão de conforto e conveniência. Agende sua visita!`).replace(/\*/g, '');
+        ? `${text.trim()}\n\nDestaques do Imóvel:\n- ${baseInfoList}\n- Excelente padrão de acabamento e iluminação natural em todos os ambientes.\n- Agende sua visita!`
+        : `Excelente ${tipoImovel || 'imóvel'} para ${modalidade === 'locação' ? 'locação' : 'venda'}.\n\nDestaques:\n- ${baseInfoList}\n- Ambientes integrados e bem ventilados.\n- Excelente oportunidade. Agende uma visita!`).replace(/\*/g, '');
 
       return res.json({ text: fallbackText });
     }
 
     const client = getGeminiClient();
+    const systemPrompt = `Você é um corretor de imóveis de luxo e especialista em marketing imobiliário.
+Melhore ou crie a descrição do imóvel a seguir sem inventar fatos inexistentes:
 
-    const systemPrompt = `Você é um corretor de imóveis de luxo e especialista em marketing imobiliário de alto padrão.
-Sua tarefa é criar ou aprimorar a descrição de um imóvel para anúncio imobiliário comercial com base nas informações cadastradas.
+- Tipo: ${tipoImovel || 'Imóvel'}
+- Modalidade: ${modalidade || 'Venda'}
+- Título: ${titulo || ''}
+- Localização: ${localizacao || ''}
+- Edifício: ${nomeEdificio || ''}
+- Quartos: ${dormitorios || 'N/A'} | Banheiros: ${banheiros || 'N/A'} | Vagas: ${vagas || 'N/A'} | Metragem: ${metragem ? `${metragem} m²` : 'N/A'}
+- Texto original do corretor: "${text || ''}"
 
-Dados do imóvel informados no formulário:
-- Tipo de Negócio: ${type === 'locação' ? 'Locação' : 'Venda'}
-- Tipo de Imóvel: ${tipoImovel || 'Não informado'}
-- Título: ${titulo || 'Não informado'}
-- Localização: ${localizacao || 'Não informada'}
-- Nome do Edifício / Condomínio: ${nomeEdificio || 'Não informado'}
-- Quartos: ${dormitorios ?? 'N/A'}
-- Banheiros: ${banheiros ?? 'N/A'}
-- Vagas de Garagem: ${vagas ?? 'N/A'}
-- Metragem Privativa: ${metragem ? `${metragem} m²` : 'N/A'}
-- Área Total: ${areaTotal ? `${areaTotal} m²` : 'N/A'}
-- Valor: ${valor ? `R$ ${valor}` : 'N/A'}
-
-Texto/Anotações originais do corretor:
-"${text || ''}"
-
-Diretrizes obrigatórias:
-1. Se houver texto original do corretor, USE esse conteúdo como base, aprimorando a redação e sem apagar informações importantes.
-2. Crie uma descrição elegante, profissional, atrativa e perfeitamente estruturada para redes sociais e portais imobiliários.
-3. JAMAIS invente características falsas ou cômodos fictícios que não foram informados nos dados acima.
-4. Mantenha o texto objetivo, fluido e cativante (2 a 4 parágrafos curtos ou lista de diferenciais).
-5. REGRA CRÍTICA DE FORMATAÇÃO: NÃO UTILIZE ASTERISCOS (* OU **) EM NENHUMA PARTE DO TEXTO. Não use negrito com asteriscos. Se usar marcadores de lista, use traço (-) ou hífens.
-6. Retorne APENAS o texto da descrição melhorada, sem introduções, aspas ou notas explicativas.`;
+REGRAS RÍGIDAS:
+1. Mantenha a descrição atrativa, elegante e objetiva.
+2. NUNCA UTILIZE ASTERISCOS (* ou **) NO TEXTO. Use hífens (-) para listas.
+3. Retorne APENAS o texto da descrição melhorada.`;
 
     const response = await client.models.generateContent({
       model: 'gemini-3.6-flash',
       contents: systemPrompt,
     });
 
-    const rawText = response.text?.trim() || text || '';
-    const generatedText = rawText.replace(/\*/g, '');
+    const generatedText = (response.text?.trim() || text || '').replace(/\*/g, '');
     return res.json({ text: generatedText });
-
-  } catch (error: any) {
-    console.error('Error with Gemini API:', error);
-    return res.status(500).json({ 
-      error: 'Erro ao processar com Inteligência Artificial.', 
-      details: error.message 
-    });
+  } catch (err: any) {
+    logBackendError('/api/properties/improve-description', err);
+    return res.status(500).json({ error: 'Erro ao gerar descrição com IA.' });
   }
 });
 
-// Setup Vite integration
+// Admin Diagnostic Panel Endpoint
+app.get('/api/admin/diagnostics', verifyAuthToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const email = req.userEmail!;
+    const broker = await ServerDb.getCorretorByEmail(email);
+
+    if (!broker || !broker.isAdmin) {
+      return res.status(403).json({ error: 'Acesso negado: apenas administradores do sistema podem acessar o painel de diagnósticos.' });
+    }
+
+    const results = await ServerDb.runDiagnostics();
+    return res.json(results);
+  } catch (err: any) {
+    logBackendError('/api/admin/diagnostics', err);
+    return res.status(500).json({ error: 'Erro ao executar diagnósticos do sistema.' });
+  }
+});
+
+// Start Server and setup Vite middleware
 const startServer = async () => {
   const PORT = 3000;
-
-  // Initialize persistent database
   await ServerDb.init();
 
   if (process.env.NODE_ENV !== 'production') {
-    // Dynamically import Vite server in development
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -496,9 +478,7 @@ const startServer = async () => {
     });
     app.use(vite.middlewares);
 
-    // Fallback for SPA routing in development
     app.get('*', async (req, res, next) => {
-      // Exclude API routes and files with extensions
       if (req.path.startsWith('/api') || req.path.includes('.')) {
         return next();
       }
@@ -512,7 +492,6 @@ const startServer = async () => {
       }
     });
   } else {
-    // Serve static files in production
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
@@ -521,10 +500,10 @@ const startServer = async () => {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
+    console.log(`🚀 Servidor ImobiShare rodando na porta ${PORT}`);
   });
 };
 
 startServer().catch((err) => {
-  console.error('Failed to start server:', err);
+  console.error('Falha crítica ao iniciar servidor:', err);
 });

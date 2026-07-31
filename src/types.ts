@@ -6,55 +6,100 @@
 export interface Corretor {
   id: string;
   nome: string;
+  email: string; // Chave primária do corretor
   creci: string;
   telefone: string;
   whatsapp: string;
-  email: string;
-  foto: string;
   cidade: string;
   estado?: string;
   imobiliaria?: string;
-  qtdImoveis?: number;
-  qtdLocacoes?: number;
+  tipoAtuacao?: 'autonomo' | 'imobiliaria'; // Autônomo ou Imobiliária
+  foto?: string;
+  slugSite?: string; // Slug único para site próprio do corretor
+  isAdmin?: boolean; // Se é administrador com acesso à aba "Testes"
   restringirParceiros?: boolean;
   parceirosEmails?: string[];
+  
+  // Contadores para o perfil
+  qtdVenda?: number;
+  qtdLocacao?: number;
+  qtdParcerias?: number;
 }
 
 export interface Imovel {
   id: string;
-  titulo: string;
-  descricao: string;
-  valor: number; // Valor de Venda (ou principal)
-  valorLocacao?: number; // Valor de Locação / Aluguel por mês
-  tipo: 'venda' | 'locação' | 'ambos';
-  tipoImovel?: 'Apartamento' | 'Casa' | 'Casa em condomínio' | 'Cobertura' | 'Terreno' | 'Comercial' | 'Outro';
+  corretorEmail: string; // E-mail do corretor proprietário (fonte da verdade)
+  corretorId?: string;
+  corretorNome?: string;
+  
+  // Localização
+  cep?: string;
+  endereco?: string; // ou localizacao
+  localizacao?: string;
   cidade: string;
   bairro: string;
-  localizacao: string; // endereço completo
-  cep?: string;
+  
+  // Tipo e Modalidade
+  tipoImovel: 'Apartamento' | 'Casa' | 'Casa em condomínio' | 'Cobertura' | 'Terreno' | 'Comercial' | 'Outro';
+  tipo: 'venda' | 'locação' | 'ambos'; // Modalidade
+  
+  // Valores
+  valor: number; // Valor de Venda (principal)
+  valorVenda?: number;
+  valorVendaComDesconto?: number;
+  valorLocacao?: number;
+  
+  // Especificações
+  dormitorios: number; // quartos
+  quartos?: number;
+  banheiros: number; // bwc
+  vagas: number;
+  metragem: number; // area_privativa m²
+  areaTotal?: number;
+  
+  // Informações do anúncio
   nomeEdificio?: string;
-  nomeProprietario: string; // só visível para o corretor proprietário
-  telefoneProprietario: string; // só visível para o corretor proprietário
-  favorito: boolean; // se é favorito de forma geral ou usuário específico
-  compartilhar: boolean; // se está compartilhado com outros corretores (padrão true)
-  fotos: string[];
-  dataCadastro: string; // ISO String
-  corretorId: string; // ID do corretor proprietário do cadastro
-  corretorEmail?: string; // E-mail do corretor proprietário
-  corretorNome: string; // Nome cacheado para facilidade de exibição
-  dormitorios?: number;
-  vagas?: number;
-  banheiros?: number;
-  metragem?: number; // Metragem privativa m²
-  areaTotal?: number; // Área total m²
+  titulo: string;
+  palavraDestacada?: string; // Máximo 20 caracteres
+  descricao: string;
+  
+  // Visibilidade
+  visibilidade: 'todos' | 'grupo_especifico'; // Compartilhar com todos ou com grupo específico
+  compartilhar?: boolean;
+  
+  // Dados confidenciais do proprietário (Apenas retornado pelo backend se o token for do dono)
+  dadosProprietario?: string;
+  nomeProprietario?: string;
+  telefoneProprietario?: string;
+  
+  // Mídia e metadados
+  fotos: string[]; // Máximo 15 imagens
+  dataCadastro: string; // ISO string
+  favorito?: boolean;
+  
+  // Integração / Coordenadas
   integrado?: boolean;
   integracaoOrigem?: string;
   latitude?: number;
   longitude?: number;
 }
 
+export interface Parceria {
+  corretorEmail: string;
+  corretorParceiroEmail: string;
+}
+
 export interface Favorito {
-  id: string;
-  corretorId: string;
+  corretorEmail: string;
   imovelId: string;
+}
+
+export interface DiagnosticCheck {
+  id: string;
+  name: string;
+  description: string;
+  status: 'idle' | 'running' | 'success' | 'error';
+  durationMs?: number;
+  message?: string;
+  details?: any;
 }
