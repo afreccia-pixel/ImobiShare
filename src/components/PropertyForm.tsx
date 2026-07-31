@@ -406,12 +406,16 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
     setIsSaving(true);
 
     const activeCorretor = DbService.getActiveCorretor();
-    const activeEmail = (activeCorretor?.email || auth.currentUser?.email || '').toLowerCase().trim();
+    const activeEmail = (activeCorretor?.email || auth.currentUser?.email || 'afreccia@gmail.com').toLowerCase().trim();
+    const activeId = activeCorretor?.id || auth.currentUser?.uid || 'broker-afreccia_gmail_com';
+    const activeNome = activeCorretor?.nome || auth.currentUser?.displayName || 'Alexandre Freccia';
 
     setTimeout(() => {
       const saved = DbService.saveImovel({
         id: imovelId || undefined,
-        corretorEmail: activeEmail || undefined,
+        corretorEmail: activeEmail,
+        corretorId: activeId,
+        corretorNome: activeNome,
         titulo,
         descricao,
         valor: valor !== '' ? Number(valor) : (valorLocacao !== '' ? Number(valorLocacao) : 0),

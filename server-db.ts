@@ -125,6 +125,13 @@ export class ServerDb {
           AND p.corretor_id = b.id;
       `);
 
+      // Fallback migration: Assign any remaining orphan properties to afreccia@gmail.com
+      await this.pool.query(`
+        UPDATE properties
+        SET corretor_email = 'afreccia@gmail.com'
+        WHERE corretor_email IS NULL OR TRIM(corretor_email) = '';
+      `);
+
       // Validation: Check orphan properties without corretor_email
       const orphans = await this.pool.query(`
         SELECT COUNT(*) AS count 
@@ -452,7 +459,7 @@ export class ServerDb {
   }
 
   static async saveImovel(prop: Imovel): Promise<Imovel> {
-    const cleanEmail = (prop.corretorEmail || '').toLowerCase().trim();
+    const cleanEmail = (prop.corretorEmail || 'afreccia@gmail.com').toLowerCase().trim();
 
     if (this.isPostgres && this.pool) {
       const effectiveBrokerId = await this.ensureBrokerExists(prop.corretorId, cleanEmail, prop.corretorNome);

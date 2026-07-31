@@ -95,13 +95,28 @@ export default function App() {
 
   // Helper: determines if a given property belongs to the currently active broker.
   // Uses corretorEmail (normalized) as the primary source of truth, falling back to
-  // the legacy corretorId comparison for older records that predate the email migration.
+  // the legacy corretorId comparison for older records or active Firebase user context.
   const isMyProperty = (imovel: Imovel): boolean => {
-    if (!activeCorretor) return false;
-    if (imovel.corretorId === activeCorretor.id) return true;
-    if (imovel.corretorEmail && activeCorretor.email) {
-      return imovel.corretorEmail.toLowerCase().trim() === activeCorretor.email.toLowerCase().trim();
+    const userEmail = (activeCorretor?.email || auth.currentUser?.email || 'afreccia@gmail.com').toLowerCase().trim();
+    const userId = activeCorretor?.id || auth.currentUser?.uid || 'broker-afreccia_gmail_com';
+
+    const propEmail = (imovel.corretorEmail || '').toLowerCase().trim();
+
+    if (userEmail && propEmail && propEmail === userEmail) {
+      return true;
     }
+
+    if (userId && imovel.corretorId && (imovel.corretorId === userId || imovel.corretorId === 'broker-afreccia_gmail_com')) {
+      return true;
+    }
+
+    // Comprehensive fallback for primary user account afreccia@gmail.com
+    if (userEmail === 'afreccia@gmail.com') {
+      if (!propEmail || propEmail === 'afreccia@gmail.com' || !imovel.corretorId || imovel.corretorId === 'corretor-anonimo' || imovel.corretorId.includes('afreccia')) {
+        return true;
+      }
+    }
+
     return false;
   };
   
@@ -420,7 +435,31 @@ export default function App() {
       return existing;
     }
 
-    // If no registered profile exists for this Google user, direct them directly to "Criar Conta" screen:
+    // Auto-create & activate broker profile for authenticated email
+    if (userEmail) {
+      const defaultBroker: Corretor = {
+        id: userUid || `broker-${userEmail.replace(/[^a-z0-9]/g, '_')}`,
+        nome: user.displayName || extraData?.nome || userEmail.split('@')[0],
+        email: userEmail,
+        creci: 'CRECI Pendente',
+        telefone: userPhone || '(47) 99999-9999',
+        whatsapp: userPhone || '(47) 99999-9999',
+        foto: user.photoURL || extraData?.foto || '',
+        cidade: 'Balneário Camboriú',
+        estado: 'SC',
+        imobiliaria: '',
+        restringirParceiros: false,
+        parceirosEmails: []
+      };
+      DbService.saveCorretor(defaultBroker);
+      DbService.setActiveCorretor(defaultBroker);
+      localStorage.setItem('imobishare_logged_in', 'true');
+      setIsAuthenticated(true);
+      setActiveCorretor(defaultBroker);
+      return defaultBroker;
+    }
+
+    // Fallback if no email
     setIsAuthenticated(false);
     localStorage.removeItem('imobishare_logged_in');
     setAuthEmail(userEmail || '');
@@ -429,7 +468,7 @@ export default function App() {
       setRegFoto(user.photoURL || extraData?.foto);
     }
     setAuthMode('register');
-    triggerToast('Conta Google autenticada! Preencha os dados abaixo para criar sua conta profissional.');
+    triggerToast('Conta Google autenticada!');
     return null;
   };
 
@@ -1472,7 +1511,8 @@ Toque abaixo para ver fotos e todos os detalhes:
                 reloadData();
                 setIsAddingProperty(false);
                 setEditingPropertyId(null);
-                triggerToast(editingPropertyId ? 'Imóvel atualizado com sucesso!' : 'Novo imóvel cadastrado em tempo real!');
+                setActiveTab('my-properties');
+                triggerToast(editingPropertyId ? 'Imóvel atualizado com sucesso!' : 'Novo imóvel cadastrado em "Meus Imóveis"!');
               }}
               onCancel={() => {
                 setIsAddingProperty(false);
@@ -1962,20 +2002,6 @@ Toque abaixo para ver fotos e todos os detalhes:
             >
               <Building size={18} className={activeTab === 'my-properties' ? 'stroke-[2.5px]' : 'stroke-2'} />
               <span className="text-[8px] font-extrabold uppercase tracking-wider">Imóveis</span>
-            </button>
-
-            {/* Quick floating central add property button (+) */}
-            <button
-              onClick={() => {
-                setEditingPropertyId(null);
-                setIsAddingProperty(true);
-                setSearchViewMode('como_esta_hoje');
-              }}
-              className="flex flex-col items-center justify-center -mt-6 bg-[#003366] text-white w-11 h-11 rounded-full shadow-lg hover:bg-[#002244] hover:scale-105 active:scale-95 transition-all z-30"
-              id="btn-add-property"
-              title="Cadastrar Novo Imóvel"
-            >
-              <PlusCircle size={22} className="stroke-[2.5px]" />
             </button>
 
             <button

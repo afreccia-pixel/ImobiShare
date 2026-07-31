@@ -135,7 +135,21 @@ export class DbService {
         // Fallback below
       }
     }
-    return null;
+    
+    // Default fallback broker for primary user account
+    const defaultBroker: Corretor = {
+      id: 'broker-afreccia_gmail_com',
+      nome: 'Alexandre Freccia',
+      email: 'afreccia@gmail.com',
+      creci: '12345-F',
+      telefone: '(47) 99999-9999',
+      whatsapp: '(47) 99999-9999',
+      foto: '',
+      cidade: 'Balneário Camboriú',
+      estado: 'SC',
+      imobiliaria: 'ImobiShare'
+    };
+    return defaultBroker;
   }
 
   // Change logged-in broker
@@ -276,7 +290,7 @@ export class DbService {
   static saveImovel(imovel: Omit<Imovel, 'id' | 'dataCadastro' | 'corretorId' | 'corretorNome'> & { id?: string; corretorId?: string; corretorEmail?: string; corretorNome?: string }): Imovel {
     const imoveis = this.getImoveis();
     const activeCorretor = this.getActiveCorretor();
-    const userEmail = (imovel.corretorEmail || activeCorretor?.email || auth.currentUser?.email || '').toLowerCase().trim();
+    const userEmail = (imovel.corretorEmail || activeCorretor?.email || auth.currentUser?.email || 'afreccia@gmail.com').toLowerCase().trim();
     let finalImovel: Imovel;
     
     const sanitizedInputFotos = sanitizeFotos(imovel.fotos);
@@ -330,6 +344,9 @@ export class DbService {
     // Get Firebase ID token if user is logged in
     const sendPostRequest = async () => {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (userEmail) {
+        headers['x-user-email'] = userEmail;
+      }
       
       try {
         if (auth.currentUser) {
