@@ -62,22 +62,22 @@ export function PropertyCard({
       whileHover={{ y: -1 }}
       transition={{ duration: 0.2 }}
       onClick={handleCardClick}
-      className={`bg-white border rounded-xl overflow-hidden shadow-xs hover:shadow-sm transition-all flex flex-row p-2 gap-2.5 cursor-pointer ${
+      className={`bg-white border rounded-xl overflow-hidden shadow-xs hover:shadow-sm transition-all flex flex-row p-2.5 gap-2.5 sm:gap-3 items-stretch min-h-[105px] cursor-pointer ${
         isSelected ? 'border-[#003366] ring-1 ring-[#003366]/20 bg-[#003366]/[0.01]' : 'border-slate-100'
       }`}
       id={`property-card-${imovel.id}`}
     >
       {/* Property Image Container */}
-      <div className="relative w-20 h-20 sm:w-24 sm:h-24 flex-shrink-0 rounded-lg overflow-hidden bg-slate-100">
+      <div className="relative w-28 sm:w-32 min-h-[105px] flex-shrink-0 self-stretch rounded-lg overflow-hidden bg-slate-100 border border-slate-100">
         <img
           src={getValidImage(imovel.fotos?.[0])}
           alt=""
           onError={handleImageError}
           referrerPolicy="no-referrer"
-          className="w-full h-full object-cover"
+          className="absolute inset-0 w-full h-full object-cover"
         />
         {/* Buy / Rent Badge & Integrated Badge */}
-        <div className="absolute top-1 left-1 flex flex-col gap-0.5">
+        <div className="absolute top-1 left-1 flex flex-col gap-0.5 z-10">
           <span className={`text-[6.5px] font-extrabold uppercase tracking-tight text-white px-1 py-0.5 rounded-xs shadow-xs ${
             imovel.tipo === 'venda' ? 'bg-[#003366]' : imovel.tipo === 'locação' ? 'bg-emerald-700' : 'bg-indigo-900'
           }`}>
@@ -90,20 +90,29 @@ export function PropertyCard({
           )}
         </div>
 
+        {/* Palavra Destacada Badge on Main Image */}
+        {imovel.palavraDestacada?.trim() && (
+          <div className="absolute bottom-1 left-1 right-1 max-w-full z-10">
+            <span className="block truncate text-[6.5px] sm:text-[7.5px] font-black uppercase tracking-wider text-white bg-indigo-600/90 backdrop-blur-xs px-1 py-0.5 rounded-xs shadow-xs text-center border border-indigo-400/30">
+              {imovel.palavraDestacada.trim()}
+            </span>
+          </div>
+        )}
+
         {/* Private view badge if not shared */}
         {!imovel.compartilhar && (
-          <span className="absolute bottom-1 left-1 bg-slate-950/80 backdrop-blur-xs text-white p-0.5 rounded-full shadow-xs" title="Visível apenas para você">
+          <span className="absolute bottom-1 right-1 bg-slate-950/80 backdrop-blur-xs text-white p-0.5 rounded-full shadow-xs z-10" title="Visível apenas para você">
             <EyeOff size={9} />
           </span>
         )}
       </div>
 
       {/* Content Details */}
-      <div className="flex-grow min-w-0 flex flex-col justify-between h-20 sm:h-24 py-0.5">
+      <div className="flex-grow min-w-0 flex flex-col justify-between py-0.5 gap-1.5 min-h-[105px]">
         <div>
           {/* Top Row: Title & Optional Checkbox */}
           <div className="flex items-start justify-between gap-1">
-            <h3 className="font-extrabold text-slate-900 text-xs sm:text-sm truncate max-w-[85%] tracking-tight leading-tight">
+            <h3 className="font-extrabold text-slate-900 text-xs sm:text-sm tracking-tight leading-snug line-clamp-2">
               {imovel.nomeEdificio?.trim() ? imovel.nomeEdificio : imovel.titulo}
             </h3>
 
@@ -160,22 +169,71 @@ export function PropertyCard({
           <div className="flex flex-col">
             {imovel.tipo === 'ambos' ? (
               <div className="flex flex-col">
-                <span className="font-extrabold text-[#003366] text-xs leading-tight">
-                  {formatPrice(imovel.valor)} <span className="text-[9px] font-semibold text-slate-400">(Venda)</span>
-                </span>
-                <span className="font-extrabold text-emerald-800 text-[11px] leading-tight">
-                  {formatPrice(imovel.valorLocacao || 0)}<span className="text-[8px] font-normal text-emerald-600">/mês (Locação)</span>
+                {imovel.valorAnterior && imovel.valorAnterior > imovel.valor ? (
+                  <>
+                    <span className="text-[7.5px] text-slate-400 line-through font-semibold">
+                      De {formatPrice(imovel.valorAnterior)}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-[11px] sm:text-xs font-bold text-slate-800">
+                        <span className="text-[8px] text-slate-400 font-normal">Por </span>{formatPrice(imovel.valor)}
+                      </span>
+                      <span className="text-[7px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
+                        Baixou
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <span className="font-extrabold text-[#003366] text-[11px] sm:text-xs leading-tight">
+                    {formatPrice(imovel.valor)} <span className="text-[8px] font-semibold text-slate-400">(Venda)</span>
+                  </span>
+                )}
+                <span className="font-bold text-slate-700 text-[10px] leading-tight mt-0.5">
+                  {formatPrice(imovel.valorLocacao || 0)}<span className="text-[8px] font-normal text-slate-400">/mês (Locação)</span>
                 </span>
               </div>
             ) : imovel.tipo === 'locação' ? (
-              <span className="font-extrabold text-emerald-800 text-xs sm:text-sm leading-tight">
-                {formatPrice(imovel.valorLocacao || imovel.valor)}
-                <span className="text-[9px] font-normal text-slate-500"> /mês</span>
-              </span>
+              imovel.valorLocacaoAnterior && imovel.valorLocacaoAnterior > (imovel.valorLocacao || imovel.valor) ? (
+                <div className="flex flex-col leading-none">
+                  <span className="text-[7.5px] text-slate-400 line-through font-semibold">
+                    De {formatPrice(imovel.valorLocacaoAnterior)}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[11px] sm:text-xs font-bold text-slate-800">
+                      <span className="text-[8px] text-slate-400 font-normal">Por </span>{formatPrice(imovel.valorLocacao || imovel.valor)}
+                      <span className="text-[8px] font-normal text-slate-400"> /mês</span>
+                    </span>
+                    <span className="text-[7px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
+                      Baixou
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <span className="font-extrabold text-slate-800 text-[11px] sm:text-xs leading-tight">
+                  {formatPrice(imovel.valorLocacao || imovel.valor)}
+                  <span className="text-[8px] font-normal text-slate-400"> /mês</span>
+                </span>
+              )
             ) : (
-              <span className="font-extrabold text-[#003366] text-xs sm:text-sm leading-tight">
-                {formatPrice(imovel.valor)}
-              </span>
+              imovel.valorAnterior && imovel.valorAnterior > imovel.valor ? (
+                <div className="flex flex-col leading-none">
+                  <span className="text-[7.5px] text-slate-400 line-through font-semibold">
+                    De {formatPrice(imovel.valorAnterior)}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[11px] sm:text-xs font-bold text-slate-800">
+                      <span className="text-[8px] text-slate-400 font-normal">Por </span>{formatPrice(imovel.valor)}
+                    </span>
+                    <span className="text-[7px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
+                      Baixou
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <span className="font-extrabold text-[#003366] text-[11px] sm:text-xs leading-tight">
+                  {formatPrice(imovel.valor)}
+                </span>
+              )
             )}
           </div>
 

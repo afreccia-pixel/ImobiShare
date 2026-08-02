@@ -46,9 +46,13 @@ export interface Imovel {
   
   // Valores
   valor: number; // Valor de Venda (principal)
+  valorAnterior?: number; // Valor anterior caso o preço tenha sido reduzido
   valorVenda?: number;
   valorVendaComDesconto?: number;
+  temDesconto?: boolean;
+  valorDesconto?: number;
   valorLocacao?: number;
+  valorLocacaoAnterior?: number; // Valor de locação anterior caso tenha reduzido
   
   // Especificações
   dormitorios: number; // quartos
@@ -63,6 +67,7 @@ export interface Imovel {
   titulo: string;
   palavraDestacada?: string; // Máximo 20 caracteres
   descricao: string;
+  informacoes?: string; // Máximo 200 caracteres (chaves, horários, senha da porta - visível para corretores)
   
   // Visibilidade
   visibilidade: 'todos' | 'grupo_especifico'; // Compartilhar com todos ou com grupo específico

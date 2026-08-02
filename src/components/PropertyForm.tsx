@@ -7,7 +7,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Imovel } from '../types';
 import { DbService } from '../services/db';
 import { auth } from '../services/firebase';
-import { Sparkles, MapPin, Search, Plus, Trash2, Check, ArrowLeft, Image as ImageIcon, Upload, Building2, Bed, Car, Maximize, Bath } from 'lucide-react';
+import { Sparkles, MapPin, Search, Plus, Trash2, Check, ArrowLeft, Image as ImageIcon, Upload, Building2, Bed, Car, Maximize, Bath, Star, GripVertical } from 'lucide-react';
 import { getValidImage, handleImageError } from '../utils/imageUtils';
 
 interface PropertyFormProps {
@@ -53,10 +53,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
   const [valor, setValor] = useState<number | ''>('');
   const [valorLocacao, setValorLocacao] = useState<number | ''>('');
 
-  // 4. Área Total
-  const [areaTotal, setAreaTotal] = useState<number | ''>('');
-
-  // 5. Quartos (Dormitórios)
+  // 4. Quartos (Dormitórios)
   const [dormitorios, setDormitorios] = useState<number | ''>('');
 
   // 6. Garagem (Vagas)
@@ -71,11 +68,15 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
   // 9. Nome do edifício
   const [nomeEdificio, setNomeEdificio] = useState('');
 
-  // 10. Título
+  // 10. Título e Palavra Destacada
   const [titulo, setTitulo] = useState('');
+  const [palavraDestacada, setPalavraDestacada] = useState('');
 
   // 11. Descrição
   const [descricao, setDescricao] = useState('');
+
+  // 12. Informações
+  const [informacoes, setInformacoes] = useState('');
 
   // 12. Preferências
   const [favorito, setFavorito] = useState(false);
@@ -91,6 +92,10 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
+  // Drag and drop states for photo reordering
+  const [draggedPhotoIndex, setDraggedPhotoIndex] = useState<number | null>(null);
+  const [dragOverPhotoIndex, setDragOverPhotoIndex] = useState<number | null>(null);
+
   // Conditional mandatory status check: Terreno or Comercial makes bedrooms, building name and garage optional
   const isLandOrCommercial = tipoImovel === 'Terreno' || tipoImovel === 'Comercial';
 
@@ -105,17 +110,18 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         setCidade(found.cidade || DbService.getActiveCorretor()?.cidade || 'Balneário Camboriú');
         setBairro(found.bairro || '');
         setTipoImovel((found.tipoImovel as PropertyTypeOption) || 'Apartamento');
-        setTipo(found.tipo || 'venda');
+        setTipo(found.tipo === 'ambos' ? 'venda' : (found.tipo || 'venda'));
         setValor(found.valor || '');
         setValorLocacao(found.valorLocacao || '');
-        setAreaTotal(found.areaTotal ?? found.metragem ?? '');
         setDormitorios(found.dormitorios ?? '');
         setVagas(found.vagas ?? '');
         setBanheiros(found.banheiros ?? '');
         setMetragem(found.metragem ?? '');
         setNomeEdificio(found.nomeEdificio || '');
         setTitulo(found.titulo || '');
+        setPalavraDestacada(found.palavraDestacada || '');
         setDescricao(found.descricao || '');
+        setInformacoes(found.informacoes || '');
         setFavorito(found.favorito || false);
         setCompartilhar(found.compartilhar !== false);
         setNomeProprietario(found.nomeProprietario || '');
@@ -215,7 +221,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         dormitorios: dormitorios !== '' ? Number(dormitorios) : undefined,
         vagas: vagas !== '' ? Number(vagas) : undefined,
         banheiros: banheiros !== '' ? Number(banheiros) : undefined,
-        metragem: metragem !== '' ? Number(metragem) : (areaTotal !== '' ? Number(areaTotal) : undefined),
+        metragem: metragem !== '' ? Number(metragem) : undefined,
         valor: valor !== '' ? Number(valor) : undefined,
       });
 
@@ -276,12 +282,25 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+    if (fotos.length >= 15) {
+      setErrorMsg('Você já atingiu o limite máximo de 15 fotos por imóvel.');
+      e.target.value = '';
+      return;
+    }
+
+    const availableSlots = 15 - fotos.length;
+    const filesToUpload: File[] = (Array.from(files) as File[]).slice(0, availableSlots);
+
+    if (files.length > availableSlots) {
+      setErrorMsg(`Foram selecionadas ${availableSlots} foto(s) para respeitar o limite máximo de 15.`);
+    }
+
+    for (let i = 0; i < filesToUpload.length; i++) {
+      const file = filesToUpload[i];
       try {
         const compressedBase64 = await compressImage(file);
         setFotos((prev) => {
-          if (!prev.includes(compressedBase64)) {
+          if (prev.length < 15 && !prev.includes(compressedBase64)) {
             return [...prev, compressedBase64];
           }
           return prev;
@@ -293,7 +312,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
           if (typeof reader.result === 'string') {
             const resultStr = reader.result;
             setFotos((prev) => {
-              if (!prev.includes(resultStr)) {
+              if (prev.length < 15 && !prev.includes(resultStr)) {
                 return [...prev, resultStr];
               }
               return prev;
@@ -310,6 +329,75 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
     setFotos(fotos.filter((_, i) => i !== index));
   };
 
+  const handleMovePhotoLeft = (index: number) => {
+    if (index <= 0) return;
+    setFotos(prev => {
+      const copy = [...prev];
+      const temp = copy[index - 1];
+      copy[index - 1] = copy[index];
+      copy[index] = temp;
+      return copy;
+    });
+  };
+
+  const handleMovePhotoRight = (index: number) => {
+    if (index >= fotos.length - 1) return;
+    setFotos(prev => {
+      const copy = [...prev];
+      const temp = copy[index + 1];
+      copy[index + 1] = copy[index];
+      copy[index] = temp;
+      return copy;
+    });
+  };
+
+  const handleSetPrimaryPhoto = (index: number) => {
+    if (index <= 0) return;
+    setFotos(prev => {
+      const selected = prev[index];
+      const rest = prev.filter((_, i) => i !== index);
+      return [selected, ...rest];
+    });
+  };
+
+  // Drag and drop photo reordering handlers
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedPhotoIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', index.toString());
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverPhotoIndex !== index) {
+      setDragOverPhotoIndex(index);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDragOverPhotoIndex(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault();
+    if (draggedPhotoIndex !== null && draggedPhotoIndex !== targetIndex) {
+      setFotos(prev => {
+        const copy = [...prev];
+        const [moved] = copy.splice(draggedPhotoIndex, 1);
+        copy.splice(targetIndex, 0, moved);
+        return copy;
+      });
+    }
+    setDraggedPhotoIndex(null);
+    setDragOverPhotoIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedPhotoIndex(null);
+    setDragOverPhotoIndex(null);
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
@@ -317,6 +405,11 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
     // 1. Fotos validation
     if (fotos.length === 0) {
       setErrorMsg('Adicione pelo menos uma foto ao imóvel.');
+      return;
+    }
+
+    if (fotos.length > 15) {
+      setErrorMsg('O limite máximo é de 15 fotos por imóvel.');
       return;
     }
 
@@ -333,34 +426,25 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
     }
 
     // Valor validation based on business type
+    let finalTipo: 'venda' | 'locação' | 'ambos' = tipo === 'locação' ? 'locação' : 'venda';
+    const numValor = valor !== '' ? Number(valor) : 0;
+    const numValorLocacao = valorLocacao !== '' ? Number(valorLocacao) : 0;
+
     if (tipo === 'venda') {
-      if (!valor || Number(valor) <= 0) {
+      if (numValor <= 0) {
         setErrorMsg('Valor de venda é obrigatório e deve ser maior que zero.');
         return;
       }
-    } else if (tipo === 'locação') {
-      if (!valorLocacao || Number(valorLocacao) <= 0) {
+      finalTipo = 'venda';
+    } else {
+      if (numValorLocacao <= 0) {
         setErrorMsg('Valor da locação / aluguel é obrigatório e deve ser maior que zero.');
         return;
       }
-    } else if (tipo === 'ambos') {
-      if (!valor || Number(valor) <= 0) {
-        setErrorMsg('Informe o Valor de Venda para este imóvel.');
-        return;
-      }
-      if (!valorLocacao || Number(valorLocacao) <= 0) {
-        setErrorMsg('Informe o Valor de Locação para este imóvel.');
-        return;
-      }
+      finalTipo = 'locação';
     }
 
-    // 4. Área Total validation
-    if (areaTotal === '' || Number(areaTotal) <= 0) {
-      setErrorMsg('Área total é obrigatória.');
-      return;
-    }
-
-    // 5. Quartos validation (conditional)
+    // 4. Quartos validation (conditional)
     if (!isLandOrCommercial && (dormitorios === '' || Number(dormitorios) < 0)) {
       setErrorMsg('Número de quartos é obrigatório.');
       return;
@@ -415,17 +499,47 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
     const activeId = activeCorretor?.id || auth.currentUser?.uid || `broker-${activeEmail.replace(/[^a-z0-9]/g, '_')}`;
     const activeNome = activeCorretor?.nome || auth.currentUser?.displayName || (activeEmail ? activeEmail.split('@')[0] : 'Corretor');
 
+    // Calculate valorAnterior if price was lowered during edit
+    let valorAnteriorCalculado: number | undefined = undefined;
+    let valorLocacaoAnteriorCalculado: number | undefined = undefined;
+
+    if (imovelId) {
+      const existingImovel = DbService.getImoveisSync().find(i => i.id === imovelId);
+      if (existingImovel) {
+        const targetValor = numValor > 0 ? numValor : numValorLocacao;
+        const previousBaseValor = existingImovel.valorAnterior || existingImovel.valor;
+        if (targetValor > 0 && previousBaseValor > 0 && targetValor < previousBaseValor) {
+          valorAnteriorCalculado = previousBaseValor;
+        } else if (targetValor >= previousBaseValor) {
+          valorAnteriorCalculado = undefined;
+        }
+
+        if (numValorLocacao > 0) {
+          const previousLocBase = existingImovel.valorLocacaoAnterior || existingImovel.valorLocacao;
+          if (previousLocBase && previousLocBase > 0 && numValorLocacao < previousLocBase) {
+            valorLocacaoAnteriorCalculado = previousLocBase;
+          } else if (previousLocBase && numValorLocacao >= previousLocBase) {
+            valorLocacaoAnteriorCalculado = undefined;
+          }
+        }
+      }
+    }
+
     try {
       const saved = await DbService.saveImovel({
         id: imovelId || undefined,
         corretorEmail: activeEmail,
         corretorId: activeId,
         corretorNome: activeNome,
-        titulo,
-        descricao,
-        valor: valor !== '' ? Number(valor) : (valorLocacao !== '' ? Number(valorLocacao) : 0),
-        valorLocacao: (tipo === 'locação' || tipo === 'ambos') && valorLocacao !== '' ? Number(valorLocacao) : undefined,
-        tipo,
+        titulo: titulo.trim().slice(0, 90),
+        palavraDestacada: palavraDestacada.trim().slice(0, 20) || undefined,
+        descricao: descricao.trim().slice(0, 6000),
+        informacoes: informacoes.trim().slice(0, 200) || undefined,
+        valor: numValor > 0 ? numValor : numValorLocacao,
+        valorAnterior: valorAnteriorCalculado,
+        valorLocacao: numValorLocacao > 0 ? numValorLocacao : undefined,
+        valorLocacaoAnterior: valorLocacaoAnteriorCalculado,
+        tipo: finalTipo,
         tipoImovel: tipoImovel as any,
         cidade,
         bairro: bairro || 'Centro',
@@ -441,7 +555,6 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         vagas: vagas !== '' ? Number(vagas) : undefined,
         banheiros: banheiros !== '' ? Number(banheiros) : undefined,
         metragem: metragem !== '' ? Number(metragem) : undefined,
-        areaTotal: areaTotal !== '' ? Number(areaTotal) : undefined,
       });
 
       onSave(saved);
@@ -480,51 +593,104 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
               1. Anexar imagens <span className="text-rose-500">*</span>
             </label>
-            <span className="text-[10px] font-semibold text-slate-400">
-              {fotos.length} {fotos.length === 1 ? 'foto' : 'fotos'}
+            <span className={`text-[10px] font-bold ${fotos.length >= 15 ? 'text-amber-600' : 'text-slate-400'}`}>
+              {fotos.length}/15 {fotos.length === 1 ? 'foto' : 'fotos'}
             </span>
           </div>
           
-          {/* Photos list thumbnail strip */}
-          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-            {fotos.map((foto, index) => (
-              <div key={index} className="relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 bg-slate-100 border border-slate-200 shadow-2xs">
-                <img src={getValidImage(foto)} alt={`Foto ${index + 1}`} onError={handleImageError} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                <button
-                  type="button"
-                  onClick={() => handleRemovePhoto(index)}
-                  className="absolute top-0.5 right-0.5 bg-slate-900/80 text-white p-0.5 rounded-full hover:bg-rose-600 transition-colors"
+          {/* Photos list thumbnail strip with drag and drop reordering */}
+          <div className="flex gap-2.5 overflow-x-auto pb-2 pt-1 scrollbar-none">
+            {fotos.map((foto, index) => {
+              const isBeingDragged = draggedPhotoIndex === index;
+              const isDragOver = dragOverPhotoIndex === index;
+
+              return (
+                <div
+                  key={index}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, index)}
+                  onDragOver={(e) => handleDragOver(e, index)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, index)}
+                  onDragEnd={handleDragEnd}
+                  className={`relative w-24 h-24 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100 border cursor-grab active:cursor-grabbing transition-all duration-150 select-none group ${
+                    isBeingDragged
+                      ? 'opacity-30 border-dashed border-[#003366] scale-95'
+                      : isDragOver
+                      ? 'border-[#003366] ring-2 ring-[#003366]/40 scale-105 z-20'
+                      : 'border-slate-200 shadow-xs hover:border-slate-300'
+                  }`}
                 >
-                  <Trash2 size={11} />
-                </button>
-              </div>
-            ))}
+                  <img
+                    src={getValidImage(foto)}
+                    alt={`Foto ${index + 1}`}
+                    onError={handleImageError}
+                    className="w-full h-full object-cover pointer-events-none"
+                    referrerPolicy="no-referrer"
+                  />
+                  
+                  {/* Drag Handle Indicator */}
+                  <div className="absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white pointer-events-none">
+                    <GripVertical size={14} className="rotate-90 opacity-80" />
+                  </div>
+
+                  {/* Primary Photo Badge */}
+                  {index === 0 && (
+                    <span className="absolute top-1 left-1 bg-[#003366] text-white text-[8px] font-extrabold px-1.5 py-0.5 rounded-md shadow-xs uppercase tracking-wider flex items-center gap-0.5 z-10">
+                      <Star size={9} className="fill-amber-400 text-amber-400" />
+                      Principal
+                    </span>
+                  )}
+
+                  {/* Remove button */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemovePhoto(index);
+                    }}
+                    className="absolute top-1 right-1 bg-slate-900/80 hover:bg-rose-600 text-white p-1 rounded-full transition-colors z-10"
+                    title="Remover foto"
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                </div>
+              );
+            })}
             
             {fotos.length === 0 && (
-              <div className="w-full h-16 border border-dashed border-slate-200 rounded-lg flex items-center justify-center gap-2 text-slate-400 bg-slate-50/50 px-3">
+              <div className="w-full h-20 border border-dashed border-slate-200 rounded-xl flex items-center justify-center gap-2 text-slate-400 bg-slate-50/50 px-3">
                 <ImageIcon size={18} className="text-slate-300" />
-                <span className="text-xs text-slate-500">Nenhuma foto anexada. Toque no botão abaixo para adicionar.</span>
+                <span className="text-xs text-slate-500">Nenhuma foto anexada. Adicione até 15 fotos.</span>
               </div>
             )}
           </div>
 
           {/* Prominent Upload Button */}
-          <input
-            type="file"
-            ref={fileInputRef}
-            accept="image/*"
-            multiple
-            className="hidden"
-            onChange={handleFileChange}
-          />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center justify-center gap-2 w-full py-2 px-3 border border-dashed border-[#003366] bg-[#003366]/5 hover:bg-[#003366]/10 rounded-lg cursor-pointer text-xs font-bold text-[#003366] transition-all text-center active:scale-[0.99]"
-          >
-            <Upload size={15} className="text-[#003366]" />
-            <span>Adicionar Fotos do Celular / Galeria</span>
-          </button>
+          {fotos.length < 15 ? (
+            <>
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={handleFileChange}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center justify-center gap-2 w-full py-2 px-3 border border-dashed border-[#003366] bg-[#003366]/5 hover:bg-[#003366]/10 rounded-lg cursor-pointer text-xs font-bold text-[#003366] transition-all text-center active:scale-[0.99]"
+              >
+                <Upload size={15} className="text-[#003366]" />
+                <span>Adicionar Fotos ({15 - fotos.length} restante{15 - fotos.length === 1 ? '' : 's'})</span>
+              </button>
+            </>
+          ) : (
+            <div className="text-center py-1.5 px-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-[11px] font-semibold">
+              Limite máximo de 15 fotos atingido.
+            </div>
+          )}
         </div>
 
         {/* 2. Localização & CEP * */}
@@ -618,121 +784,73 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
               </select>
             </div>
 
-            <div>
-              <span className="text-[10px] text-slate-500 font-medium block mb-1 whitespace-nowrap">Modalidade de Negócio:</span>
-              <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl">
-                <button
-                  type="button"
-                  onClick={() => setTipo('venda')}
-                  className={`py-1.5 text-xs font-bold rounded-lg transition-all ${
-                    tipo === 'venda' ? 'bg-white text-[#003366] shadow-2xs' : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  Venda
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTipo('locação')}
-                  className={`py-1.5 text-xs font-bold rounded-lg transition-all ${
-                    tipo === 'locação' ? 'bg-white text-emerald-800 shadow-2xs' : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  Locação
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTipo('ambos')}
-                  className={`py-1.5 text-xs font-bold rounded-lg transition-all ${
-                    tipo === 'ambos' ? 'bg-white text-indigo-900 shadow-2xs' : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  Venda & Locação
-                </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-2.5 items-end">
+              <div>
+                <span className="text-[10px] text-slate-500 font-medium block mb-1 whitespace-nowrap">Modalidade de Negócio:</span>
+                <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => setTipo('venda')}
+                    className={`py-1.5 text-xs font-bold rounded-lg transition-all ${
+                      tipo === 'venda' ? 'bg-white text-[#003366] shadow-2xs' : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    Venda
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTipo('locação')}
+                    className={`py-1.5 text-xs font-bold rounded-lg transition-all ${
+                      tipo === 'locação' ? 'bg-white text-emerald-800 shadow-2xs' : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    Locação
+                  </button>
+                </div>
               </div>
-            </div>
 
-            {/* Price Inputs */}
-            <div className="pt-1">
-              {tipo === 'venda' && (
-                <div>
-                  <span className="text-[10px] text-slate-500 font-medium block mb-0.5 whitespace-nowrap">
-                    Valor de Venda (R$) <span className="text-rose-500">*</span>
-                  </span>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    placeholder="R$ 0"
-                    value={formatNumberWithSeparators(valor)}
-                    onChange={(e) => {
-                      const cleanValue = e.target.value.replace(/\D/g, '');
-                      setValor(cleanValue === '' ? '' : Number(cleanValue));
-                    }}
-                    className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] font-bold text-[#003366]"
-                  />
-                </div>
-              )}
-
-              {tipo === 'locação' && (
-                <div>
-                  <span className="text-[10px] text-slate-500 font-medium block mb-0.5 whitespace-nowrap">
-                    Valor de Locação / Mês (R$) <span className="text-rose-500">*</span>
-                  </span>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    placeholder="R$ 0 /mês"
-                    value={formatNumberWithSeparators(valorLocacao)}
-                    onChange={(e) => {
-                      const cleanValue = e.target.value.replace(/\D/g, '');
-                      setValorLocacao(cleanValue === '' ? '' : Number(cleanValue));
-                    }}
-                    className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-emerald-700 font-bold text-emerald-800"
-                  />
-                </div>
-              )}
-
-              {tipo === 'ambos' && (
-                <div className="grid grid-cols-2 gap-2 bg-indigo-50/40 p-2 rounded-xl border border-indigo-100">
+              <div>
+                {tipo === 'venda' ? (
                   <div>
-                    <span className="text-[10px] text-slate-600 font-bold block mb-0.5 whitespace-nowrap">
-                      Valor Venda (R$) <span className="text-rose-500">*</span>
+                    <span className="text-[10px] text-slate-600 font-bold block mb-1 whitespace-nowrap">
+                      Valor de Venda (R$) <span className="text-rose-500">*</span>
                     </span>
                     <input
                       type="text"
                       inputMode="numeric"
-                      placeholder="R$ Venda"
+                      placeholder="R$ 0"
                       value={formatNumberWithSeparators(valor)}
                       onChange={(e) => {
                         const cleanValue = e.target.value.replace(/\D/g, '');
                         setValor(cleanValue === '' ? '' : Number(cleanValue));
                       }}
-                      className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] font-bold text-[#003366] bg-white"
+                      className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] font-bold text-[#003366] bg-white"
                     />
                   </div>
-
+                ) : (
                   <div>
-                    <span className="text-[10px] text-slate-600 font-bold block mb-0.5 whitespace-nowrap">
-                      Valor Locação (R$/mês) <span className="text-rose-500">*</span>
+                    <span className="text-[10px] text-slate-600 font-bold block mb-1 whitespace-nowrap">
+                      Valor de Locação / Mês (R$) <span className="text-rose-500">*</span>
                     </span>
                     <input
                       type="text"
                       inputMode="numeric"
-                      placeholder="R$ Locação/mês"
+                      placeholder="R$ 0 /mês"
                       value={formatNumberWithSeparators(valorLocacao)}
                       onChange={(e) => {
                         const cleanValue = e.target.value.replace(/\D/g, '');
                         setValorLocacao(cleanValue === '' ? '' : Number(cleanValue));
                       }}
-                      className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-emerald-700 font-bold text-emerald-800 bg-white"
+                      className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-emerald-700 font-bold text-emerald-800 bg-white"
                     />
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* 4. Especificações do Imóvel (Quartos, BWC, Vagas, Area Priv., Area Total) */}
+        {/* 4. Especificações do Imóvel (Quartos, BWC, Vagas, Area Privativa) */}
         <div className="bg-white p-3 sm:p-3.5 rounded-xl border border-slate-200/80 space-y-2.5">
           <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-700">
@@ -753,12 +871,15 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
                   Quartos {!isLandOrCommercial && <span className="text-rose-500">*</span>}
                 </label>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   placeholder="Qtd"
                   value={dormitorios}
-                  onChange={(e) => setDormitorios(e.target.value === '' ? '' : Number(e.target.value))}
+                  onChange={(e) => {
+                    const clean = e.target.value.replace(/\D/g, '');
+                    setDormitorios(clean === '' ? '' : Number(clean));
+                  }}
                   className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold text-center"
-                  min="0"
                 />
               </div>
 
@@ -767,12 +888,15 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
                   BWC <span className="text-rose-500">*</span>
                 </label>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   placeholder="Qtd"
                   value={banheiros}
-                  onChange={(e) => setBanheiros(e.target.value === '' ? '' : Number(e.target.value))}
+                  onChange={(e) => {
+                    const clean = e.target.value.replace(/\D/g, '');
+                    setBanheiros(clean === '' ? '' : Number(clean));
+                  }}
                   className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold text-center"
-                  min="0"
                 />
               </div>
 
@@ -781,50 +905,37 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
                   Vagas {!isLandOrCommercial && <span className="text-rose-500">*</span>}
                 </label>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   placeholder="Qtd"
                   value={vagas}
-                  onChange={(e) => setVagas(e.target.value === '' ? '' : Number(e.target.value))}
+                  onChange={(e) => {
+                    const clean = e.target.value.replace(/\D/g, '');
+                    setVagas(clean === '' ? '' : Number(clean));
+                  }}
                   className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold text-center"
-                  min="0"
                 />
               </div>
             </div>
 
-            {/* Linha 2: Area Priv. e Area Total */}
-            <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
-              <div>
-                <label className="text-[10px] font-semibold text-slate-600 block mb-1 whitespace-nowrap">
-                  Area Priv. <span className="text-rose-500">*</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    placeholder="m²"
-                    value={metragem}
-                    onChange={(e) => setMetragem(e.target.value === '' ? '' : Number(e.target.value))}
-                    className="w-full text-xs px-2 py-1.5 pr-7 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold text-center"
-                    min="0"
-                  />
-                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-semibold pointer-events-none">m²</span>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[10px] font-semibold text-slate-600 block mb-1 whitespace-nowrap">
-                  Area Total <span className="text-rose-500">*</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    placeholder="m²"
-                    value={areaTotal}
-                    onChange={(e) => setAreaTotal(e.target.value === '' ? '' : Number(e.target.value))}
-                    className="w-full text-xs px-2 py-1.5 pr-7 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold text-center"
-                    min="0"
-                  />
-                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-semibold pointer-events-none">m²</span>
-                </div>
+            {/* Linha 2: Área Privativa */}
+            <div>
+              <label className="text-[10px] font-semibold text-slate-600 block mb-1 whitespace-nowrap">
+                Área Privativa (m²) <span className="text-rose-500">*</span>
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Ex: 120"
+                  value={metragem}
+                  onChange={(e) => {
+                    const clean = e.target.value.replace(/\D/g, '');
+                    setMetragem(clean === '' ? '' : Number(clean));
+                  }}
+                  className="w-full text-xs px-2.5 py-1.5 pr-8 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold"
+                />
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-semibold pointer-events-none">m²</span>
               </div>
             </div>
           </div>
@@ -849,50 +960,97 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
           />
         </div>
 
-        {/* 6. Título * */}
-        <div className="bg-white p-3 rounded-lg border border-slate-100 space-y-1">
-          <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 whitespace-nowrap">
-            6. Título do Anúncio <span className="text-rose-500">*</span>
+        {/* 6. DESCRIÇÃO DO IMÓVEL */}
+        <div className="bg-white p-3 rounded-lg border border-slate-100 space-y-3">
+          <label className="block text-xs font-bold uppercase tracking-wider text-slate-800">
+            6. Descrição do Imóvel
           </label>
-          <input
-            type="text"
-            placeholder="Ex: Apartamento Alto Padrão Frente Mar Barra Sul"
-            value={titulo}
-            onChange={(e) => setTitulo(e.target.value)}
-            className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366]"
-          />
-        </div>
 
-        {/* 7. Descrição * (com botão "Melhorar com IA") */}
-        <div className="bg-white p-3 rounded-lg border border-slate-100 space-y-2">
-          <div className="flex items-center justify-between">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 whitespace-nowrap">
-              7. Descrição do Imóvel <span className="text-rose-500">*</span>
-            </label>
-            
-            <button
-              type="button"
-              onClick={handleAiImprove}
-              disabled={aiLoading}
-              className="text-[10px] font-bold text-[#003366] flex items-center bg-[#003366]/5 hover:bg-[#003366]/10 px-2.5 py-1 rounded-full transition-all interactive-action shadow-2xs active:scale-95"
-            >
-              <Sparkles size={12} className={`mr-1 text-indigo-600 ${aiLoading ? 'animate-spin' : ''}`} />
-              {aiLoading ? 'Melhorando...' : 'Melhorar com IA'}
-            </button>
+          {/* Título do Anúncio (90 caracteres) */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-bold text-slate-700 whitespace-nowrap">
+                Título do Anúncio <span className="text-rose-500">*</span>
+              </span>
+              <span className={`text-[10px] font-bold ${titulo.length >= 90 ? 'text-amber-600 font-extrabold' : 'text-slate-400'}`}>
+                {titulo.length}/90
+              </span>
+            </div>
+            <input
+              type="text"
+              maxLength={90}
+              placeholder="Ex: Apartamento Alto Padrão Frente Mar Barra Sul"
+              value={titulo}
+              onChange={(e) => setTitulo(e.target.value.slice(0, 90))}
+              className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366]"
+            />
           </div>
 
-          <textarea
-            placeholder="Escreva uma breve descrição ou anotações aqui... Toque em 'Melhorar com IA' para que o sistema aprimore o texto utilizando todos os dados cadastrados."
-            value={descricao}
-            onChange={(e) => setDescricao(e.target.value)}
-            rows={3}
-            className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] leading-relaxed"
-          />
+          {/* Descrição do Imóvel (6000 caracteres) */}
+          <div className="pt-2 border-t border-slate-100 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-700 whitespace-nowrap">
+                Descrição do Imóvel <span className="text-rose-500">*</span>
+              </span>
+              
+              <div className="flex items-center gap-2">
+                <span className={`text-[10px] font-bold ${descricao.length >= 6000 ? 'text-amber-600 font-extrabold' : 'text-slate-400'}`}>
+                  {descricao.length}/6000
+                </span>
+                <button
+                  type="button"
+                  onClick={handleAiImprove}
+                  disabled={aiLoading}
+                  className="text-[10px] font-bold text-[#003366] flex items-center bg-[#003366]/5 hover:bg-[#003366]/10 px-2.5 py-1 rounded-full transition-all interactive-action shadow-2xs active:scale-95"
+                >
+                  <Sparkles size={12} className={`mr-1 text-indigo-600 ${aiLoading ? 'animate-spin' : ''}`} />
+                  {aiLoading ? 'Melhorando...' : 'Melhorar com IA'}
+                </button>
+              </div>
+            </div>
+
+            <textarea
+              placeholder="Escreva a descrição completa do imóvel aqui... Toque em 'Melhorar com IA' para que o sistema aprimore o texto utilizando os dados cadastrados."
+              value={descricao}
+              maxLength={6000}
+              onChange={(e) => setDescricao(e.target.value.slice(0, 6000))}
+              rows={4}
+              className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] leading-relaxed"
+            />
+          </div>
+
+          {/* Palavra Destacada em outra cor (20 caracteres) */}
+          <div className="pt-2.5 border-t border-slate-100 bg-indigo-50/40 p-2.5 rounded-lg border border-indigo-100 space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-1.5 text-xs font-bold text-indigo-900 whitespace-nowrap">
+                <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse" />
+                Palavra Destacada
+              </label>
+              <span className={`text-[10px] font-bold ${palavraDestacada.length >= 20 ? 'text-amber-600 font-extrabold' : 'text-indigo-600'}`}>
+                {palavraDestacada.length}/20
+              </span>
+            </div>
+            <div className="relative">
+              <input
+                type="text"
+                maxLength={20}
+                placeholder="Ex: Vista Panorâmica"
+                value={palavraDestacada}
+                onChange={(e) => setPalavraDestacada(e.target.value.slice(0, 20))}
+                className="w-full text-xs px-2.5 py-1.5 border-2 border-indigo-200 bg-white text-indigo-950 font-bold rounded-lg focus:outline-hidden focus:border-indigo-600 placeholder:text-indigo-300"
+              />
+              {palavraDestacada.trim() && (
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-extrabold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-md border border-indigo-200">
+                  {palavraDestacada.trim()}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
 
-        {/* 8. Preferências */}
+        {/* 7. Preferências */}
         <div className="bg-white p-3 rounded-lg border border-slate-100 space-y-2">
-          <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">8. Preferências do Imóvel</label>
+          <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">7. Preferências do Imóvel</label>
           
           <div className="grid grid-cols-2 gap-2 pt-0.5">
             {/* Favorito */}
@@ -929,12 +1087,12 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
           </div>
         </div>
 
-        {/* 9. Dados do proprietário */}
+        {/* 8. Dados do proprietário */}
         <div className="bg-slate-900 text-slate-200 p-3 rounded-lg border border-slate-800 space-y-2">
           <div>
             <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400 mr-1.5 animate-pulse" />
-              9. Dados do Proprietário (Confidencial)
+              8. Dados do Proprietário (Confidencial)
             </h4>
             <p className="text-[10px] text-slate-400">Visível apenas para você. Nunca é compartilhado com terceiros.</p>
           </div>
@@ -962,6 +1120,31 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
               />
             </div>
           </div>
+        </div>
+
+        {/* 9. Informações para Corretores */}
+        <div className="bg-white p-3 rounded-lg border border-slate-100 space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-800">
+              9. Informações
+            </label>
+            <span className={`text-[10px] font-bold flex-shrink-0 ${informacoes.length >= 200 ? 'text-amber-600 font-extrabold' : 'text-slate-400'}`}>
+              {informacoes.length}/200
+            </span>
+          </div>
+
+          <p className="text-[10px] text-slate-500 leading-snug">
+            Visível para todos os corretores
+          </p>
+
+          <textarea
+            maxLength={200}
+            placeholder="Ex: Chave na portaria social, visitas de seg a sex das 9h às 18h, senha da fechadura eletrônica: 1234#"
+            value={informacoes}
+            onChange={(e) => setInformacoes(e.target.value.slice(0, 200))}
+            rows={2}
+            className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50"
+          />
         </div>
 
         {/* Submit Button */}

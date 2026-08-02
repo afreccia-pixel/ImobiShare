@@ -121,6 +121,9 @@ export class ServerDb {
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS palavra_destacada VARCHAR(20);`);
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS valor_venda_com_desconto NUMERIC;`);
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS visibilidade VARCHAR(50) DEFAULT 'todos';`);
+    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS valor_anterior NUMERIC;`);
+    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS valor_locacao_anterior NUMERIC;`);
+    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS informacoes TEXT;`);
 
     // 3. Tabela parcerias
     await this.pool.query(`
@@ -443,12 +446,14 @@ export class ServerDb {
           id, corretor_email, cep, endereco, cidade, bairro, tipo, modalidade,
           valor_venda, valor_venda_com_desconto, valor_locacao, quartos, bwc, vagas,
           area_privativa, nome_edificio, titulo, palavra_destacada, descricao,
-          visibilidade, dados_proprietario, imagens, data_cadastro
+          visibilidade, dados_proprietario, imagens, data_cadastro,
+          valor_anterior, valor_locacao_anterior, informacoes
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8,
           $9, $10, $11, $12, $13, $14,
           $15, $16, $17, $18, $19,
-          $20, $21, $22, $23
+          $20, $21, $22, $23,
+          $24, $25, $26
         ) ON CONFLICT (id) DO UPDATE SET
           cep = EXCLUDED.cep,
           endereco = EXCLUDED.endereco,
@@ -469,7 +474,10 @@ export class ServerDb {
           descricao = EXCLUDED.descricao,
           visibilidade = EXCLUDED.visibilidade,
           dados_proprietario = EXCLUDED.dados_proprietario,
-          imagens = EXCLUDED.imagens;
+          imagens = EXCLUDED.imagens,
+          valor_anterior = EXCLUDED.valor_anterior,
+          valor_locacao_anterior = EXCLUDED.valor_locacao_anterior,
+          informacoes = EXCLUDED.informacoes;
       `, [
         finalImovel.id,
         cleanEmail,
@@ -493,7 +501,10 @@ export class ServerDb {
         finalImovel.visibilidade || 'todos',
         finalImovel.dadosProprietario || finalImovel.nomeProprietario || '',
         fotosJson,
-        finalImovel.dataCadastro
+        finalImovel.dataCadastro,
+        finalImovel.valorAnterior || null,
+        finalImovel.valorLocacaoAnterior || null,
+        finalImovel.informacoes || null
       ]);
 
       return finalImovel;
@@ -562,8 +573,10 @@ export class ServerDb {
       tipo: r.modalidade || (valorLocacao && valorVenda ? 'ambos' : (valorLocacao ? 'locação' : 'venda')),
       valor: valorVenda,
       valorVenda,
+      valorAnterior: r.valor_anterior ? parseFloat(r.valor_anterior) : undefined,
       valorVendaComDesconto: r.valor_venda_com_desconto ? parseFloat(r.valor_venda_com_desconto) : undefined,
       valorLocacao,
+      valorLocacaoAnterior: r.valor_locacao_anterior ? parseFloat(r.valor_locacao_anterior) : undefined,
       dormitorios: parseInt(r.quartos || '0', 10),
       quartos: parseInt(r.quartos || '0', 10),
       banheiros: parseInt(r.bwc || '0', 10),
@@ -573,6 +586,7 @@ export class ServerDb {
       titulo: r.titulo,
       palavraDestacada: r.palavra_destacada || '',
       descricao: r.descricao,
+      informacoes: r.informacoes || undefined,
       visibilidade: r.visibilidade || 'todos',
       dadosProprietario: isOwner ? (r.dados_proprietario || '') : undefined,
       nomeProprietario: isOwner ? (r.dados_proprietario || '') : 'Confidencial',

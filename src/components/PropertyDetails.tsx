@@ -139,11 +139,20 @@ Toque abaixo para ver fotos e todos os detalhes:
           )}
 
           {/* Type Badge */}
-          <span className={`absolute top-3 left-3 text-[10px] font-bold uppercase tracking-wider text-white px-2 py-0.5 rounded-full shadow-md ${
+          <span className={`absolute top-3 left-3 text-[10px] font-bold uppercase tracking-wider text-white px-2 py-0.5 rounded-full shadow-md z-10 ${
             imovel.tipo === 'venda' ? 'bg-[#003366]' : imovel.tipo === 'locação' ? 'bg-emerald-600' : 'bg-indigo-900'
           }`}>
             {imovel.tipo === 'venda' ? 'Venda' : imovel.tipo === 'locação' ? 'Aluguel' : 'Venda & Aluguel'}
           </span>
+
+          {/* Palavra Destacada Badge overlay on main image */}
+          {imovel.palavraDestacada?.trim() && (
+            <div className="absolute bottom-3 left-3 z-10">
+              <span className="inline-block text-[10px] sm:text-xs font-black uppercase tracking-wider text-white bg-indigo-600/95 backdrop-blur-xs px-2.5 py-1 rounded-md shadow-md border border-indigo-400/40">
+                {imovel.palavraDestacada.trim()}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Thumbnail gallery preview */}
@@ -198,9 +207,20 @@ Toque abaixo para ver fotos e todos os detalhes:
                 <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4 mt-1">
                   <div>
                     <span className="text-[10px] text-slate-400 font-bold uppercase block">Venda:</span>
-                    <span className="text-lg font-extrabold text-[#003366]">
-                      {formatPrice(imovel.valor)}
-                    </span>
+                    {imovel.valorAnterior && imovel.valorAnterior > imovel.valor ? (
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-xs text-slate-400 line-through font-semibold">
+                          De {formatPrice(imovel.valorAnterior)}
+                        </span>
+                        <span className="text-lg font-black text-emerald-600">
+                          Por {formatPrice(imovel.valor)}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-lg font-extrabold text-[#003366]">
+                        {formatPrice(imovel.valor)}
+                      </span>
+                    )}
                   </div>
                   <div>
                     <span className="text-[10px] text-slate-400 font-bold uppercase block">Locação:</span>
@@ -210,14 +230,37 @@ Toque abaixo para ver fotos e todos os detalhes:
                   </div>
                 </div>
               ) : imovel.tipo === 'locação' ? (
-                <span className="text-xl font-extrabold text-emerald-800">
-                  {formatPrice(imovel.valorLocacao || imovel.valor)}
-                  <span className="text-sm font-medium text-slate-500"> /mês</span>
-                </span>
+                imovel.valorLocacaoAnterior && imovel.valorLocacaoAnterior > (imovel.valorLocacao || imovel.valor) ? (
+                  <div className="flex items-baseline gap-2 mt-1">
+                    <span className="text-sm text-slate-400 line-through font-semibold">
+                      De {formatPrice(imovel.valorLocacaoAnterior)}
+                    </span>
+                    <span className="text-xl font-black text-emerald-600">
+                      Por {formatPrice(imovel.valorLocacao || imovel.valor)}
+                      <span className="text-sm font-medium text-slate-500"> /mês</span>
+                    </span>
+                  </div>
+                ) : (
+                  <span className="text-xl font-extrabold text-emerald-800">
+                    {formatPrice(imovel.valorLocacao || imovel.valor)}
+                    <span className="text-sm font-medium text-slate-500"> /mês</span>
+                  </span>
+                )
               ) : (
-                <span className="text-xl font-extrabold text-slate-900">
-                  {formatPrice(imovel.valor)}
-                </span>
+                imovel.valorAnterior && imovel.valorAnterior > imovel.valor ? (
+                  <div className="flex items-baseline gap-2 mt-1">
+                    <span className="text-sm text-slate-400 line-through font-semibold">
+                      De {formatPrice(imovel.valorAnterior)}
+                    </span>
+                    <span className="text-xl md:text-2xl font-black text-emerald-600">
+                      Por {formatPrice(imovel.valor)}
+                    </span>
+                  </div>
+                ) : (
+                  <span className="text-xl font-extrabold text-slate-900">
+                    {formatPrice(imovel.valor)}
+                  </span>
+                )
               )}
             </div>
 
@@ -261,6 +304,17 @@ Toque abaixo para ver fotos e todos os detalhes:
               {imovel.descricao}
             </p>
           </div>
+
+          {imovel.informacoes?.trim() && (
+            <div className="p-3 bg-amber-50/80 border border-amber-200/80 rounded-xl space-y-1">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-900 block">
+                Informações
+              </span>
+              <p className="text-xs text-amber-950 font-medium whitespace-pre-line leading-relaxed">
+                {imovel.informacoes.trim()}
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Broker Information - ONLY shown if it's NOT the user's own property */}

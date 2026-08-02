@@ -180,20 +180,38 @@ export class DbService {
   static getBrokerStats(idOrEmail?: string) {
     const imoveis = this.getImoveisSync();
     const active = this.getActiveCorretor();
-    const targetEmail = (idOrEmail || active?.email || '').toLowerCase().trim();
+    const corretores = this.getCorretores();
 
-    if (!targetEmail) {
-      return { qtdVendas: 0, qtdLocacoes: 0, qtdParcerias: 0 };
-    }
+    const param = (idOrEmail || '').toLowerCase().trim();
 
-    const myImoveis = imoveis.filter(i => (i.corretorEmail || '').toLowerCase().trim() === targetEmail);
+    // Find target broker by ID or Email
+    const targetCorretor = (param
+      ? (corretores.find(c =>
+          (c.id && c.id.toLowerCase().trim() === param) ||
+          (c.email && c.email.toLowerCase().trim() === param)
+        ) || (active && (
+          (active.id && active.id.toLowerCase().trim() === param) ||
+          (active.email && active.email.toLowerCase().trim() === param)
+        ) ? active : null))
+      : null) || active;
+
+    const targetId = targetCorretor?.id || (idOrEmail && !idOrEmail.includes('@') ? idOrEmail : '');
+    const targetEmail = (targetCorretor?.email || active?.email || (idOrEmail && idOrEmail.includes('@') ? idOrEmail : '')).toLowerCase().trim();
+
+    const isMine = (i: Imovel) => {
+      const matchId = Boolean(targetId && i.corretorId && i.corretorId === targetId);
+      const matchEmail = Boolean(targetEmail && i.corretorEmail && i.corretorEmail.toLowerCase().trim() === targetEmail);
+      return matchId || matchEmail;
+    };
+
+    const myImoveis = imoveis.filter(isMine);
     const qtdVendas = myImoveis.filter(i => i.tipo === 'venda' || i.tipo === 'ambos').length;
     const qtdLocacoes = myImoveis.filter(i => i.tipo === 'locação' || i.tipo === 'ambos').length;
 
     const partnerImoveis = imoveis.filter(i => {
-      const isMine = (i.corretorEmail || '').toLowerCase().trim() === targetEmail;
+      const mine = isMine(i);
       const isShared = i.compartilhar !== false;
-      return !isMine && isShared;
+      return !mine && isShared;
     });
     const qtdParcerias = partnerImoveis.length;
 
@@ -205,6 +223,11 @@ export class DbService {
   }
 
   static getFavoritos(idOrEmail?: string): string[] {
+    cachedImoveis.forEach(i => {
+      if (i.favorito && !cachedFavorites.includes(i.id)) {
+        cachedFavorites.push(i.id);
+      }
+    });
     return cachedFavorites;
   }
 
@@ -327,6 +350,18 @@ export class DbService {
           cachedImoveis[idx] = saved;
         } else {
           cachedImoveis.unshift(saved);
+        }
+        if (saved.id) {
+          if (saved.favorito && !cachedFavorites.includes(saved.id)) {
+            cachedFavorites.push(saved.id);
+            localStorage.setItem('imobishare_favorites', JSON.stringify(cachedFavorites));
+          } else if (saved.favorito === false) {
+            const favIdx = cachedFavorites.indexOf(saved.id);
+            if (favIdx >= 0) {
+              cachedFavorites.splice(favIdx, 1);
+              localStorage.setItem('imobishare_favorites', JSON.stringify(cachedFavorites));
+            }
+          }
         }
         localStorage.setItem('imobishare_imoveis', JSON.stringify(cachedImoveis));
         notifySubscribers();
@@ -480,12 +515,23 @@ export class DbService {
   static async toggleFavorite(corretorIdOrEmail: string, imovelId: string): Promise<string[]> {
     // Local toggle
     const idx = cachedFavorites.indexOf(imovelId);
+    let isNowFav = false;
     if (idx >= 0) {
       cachedFavorites.splice(idx, 1);
+      isNowFav = false;
     } else {
       cachedFavorites.push(imovelId);
+      isNowFav = true;
     }
+
+    // Sync property object in cachedImoveis
+    const found = cachedImoveis.find(i => i.id === imovelId);
+    if (found) {
+      found.favorito = isNowFav;
+    }
+
     localStorage.setItem('imobishare_favorites', JSON.stringify(cachedFavorites));
+    localStorage.setItem('imobishare_imoveis', JSON.stringify(cachedImoveis));
     notifySubscribers();
 
     // Async REST toggle

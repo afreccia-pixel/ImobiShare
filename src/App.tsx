@@ -196,6 +196,7 @@ export default function App() {
   const [filterIntegracao, setFilterIntegracao] = useState(true);
   const [isFilterModalOpen, setIsFilterModalOpen] = useState<boolean>(false);
   const [searchViewMode, setSearchViewMode] = useState<'como_esta_hoje' | 'lista' | 'mapa'>('como_esta_hoje');
+  const [myPropertiesViewMode, setMyPropertiesViewMode] = useState<'lista' | 'cards'>('lista');
 
   // Active filter count computation
   const getActiveFilterCount = () => {
@@ -348,6 +349,10 @@ export default function App() {
     setFavoritos(updatedFavs);
     
     const isFavNow = updatedFavs.includes(imovelId);
+    setAllImoveis((prev) =>
+      prev.map((i) => (i.id === imovelId ? { ...i, favorito: isFavNow } : i))
+    );
+    
     triggerToast(isFavNow ? 'Imóvel adicionado aos favoritos!' : 'Imóvel removido dos favoritos.');
   };
 
@@ -911,7 +916,7 @@ const handleGoogleLogin = async () => {
       if (filterMetragemMax > 0 && (imovel.metragem || 0) > filterMetragemMax) return false;
 
       // 9. Apenas Favoritos
-      if (filterApenasFavoritos && !favoritos.includes(imovel.id)) return false;
+      if (filterApenasFavoritos && !favoritos.includes(imovel.id) && !imovel.favorito) return false;
 
       // 10. Broker Ownership / Integration Filter
       const isMine = isMyProperty(imovel);
@@ -979,10 +984,10 @@ const handleGoogleLogin = async () => {
 
   // Check favorite properties of the active broker
   const getFavoriteImoveis = () => {
-    // Return all properties where id is in the active broker's favorite array
+    // Return all properties where id is in the active broker's favorite array or marked favorito
     // AND is either mine, OR belongs to someone else but is shared.
     return allImoveis.filter((imovel) => {
-      const isFav = favoritos.includes(imovel.id);
+      const isFav = favoritos.includes(imovel.id) || imovel.favorito === true;
       if (!isFav) return false;
 
       const isMine = isMyProperty(imovel);
@@ -1787,7 +1792,7 @@ Toque abaixo para ver fotos e todos os detalhes:
                       ) : (
                         getFilteredImoveis().map((imovel) => {
                           const isMine = isMyProperty(imovel);
-                          const isFav = favoritos.includes(imovel.id);
+                          const isFav = favoritos.includes(imovel.id) || imovel.favorito === true;
                           const isSel = selectedPropertyIds.includes(imovel.id);
 
                           if (searchViewMode === 'lista') {
@@ -1834,10 +1839,10 @@ Toque abaixo para ver fotos e todos os detalhes:
 
               {activeTab === 'my-properties' && (
                 <div className="p-4 space-y-4" id="my-properties-tab-view">
-                  <div className="flex justify-between items-center">
-                    <div className="min-w-0 pr-2">
+                  <div className="flex justify-between items-center gap-2">
+                    <div className="min-w-0 flex-1">
                       <h2 className="font-extrabold text-slate-800 text-sm sm:text-base md:text-lg truncate whitespace-nowrap">Meus Imóveis Cadastrados</h2>
-                      <p className="text-[10px] text-slate-400 truncate">Gerencie, exclua e publique captações exclusivas</p>
+                      <p className="text-[10px] text-slate-400 truncate">Gerencie, edite, exclua e compartilhe seus imóveis</p>
                     </div>
                     
                     <button
@@ -1845,22 +1850,34 @@ Toque abaixo para ver fotos e todos os detalhes:
                         setEditingPropertyId(null);
                         setIsAddingProperty(true);
                       }}
-                      className="bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold px-4 py-2.5 rounded-xl flex items-center shadow-lg transition-colors uppercase tracking-wider text-[10px]"
+                      className="bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold px-3.5 py-2 rounded-xl flex items-center shadow-md transition-colors uppercase tracking-wider text-[10px] flex-shrink-0 cursor-pointer"
                     >
                       <PlusCircle size={14} className="mr-1.5" /> Novo
                     </button>
                   </div>
 
+                  {/* My properties count header */}
+                  <div className="flex items-center justify-between bg-white p-2 px-3 rounded-xl border border-slate-100 shadow-xs">
+                    <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">
+                      Meus Imóveis ({allImoveis.filter(i => isMyProperty(i)).length})
+                    </span>
+                  </div>
+
                   {/* My properties list */}
-                  <div className="space-y-3">
+                  <div className="bg-slate-100/70 p-2 sm:p-2.5 rounded-xl border border-slate-200/50 space-y-1.5">
                     {allImoveis.filter(i => isMyProperty(i)).map((imovel) => {
-                      const isFav = favoritos.includes(imovel.id);
+                      const isFav = favoritos.includes(imovel.id) || imovel.favorito === true;
+                      const isSel = selectedPropertyIds.includes(imovel.id);
+
                       return (
-                        <PropertyCard
+                        <CompactPropertyRow
                           key={imovel.id}
                           imovel={imovel}
                           isMyProperty={true}
                           isFavorite={isFav}
+                          isSelected={isSel}
+                          showImage={false}
+                          onSelectToggle={() => handleSelectToggle(imovel.id)}
                           onFavoriteToggle={() => handleFavoriteToggle(imovel.id)}
                           onShareToggle={() => handleShareToggle(imovel.id)}
                           onEdit={() => {
@@ -1868,7 +1885,6 @@ Toque abaixo para ver fotos e todos os detalhes:
                             setIsAddingProperty(true);
                           }}
                           onDelete={() => handleDeleteProperty(imovel.id)}
-                          onDuplicate={() => handleDuplicateProperty(imovel.id)}
                           onClick={() => setSelectedPropertyId(imovel.id)}
                         />
                       );
@@ -1876,10 +1892,10 @@ Toque abaixo para ver fotos e todos os detalhes:
 
                     {allImoveis.filter(i => isMyProperty(i)).length === 0 && (
                       <div className="text-center py-12 bg-white border border-slate-100 rounded-xl space-y-2">
-                        <p className="text-xs text-slate-400">Você ainda não tem captações cadastradas.</p>
+                        <p className="text-xs text-slate-400">Você ainda não tem imóveis cadastrados.</p>
                         <button
                           onClick={() => setIsAddingProperty(true)}
-                          className="text-xs font-bold text-blue-900 hover:underline"
+                          className="text-xs font-bold text-blue-900 hover:underline cursor-pointer"
                         >
                           Cadastre seu primeiro imóvel agora!
                         </button>
