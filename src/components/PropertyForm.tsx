@@ -580,7 +580,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
   return (
     <div className="bg-slate-50 min-h-screen pb-16" id="property-form-container">
       {/* Header */}
-      <div className="bg-white border-b border-slate-100 px-4 py-3.5 sticky top-0 z-10 flex items-center justify-between">
+      <div className="bg-white border-b border-slate-100 px-4 py-3.5 flex items-center justify-between">
         <button onClick={onCancel} className="p-1 text-slate-500 hover:bg-slate-100 rounded-full transition-colors">
           <ArrowLeft size={20} />
         </button>

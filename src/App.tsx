@@ -505,7 +505,6 @@ const handleAuthenticatedUser = async (user: FirebaseUser | null) => {
   try {
     const corretor = await processAuthenticatedUser(user);
     if (corretor) {
-      triggerToast(`Bem-vindo, ${corretor.nome}!`);
       reloadData();
       setIsAuthenticated(true);
     }
@@ -564,7 +563,6 @@ useEffect(() => {
       };
       const corretor = await processAuthenticatedUser(mockGoogleUser);
       if (corretor) {
-        triggerToast(`Bem-vindo com sua conta do Google (${corretor.email})!`);
         await DbService.syncWithServer();
         reloadData();
       }
@@ -587,7 +585,6 @@ const handleGoogleLogin = async () => {
     if (user) {
       const corretor = await processAuthenticatedUser(user);
       if (corretor) {
-        triggerToast(`Bem-vindo, ${corretor.nome}!`);
         await DbService.syncWithServer();
         reloadData();
       }
@@ -604,7 +601,6 @@ const handleGoogleLogin = async () => {
       try {
         const corretor = await processAuthenticatedUser(auth.currentUser);
         if (corretor) {
-          triggerToast(`Bem-vindo, ${corretor.nome}!`);
           await DbService.syncWithServer();
           reloadData();
           return;
@@ -698,7 +694,6 @@ const handleGoogleLogin = async () => {
         localStorage.setItem('imobishare_logged_in', 'true');
         setIsAuthenticated(true);
         setActiveCorretor(foundCorretor);
-        triggerToast(`Bem-vindo, ${foundCorretor.nome}!`);
 
         await DbService.syncWithServer();
         reloadData();
@@ -789,7 +784,7 @@ const handleGoogleLogin = async () => {
       localStorage.setItem('imobishare_logged_in', 'true');
       setIsAuthenticated(true);
       setActiveCorretor(newCorretorObj);
-      triggerToast(`Conta criada com sucesso! Bem-vindo, ${newCorretorObj.nome}!`);
+      triggerToast('Conta criada com sucesso!');
 
       await DbService.syncWithServer();
       reloadData();
@@ -995,33 +990,12 @@ const handleGoogleLogin = async () => {
 
   // Check favorite properties of the active broker
   const getFavoriteImoveis = () => {
-    // Return all properties where id is in the active broker's favorite array or marked favorito
-    // AND is either mine, OR belongs to someone else but is shared.
+    // Return all properties favorited by the active broker that belong to the active broker
     return allImoveis.filter((imovel) => {
       const isFav = favoritos.includes(imovel.id) || imovel.favorito === true;
       if (!isFav) return false;
 
-      const isMine = isMyProperty(imovel);
-      if (isMine) return true;
-
-      const isShared = imovel.compartilhar !== false;
-      if (!isShared) return false;
-
-      // Check partner restriction
-      const owner = DbService.getCorretores().find(c => 
-        (c.id && imovel.corretorId && c.id === imovel.corretorId) ||
-        (c.email && imovel.corretorEmail && c.email.toLowerCase().trim() === imovel.corretorEmail.toLowerCase().trim())
-      );
-      if (owner && owner.restringirParceiros) {
-        const partners = owner.parceirosEmails || [];
-        if (partners.length > 0) {
-          const activeEmail = (activeCorretor?.email || '').toLowerCase().trim();
-          const hasAccess = partners.some(p => p.toLowerCase().trim() === activeEmail);
-          if (!hasAccess) return false;
-        }
-      }
-
-      return true;
+      return isMyProperty(imovel);
     });
   };
 
@@ -1088,7 +1062,8 @@ Toque abaixo para ver fotos e todos os detalhes:
   if (publicViewProperty) {
     return (
       <PublicView 
-        imovel={publicViewProperty} 
+        imovel={publicViewProperty}
+        activeCorretor={activeCorretor}
         onExit={() => setPublicViewProperty(null)} 
       />
     );
@@ -1208,8 +1183,23 @@ Toque abaixo para ver fotos e todos os detalhes:
   // --- INITIAL LOADING SCREEN ---
   if (isInitialLoading) {
     return (
-      <div className="bg-[#0F172A] min-h-screen flex flex-col justify-center items-center p-4">
-        <div className="w-10 h-10 border-3 border-white border-t-transparent rounded-full animate-spin" />
+      <div className="bg-[#0F172A] min-h-screen flex flex-col justify-center items-center p-6 font-sans select-none">
+        <div className="flex flex-col items-center space-y-5 animate-fade-in text-center">
+          <div className="relative">
+            <img
+              src={logoImg}
+              alt="ImobiShare Logo"
+              className="w-20 h-20 sm:w-24 sm:h-24 object-contain rounded-3xl border-2 border-white/20 shadow-2xl animate-pulse"
+              referrerPolicy="no-referrer"
+            />
+            <div className="absolute -inset-3 rounded-3xl bg-indigo-500/20 blur-xl -z-10 animate-pulse" />
+          </div>
+          <div className="space-y-1">
+            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-wider uppercase">ImobiShare</h1>
+            <p className="text-xs text-slate-400 font-medium uppercase tracking-widest">Carregando sistema...</p>
+          </div>
+          <div className="w-8 h-8 border-3 border-indigo-400 border-t-transparent rounded-full animate-spin mt-2" />
+        </div>
       </div>
     );
   }
@@ -1575,7 +1565,7 @@ Toque abaixo para ver fotos e todos os detalhes:
               {activeTab === 'home' && (
                 <div className="space-y-4" id="home-tab-view">
                   {/* Instagram-inspired Top Bar with Artistic Flair styles */}
-                  <div className="px-5 pt-6 pb-4 bg-white flex justify-between items-center border-b border-gray-100 sticky top-0 z-10">
+                  <div className="px-5 pt-6 pb-4 bg-white flex justify-between items-center border-b border-gray-100">
                     <div className="flex items-center gap-2">
                       <img
                         src={logoImg}
@@ -1904,9 +1894,10 @@ Toque abaixo para ver fotos e todos os detalhes:
                           setEditingPropertyId(null);
                           setIsAddingProperty(true);
                         }}
-                        className="bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold px-3.5 py-2 rounded-xl flex items-center shadow-md transition-colors uppercase tracking-wider text-[10px] flex-shrink-0 cursor-pointer"
+                        title="Cadastrar Novo Imóvel"
+                        className="bg-[#003366] hover:bg-[#002244] text-white p-2.5 rounded-xl flex items-center justify-center shadow-md transition-colors flex-shrink-0 cursor-pointer"
                       >
-                        <PlusCircle size={14} className="mr-1.5" /> Novo
+                        <PlusCircle size={18} />
                       </button>
                     </div>
 

@@ -92,13 +92,18 @@ export function CompactPropertyRow({
         )}
 
         <div className="min-w-0 flex-1 overflow-hidden">
-          {/* Linha 1: Nome do edifício + Palavra destacada + Valor + Ações na mesma linha */}
+          {/* Linha 1: Nome do edifício + Selo de Status + Palavra destacada + Valor + Ações na mesma linha */}
           <div className="flex items-center justify-between gap-2 min-w-0">
             <div className="flex items-center gap-1.5 min-w-0 truncate">
-              <span className="text-[13px] font-medium text-slate-900 truncate min-w-0 leading-tight">
+              <span className={`${isMyProperty ? 'text-[8px]' : 'text-[13px]'} font-medium text-slate-900 truncate min-w-0 leading-tight`}>
                 {imovel.nomeEdificio?.trim() ? imovel.nomeEdificio.trim() : imovel.titulo}
               </span>
-              {imovel.palavraDestacada?.trim() && (
+              {!isMyProperty && imovel.statusImovel && (
+                <span className="font-extrabold uppercase tracking-tight text-slate-800 bg-slate-100 border border-slate-200/80 px-1 py-[0.5px] rounded-full flex-shrink-0 text-[7.5px]">
+                  {imovel.statusImovel}
+                </span>
+              )}
+              {!isMyProperty && imovel.palavraDestacada?.trim() && (
                 <span className="text-[9.5px] font-medium text-amber-800 bg-amber-50 border border-amber-200/60 px-1.5 py-0.2 rounded flex-shrink-0 truncate max-w-[80px]">
                   {imovel.palavraDestacada.trim()}
                 </span>
@@ -107,16 +112,22 @@ export function CompactPropertyRow({
 
             {/* Valor reduzido e Botões de ação na mesma linha das informações */}
             <div className="flex items-center gap-2 flex-shrink-0">
-              <div className="text-right text-xs font-semibold text-slate-800 leading-tight">
+              <div className={`text-right font-semibold text-slate-800 leading-tight ${isMyProperty ? 'text-[8px]' : 'text-xs'}`}>
                 {imovel.tipo === 'ambos' ? (
-                  <span>
-                    {formatPrice(imovel.valor)}{' '}
-                    <span className="text-[10px] font-normal text-slate-500">| {formatPrice(imovel.valorLocacao || 0)}/mês</span>
-                  </span>
+                  <div className="flex flex-col text-right leading-tight">
+                    <span>
+                      {formatPrice(imovel.valor)}{' '}
+                      <span className={`${isMyProperty ? 'text-[8px]' : 'text-[9.5px]'} font-normal text-slate-500`}>(Venda)</span>
+                    </span>
+                    <span>
+                      {formatPrice(imovel.valorLocacao || 0)}
+                      <span className={`${isMyProperty ? 'text-[8px]' : 'text-[9.5px]'} font-normal text-slate-500`}>/mês (Locação)</span>
+                    </span>
+                  </div>
                 ) : imovel.tipo === 'locação' ? (
                   <span>
                     {formatPrice(imovel.valorLocacao || imovel.valor)}
-                    <span className="text-[10px] font-normal text-slate-500">/mês</span>
+                    <span className={`${isMyProperty ? 'text-[8px]' : 'text-[10px]'} font-normal text-slate-500`}>/mês</span>
                   </span>
                 ) : (
                   <span>{formatPrice(imovel.valor)}</span>
@@ -168,7 +179,7 @@ export function CompactPropertyRow({
           </div>
 
           {/* Linha 2: Especificações */}
-          <div className="text-[11px] text-slate-500 truncate leading-tight mt-0.5">
+          <div className={`${isMyProperty ? 'text-[8px]' : 'text-[11px]'} text-slate-500 truncate leading-tight mt-0.5`}>
             {specsText || 'Sem especificações'}
           </div>
         </div>

@@ -5,18 +5,20 @@
 
 import React, { useState } from 'react';
 import logoImg from '../assets/images/app_icon_1785762115971.jpg';
-import { Imovel } from '../types';
+import { Imovel, Corretor } from '../types';
 import { MOCK_CORRETORES } from '../data';
-import { MapPin, Phone, MessageCircle, Building2, Check, ArrowLeft, Home, Bed, Car, Maximize, Bath } from 'lucide-react';
+import { DbService } from '../services/db';
+import { MapPin, Phone, MessageCircle, Bed, Car, Maximize, Bath } from 'lucide-react';
 import { getValidImage, handleImageError } from '../utils/imageUtils';
 import { getPropertyCode } from '../utils/codeUtils';
 
 interface PublicViewProps {
   imovel: Imovel;
+  activeCorretor?: Corretor;
   onExit: () => void;
 }
 
-export function PublicView({ imovel, onExit }: PublicViewProps) {
+export function PublicView({ imovel, activeCorretor, onExit }: PublicViewProps) {
   const [activePhotoIdx, setActivePhotoIdx] = useState(0);
 
   // Format price helper
@@ -28,12 +30,20 @@ export function PublicView({ imovel, onExit }: PublicViewProps) {
     }).format(value);
   };
 
-  // Find listing broker's actual contacts
-  const ownerBroker = MOCK_CORRETORES.find(c => c.id === imovel.corretorId) || MOCK_CORRETORES[0];
+  // Find listing broker or active logged-in broker
+  const corretores = DbService.getCorretores();
+  const broker = activeCorretor || 
+    corretores.find(c => (c.id && c.id === imovel.corretorId) || (c.email && c.email.toLowerCase().trim() === imovel.corretorEmail?.toLowerCase().trim())) || 
+    MOCK_CORRETORES[0];
+
+  const rawPhone = broker?.telefone || '(47) 99888-7766';
+  const rawWhatsapp = broker?.whatsapp || broker?.telefone || '47998887766';
+  const cleanPhone = rawPhone.replace(/\D/g, '');
+  const cleanWhatsapp = rawWhatsapp.replace(/\D/g, '');
 
   const handleWhatsAppClick = () => {
-    const textMessage = `Olá! Vi o anúncio público do imóvel *${imovel.titulo}* (${formatPrice(imovel.valor)}) e gostaria de mais informações.`;
-    const waUrl = `https://wa.me/${ownerBroker.whatsapp}?text=${encodeURIComponent(textMessage)}`;
+    const textMessage = `Olá ${broker.nome.split(' ')[0]}, vi o anúncio público do imóvel "${imovel.nomeEdificio?.trim() || imovel.titulo}" (#${getPropertyCode(imovel)}) e gostaria de mais informações.`;
+    const waUrl = `https://wa.me/${cleanWhatsapp}?text=${encodeURIComponent(textMessage)}`;
     window.open(waUrl, '_blank', 'noopener,noreferrer');
   };
 
@@ -45,7 +55,7 @@ export function PublicView({ imovel, onExit }: PublicViewProps) {
         <span>🌐 Você está visualizando o <b>Link Público do Cliente</b> (Simulado)</span>
         <button 
           onClick={onExit}
-          className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-2 py-0.5 rounded text-[10px] transition-colors"
+          className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-2 py-0.5 rounded text-[10px] transition-colors cursor-pointer"
         >
           Voltar ao App
         </button>
@@ -79,7 +89,7 @@ export function PublicView({ imovel, onExit }: PublicViewProps) {
           />
 
           {/* Dots */}
-          {imovel.fotos.length > 1 && (
+          {imovel.fotos && imovel.fotos.length > 1 && (
             <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-1 z-10">
               {imovel.fotos.map((_, idx) => (
                 <button
@@ -93,15 +103,18 @@ export function PublicView({ imovel, onExit }: PublicViewProps) {
             </div>
           )}
 
-          <span className={`absolute top-3 left-3 text-[10px] font-bold uppercase tracking-wider text-white px-2 py-0.5 rounded-full shadow-md ${
-            imovel.tipo === 'venda' ? 'bg-[#003366]' : imovel.tipo === 'locação' ? 'bg-emerald-600' : 'bg-indigo-900'
-          }`}>
-            {imovel.tipo === 'venda' ? 'Venda' : imovel.tipo === 'locação' ? 'Aluguel' : 'Venda & Aluguel'}
-          </span>
+          {/* Palavra Destacada Badge overlay on main image */}
+          {imovel.palavraDestacada?.trim() && (
+            <div className="absolute top-3 left-3 z-10">
+              <span className="inline-block text-[10px] sm:text-xs font-black uppercase tracking-wider text-white bg-indigo-600/95 backdrop-blur-xs px-2.5 py-1 rounded-md shadow-md border border-indigo-400/40">
+                {imovel.palavraDestacada.trim()}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Thumbnails preview */}
-        {imovel.fotos.length > 1 && (
+        {imovel.fotos && imovel.fotos.length > 1 && (
           <div className="p-3 bg-slate-50 flex gap-2 overflow-x-auto border-b border-slate-100">
             {imovel.fotos.map((foto, idx) => (
               <button
@@ -192,25 +205,33 @@ export function PublicView({ imovel, onExit }: PublicViewProps) {
             </p>
           </div>
 
-          {/* Broker footer details */}
+          {/* Broker details card */}
           <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              <img
-                src={ownerBroker.foto}
-                alt={ownerBroker.nome}
-                referrerPolicy="no-referrer"
-                className="w-9 h-9 rounded-full object-cover border border-slate-100 flex-shrink-0"
-              />
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+              {broker.foto ? (
+                <img
+                  src={broker.foto}
+                  alt={broker.nome}
+                  referrerPolicy="no-referrer"
+                  className="w-10 h-10 rounded-full object-cover border border-slate-200 flex-shrink-0"
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-[#003366] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                  {(broker.nome || 'C').charAt(0).toUpperCase()}
+                </div>
+              )}
               <div className="min-w-0 flex-1">
-                <span className="text-xs font-bold text-slate-800 block truncate">Corretor Responsável</span>
-                <span className="text-[10px] text-slate-400 block truncate">{ownerBroker.nome} | {ownerBroker.creci}</span>
+                <span className="text-xs font-bold text-slate-800 block truncate">Corretor: {broker.nome}</span>
+                <span className="text-[10px] text-slate-400 block truncate">
+                  CRECI: {broker.creci ? broker.creci.replace(/^creci[\:\s]*/i, '') : 'Não informado'}
+                </span>
               </div>
             </div>
 
             <div className="flex items-center gap-1.5 flex-shrink-0">
               <a
-                href={`tel:${ownerBroker.telefone?.replace(/\D/g, '') || '47998887766'}`}
-                className="flex items-center justify-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold rounded-lg transition-all border border-slate-200/80 active:scale-95"
+                href={`tel:${cleanPhone}`}
+                className="flex items-center justify-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold rounded-lg transition-all border border-slate-200/80 active:scale-95 cursor-pointer"
                 title="Ligar para o corretor"
               >
                 <Phone size={12} className="text-[#003366]" />
@@ -218,7 +239,7 @@ export function PublicView({ imovel, onExit }: PublicViewProps) {
               </a>
               <button
                 onClick={handleWhatsAppClick}
-                className="flex items-center justify-center gap-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-lg transition-all shadow-2xs active:scale-95"
+                className="flex items-center justify-center gap-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-lg transition-all shadow-2xs active:scale-95 cursor-pointer"
                 title="Enviar WhatsApp ao corretor"
               >
                 <MessageCircle size={12} />
@@ -226,17 +247,10 @@ export function PublicView({ imovel, onExit }: PublicViewProps) {
               </button>
             </div>
           </div>
-
-          {/* WhatsApp Action button */}
-          <button
-            onClick={handleWhatsAppClick}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 active:scale-95 text-sm"
-          >
-            <MessageCircle size={18} /> Falar no WhatsApp
-          </button>
         </div>
 
       </div>
     </div>
   );
 }
+

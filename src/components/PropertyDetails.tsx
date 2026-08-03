@@ -93,7 +93,7 @@ Toque abaixo para ver fotos e todos os detalhes:
   return (
     <div className="bg-slate-50 min-h-screen pb-16" id={`property-details-${imovel.id}`}>
       {/* Header */}
-      <div className="bg-white/80 backdrop-blur-md border-b border-slate-100 px-4 py-3.5 sticky top-0 z-20 flex items-center justify-between">
+      <div className="bg-white border-b border-slate-100 px-4 py-3.5 flex items-center justify-between">
         <button onClick={onBack} className="p-1 text-slate-500 hover:bg-slate-100 rounded-full transition-colors flex items-center">
           <ArrowLeft size={20} className="mr-1" />
           <span className="text-xs font-semibold">Voltar</span>
@@ -139,23 +139,9 @@ Toque abaixo para ver fotos e todos os detalhes:
             </div>
           )}
 
-          {/* Type Badge & Status Badge */}
-          <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap z-10">
-            <span className={`text-[10px] font-bold uppercase tracking-wider text-white px-2 py-0.5 rounded-full shadow-md ${
-              imovel.tipo === 'venda' ? 'bg-[#003366]' : imovel.tipo === 'locação' ? 'bg-emerald-600' : 'bg-indigo-900'
-            }`}>
-              {imovel.tipo === 'venda' ? 'Venda' : imovel.tipo === 'locação' ? 'Aluguel' : 'Venda & Aluguel'}
-            </span>
-            {imovel.statusImovel && (
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-800 bg-white/95 backdrop-blur-xs px-2 py-0.5 rounded-full shadow-md border border-slate-200/80">
-                {imovel.statusImovel}
-              </span>
-            )}
-          </div>
-
-          {/* Palavra Destacada Badge overlay on main image */}
+          {/* Palavra Destacada Badge overlay on top left of main image */}
           {imovel.palavraDestacada?.trim() && (
-            <div className="absolute bottom-3 left-3 z-10">
+            <div className="absolute top-3 left-3 z-10">
               <span className="inline-block text-[10px] sm:text-xs font-black uppercase tracking-wider text-white bg-indigo-600/95 backdrop-blur-xs px-2.5 py-1 rounded-md shadow-md border border-indigo-400/40">
                 {imovel.palavraDestacada.trim()}
               </span>
@@ -212,7 +198,7 @@ Toque abaixo para ver fotos e todos os detalhes:
                 {imovel.tipo === 'ambos' ? 'Valores' : 'Valor'}
               </span>
               {imovel.tipo === 'ambos' ? (
-                <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4 mt-1">
+                <div className="flex flex-col gap-1.5 mt-1">
                   <div>
                     <span className="text-[10px] text-slate-400 font-bold uppercase block">Venda:</span>
                     {imovel.valorAnterior && imovel.valorAnterior > imovel.valor ? (
@@ -344,10 +330,10 @@ Toque abaixo para ver fotos e todos os detalhes:
                   </div>
                   <div className="min-w-0 flex-1">
                     <span className="font-semibold text-slate-800 text-xs sm:text-sm block truncate">
-                      {responsibleBroker.nome || imovel.corretorNome || 'Corretor Parceiro'}
+                      Corretor: {responsibleBroker.nome || imovel.corretorNome || 'Parceiro'}
                     </span>
                     <span className="text-[10px] sm:text-xs text-slate-400 block truncate">
-                      {responsibleBroker.creci || 'Parceria Autorizada'}
+                      CRECI: {responsibleBroker.creci ? responsibleBroker.creci.replace(/^creci[\:\s]*/i, '') : 'Parceria Autorizada'}
                     </span>
                   </div>
                 </div>
@@ -429,30 +415,31 @@ Toque abaixo para ver fotos e todos os detalhes:
           </div>
         )}
 
-        {/* Share preview helper block */}
-        <div className="p-4 bg-slate-50 border-t border-slate-100 space-y-2">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Link Público de Compartilhamento</span>
-          <div className="flex items-center justify-between bg-white border border-slate-200 rounded-lg p-2 gap-2">
-            <span className="text-xs text-slate-500 truncate flex-grow select-all font-mono">
-              {publicLink}
-            </span>
+        {/* Share section: Public link & WhatsApp button inline after owner controls */}
+        <div className="p-4 bg-white border-t border-slate-100 space-y-3">
+          {/* Link Público de Compartilhamento */}
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 flex items-center justify-between gap-2">
+            <div className="flex flex-col min-w-0 flex-grow">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Link Público de Compartilhamento</span>
+              <span className="text-xs text-slate-600 truncate font-mono select-all">
+                {publicLink}
+              </span>
+            </div>
             <button
               onClick={() => {
                 navigator.clipboard.writeText(publicLink);
                 alert('Link público copiado com sucesso! Você pode compartilhar onde quiser.');
               }}
-              className="text-xs font-bold text-[#003366] hover:text-[#002244] flex-shrink-0"
+              className="text-xs font-bold text-[#003366] hover:text-[#002244] bg-white border border-slate-200 px-2.5 py-1.5 rounded-md flex-shrink-0 shadow-2xs active:scale-95 transition-all cursor-pointer"
             >
               Copiar Link
             </button>
           </div>
-        </div>
 
-        {/* Bottom Floating Action bar */}
-        <div className="bg-white border-t border-slate-100 p-4 sticky bottom-0 left-0 right-0 flex gap-3">
+          {/* WhatsApp button below the public link */}
           <button
             onClick={handleSendWhatsApp}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 active:scale-95 text-sm"
+            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 active:scale-95 text-sm cursor-pointer"
           >
             {whatsappSent ? (
               <>

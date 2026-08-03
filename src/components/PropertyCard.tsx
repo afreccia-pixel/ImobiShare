@@ -77,28 +77,30 @@ export function PropertyCard({
           className="absolute inset-0 w-full h-full object-cover"
         />
         {/* Buy / Rent Badge & Integrated Badge */}
-        <div className="absolute top-1 left-1 flex flex-col gap-0.5 z-10">
-          <span className={`text-[6.5px] font-extrabold uppercase tracking-tight text-white px-1 py-0.5 rounded-xs shadow-xs ${
-            imovel.tipo === 'venda' ? 'bg-[#003366]' : imovel.tipo === 'locação' ? 'bg-emerald-700' : 'bg-indigo-900'
-          }`}>
-            {imovel.tipo === 'venda' ? 'Venda' : imovel.tipo === 'locação' ? 'Aluguel' : 'Venda & Aluguel'}
-          </span>
-          {imovel.statusImovel && (
-            <span className="text-[6.5px] font-extrabold uppercase tracking-tight text-slate-800 bg-white/95 backdrop-blur-xs px-1 py-0.5 rounded-xs shadow-xs border border-slate-200/80">
-              {imovel.statusImovel}
+        {!isMyProperty && (
+          <div className="absolute top-1 left-1 flex flex-col gap-0.5 z-10">
+            <span className={`font-extrabold uppercase tracking-tight text-white px-1 py-0.5 rounded-xs shadow-xs ${
+              imovel.tipo === 'venda' ? 'bg-[#003366]' : imovel.tipo === 'locação' ? 'bg-emerald-700' : 'bg-indigo-900'
+            } text-[6.5px]`}>
+              {imovel.tipo === 'venda' ? 'Venda' : imovel.tipo === 'locação' ? 'Aluguel' : 'Venda & Aluguel'}
             </span>
-          )}
-          {imovel.integrado && (
-            <span className="text-[7px] font-black uppercase tracking-wider text-slate-900 bg-amber-300 px-1 py-0.5 rounded-sm shadow-xs" title="Imóvel importado via integração">
-              Integração
-            </span>
-          )}
-        </div>
+            {imovel.statusImovel && (
+              <span className="font-extrabold uppercase tracking-tight text-slate-800 bg-white/95 backdrop-blur-xs shadow-xs border border-slate-200/80 text-[6.5px] px-1 py-0.5 rounded-xs">
+                {imovel.statusImovel}
+              </span>
+            )}
+            {imovel.integrado && (
+              <span className="font-black uppercase tracking-wider text-slate-900 bg-amber-300 px-1 py-0.5 rounded-sm shadow-xs text-[7px]" title="Imóvel importado via integração">
+                Integração
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Palavra Destacada Badge on Main Image */}
-        {imovel.palavraDestacada?.trim() && (
+        {!isMyProperty && imovel.palavraDestacada?.trim() && (
           <div className="absolute bottom-1 left-1 right-1 max-w-full z-10">
-            <span className="block truncate text-[6.5px] sm:text-[7.5px] font-black uppercase tracking-wider text-white bg-indigo-600/90 backdrop-blur-xs px-1 py-0.5 rounded-xs shadow-xs text-center border border-indigo-400/30">
+            <span className="block truncate font-black uppercase tracking-wider text-white bg-indigo-600/90 backdrop-blur-xs px-1 py-0.5 rounded-xs shadow-xs text-center border border-indigo-400/30 text-[6.5px] sm:text-[7.5px]">
               {imovel.palavraDestacada.trim()}
             </span>
           </div>
@@ -117,7 +119,9 @@ export function PropertyCard({
         <div>
           {/* Top Row: Title & Optional Checkbox */}
           <div className="flex items-start justify-between gap-1">
-            <h3 className="font-extrabold text-slate-900 text-xs sm:text-sm tracking-tight leading-snug line-clamp-2">
+            <h3 className={`font-extrabold text-slate-900 tracking-tight leading-snug line-clamp-2 ${
+              isMyProperty ? 'text-[8px]' : 'text-xs sm:text-sm'
+            }`}>
               {imovel.nomeEdificio?.trim() ? imovel.nomeEdificio : imovel.titulo}
             </h3>
 
@@ -140,30 +144,34 @@ export function PropertyCard({
           </div>
 
           {/* Location */}
-          <div className="flex items-center text-slate-400 text-[10px] mt-0.5 font-medium truncate">
-            <MapPin size={10} className="mr-0.5 flex-shrink-0 text-slate-400" />
+          <div className={`flex items-center text-slate-400 mt-0.5 font-medium truncate ${
+            isMyProperty ? 'text-[8px]' : 'text-[10px]'
+          }`}>
+            <MapPin size={isMyProperty ? 9 : 10} className="mr-0.5 flex-shrink-0 text-slate-400" />
             <span className="truncate">{imovel.bairro}</span>
           </div>
 
           {/* Essentials row instead of Description */}
-          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-slate-600 text-[9px] mt-1 bg-slate-50 py-0.5 px-2 rounded-lg border border-slate-100/60 w-fit font-bold">
+          <div className={`flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-slate-600 mt-1 bg-slate-50 py-0.5 px-2 rounded-lg border border-slate-100/60 w-fit font-bold ${
+            isMyProperty ? 'text-[8px]' : 'text-[9px]'
+          }`}>
             <span className="flex items-center gap-0.5">
-              <Bed size={10} className="text-slate-400 flex-shrink-0" />
+              <Bed size={isMyProperty ? 9 : 10} className="text-slate-400 flex-shrink-0" />
               <span>{imovel.dormitorios ?? 0} {imovel.dormitorios === 1 ? 'dorm' : 'dorms'}</span>
             </span>
             <span className="text-slate-300">•</span>
             <span className="flex items-center gap-0.5">
-              <Bath size={10} className="text-slate-400 flex-shrink-0" />
+              <Bath size={isMyProperty ? 9 : 10} className="text-slate-400 flex-shrink-0" />
               <span>{imovel.banheiros ?? 0} BWC</span>
             </span>
             <span className="text-slate-300">•</span>
             <span className="flex items-center gap-0.5">
-              <Car size={10} className="text-slate-400 flex-shrink-0" />
+              <Car size={isMyProperty ? 9 : 10} className="text-slate-400 flex-shrink-0" />
               <span>{imovel.vagas ?? 0} {imovel.vagas === 1 ? 'vaga' : 'vagas'}</span>
             </span>
             <span className="text-slate-300">•</span>
             <span className="flex items-center gap-0.5">
-              <Maximize size={10} className="text-slate-400 flex-shrink-0" />
+              <Maximize size={isMyProperty ? 9 : 10} className="text-slate-400 flex-shrink-0" />
               <span>{imovel.metragem ?? 0} m²</span>
             </span>
           </div>
@@ -176,57 +184,57 @@ export function PropertyCard({
               <div className="flex flex-col">
                 {imovel.valorAnterior && imovel.valorAnterior > imovel.valor ? (
                   <>
-                    <span className="text-[7.5px] text-slate-400 line-through font-semibold">
+                    <span className={`text-slate-400 line-through font-semibold ${isMyProperty ? 'text-[8px]' : 'text-[7.5px]'}`}>
                       De {formatPrice(imovel.valorAnterior)}
                     </span>
                     <div className="flex items-center gap-1">
-                      <span className="text-[11px] sm:text-xs font-bold text-slate-800">
-                        <span className="text-[8px] text-slate-400 font-normal">Por </span>{formatPrice(imovel.valor)}
+                      <span className={`font-bold text-slate-800 ${isMyProperty ? 'text-[8px]' : 'text-[11px] sm:text-xs'}`}>
+                        <span className="text-slate-400 font-normal text-[8px]">Por </span>{formatPrice(imovel.valor)}
                       </span>
                     </div>
                   </>
                 ) : (
-                  <span className="font-extrabold text-[#003366] text-[11px] sm:text-xs leading-tight">
-                    {formatPrice(imovel.valor)} <span className="text-[8px] font-semibold text-slate-400">(Venda)</span>
+                  <span className={`font-extrabold text-[#003366] leading-tight ${isMyProperty ? 'text-[8px]' : 'text-[11px] sm:text-xs'}`}>
+                    {formatPrice(imovel.valor)} <span className="font-semibold text-slate-400 text-[8px]">(Venda)</span>
                   </span>
                 )}
-                <span className="font-bold text-slate-700 text-[10px] leading-tight mt-0.5">
-                  {formatPrice(imovel.valorLocacao || 0)}<span className="text-[8px] font-normal text-slate-400">/mês (Locação)</span>
+                <span className={`font-bold text-slate-700 leading-tight mt-0.5 ${isMyProperty ? 'text-[8px]' : 'text-[10px]'}`}>
+                  {formatPrice(imovel.valorLocacao || 0)}<span className="font-normal text-slate-400 text-[8px]">/mês (Locação)</span>
                 </span>
               </div>
             ) : imovel.tipo === 'locação' ? (
               imovel.valorLocacaoAnterior && imovel.valorLocacaoAnterior > (imovel.valorLocacao || imovel.valor) ? (
                 <div className="flex flex-col leading-none">
-                  <span className="text-[7.5px] text-slate-400 line-through font-semibold">
+                  <span className={`text-slate-400 line-through font-semibold ${isMyProperty ? 'text-[8px]' : 'text-[7.5px]'}`}>
                     De {formatPrice(imovel.valorLocacaoAnterior)}
                   </span>
                   <div className="flex items-center gap-1">
-                    <span className="text-[11px] sm:text-xs font-bold text-slate-800">
-                      <span className="text-[8px] text-slate-400 font-normal">Por </span>{formatPrice(imovel.valorLocacao || imovel.valor)}
-                      <span className="text-[8px] font-normal text-slate-400"> /mês</span>
+                    <span className={`font-bold text-slate-800 ${isMyProperty ? 'text-[8px]' : 'text-[11px] sm:text-xs'}`}>
+                      <span className="text-slate-400 font-normal text-[8px]">Por </span>{formatPrice(imovel.valorLocacao || imovel.valor)}
+                      <span className="font-normal text-slate-400 text-[8px]"> /mês</span>
                     </span>
                   </div>
                 </div>
               ) : (
-                <span className="font-extrabold text-slate-800 text-[11px] sm:text-xs leading-tight">
+                <span className={`font-extrabold text-slate-800 leading-tight ${isMyProperty ? 'text-[8px]' : 'text-[11px] sm:text-xs'}`}>
                   {formatPrice(imovel.valorLocacao || imovel.valor)}
-                  <span className="text-[8px] font-normal text-slate-400"> /mês</span>
+                  <span className="font-normal text-slate-400 text-[8px]"> /mês</span>
                 </span>
               )
             ) : (
               imovel.valorAnterior && imovel.valorAnterior > imovel.valor ? (
                 <div className="flex flex-col leading-none">
-                  <span className="text-[7.5px] text-slate-400 line-through font-semibold">
+                  <span className={`text-slate-400 line-through font-semibold ${isMyProperty ? 'text-[8px]' : 'text-[7.5px]'}`}>
                     De {formatPrice(imovel.valorAnterior)}
                   </span>
                   <div className="flex items-center gap-1">
-                    <span className="text-[11px] sm:text-xs font-bold text-slate-800">
-                      <span className="text-[8px] text-slate-400 font-normal">Por </span>{formatPrice(imovel.valor)}
+                    <span className={`font-bold text-slate-800 ${isMyProperty ? 'text-[8px]' : 'text-[11px] sm:text-xs'}`}>
+                      <span className="text-slate-400 font-normal text-[8px]">Por </span>{formatPrice(imovel.valor)}
                     </span>
                   </div>
                 </div>
               ) : (
-                <span className="font-extrabold text-[#003366] text-[11px] sm:text-xs leading-tight">
+                <span className={`font-extrabold text-[#003366] leading-tight ${isMyProperty ? 'text-[8px]' : 'text-[11px] sm:text-xs'}`}>
                   {formatPrice(imovel.valor)}
                 </span>
               )

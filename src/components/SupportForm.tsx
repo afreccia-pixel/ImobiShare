@@ -68,7 +68,7 @@ export function SupportForm({ activeCorretor, onBack, triggerToast }: SupportFor
   return (
     <div className="bg-slate-50 min-h-full pb-10" id="support-container">
       {/* Top Header */}
-      <div className="bg-white border-b border-slate-100 px-5 py-4 flex items-center justify-between shadow-xs sticky top-0 z-10">
+      <div className="bg-white border-b border-slate-100 px-5 py-4 flex items-center justify-between shadow-xs">
         <div className="flex items-center gap-2">
           {onBack && (
             <button 
