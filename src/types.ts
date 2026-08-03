@@ -43,13 +43,13 @@ export interface Imovel {
   
   // Tipo e Modalidade
   tipoImovel: 'Apartamento' | 'Casa' | 'Casa em condomínio' | 'Cobertura' | 'Terreno' | 'Comercial' | 'Outro';
+  statusImovel?: 'Na planta' | 'Mobiliado' | 'Sem mobília';
   tipo: 'venda' | 'locação' | 'ambos'; // Modalidade
   
   // Valores
   valor: number; // Valor de Venda (principal)
   valorAnterior?: number; // Valor anterior caso o preço tenha sido reduzido
   valorVenda?: number;
-  valorVendaComDesconto?: number;
   temDesconto?: boolean;
   valorDesconto?: number;
   valorLocacao?: number;

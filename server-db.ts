@@ -100,7 +100,7 @@ export class ServerDb {
         tipo VARCHAR(100) NOT NULL,
         modalidade VARCHAR(50) NOT NULL,
         valor_venda NUMERIC,
-        valor_venda_com_desconto NUMERIC,
+        status_imovel TEXT,
         valor_locacao NUMERIC,
         quartos INTEGER DEFAULT 0,
         bwc INTEGER DEFAULT 0,
@@ -119,7 +119,8 @@ export class ServerDb {
 
     // Ensure columns on imoveis
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS palavra_destacada VARCHAR(20);`);
-    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS valor_venda_com_desconto NUMERIC;`);
+    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS status_imovel TEXT;`);
+    await this.pool.query(`ALTER TABLE imoveis DROP COLUMN IF EXISTS valor_venda_com_desconto;`);
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS visibilidade VARCHAR(50) DEFAULT 'todos';`);
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS valor_anterior NUMERIC;`);
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS valor_locacao_anterior NUMERIC;`);
@@ -444,7 +445,7 @@ export class ServerDb {
       await this.pool.query(`
         INSERT INTO imoveis (
           id, corretor_email, cep, endereco, cidade, bairro, tipo, modalidade,
-          valor_venda, valor_venda_com_desconto, valor_locacao, quartos, bwc, vagas,
+          valor_venda, status_imovel, valor_locacao, quartos, bwc, vagas,
           area_privativa, nome_edificio, titulo, palavra_destacada, descricao,
           visibilidade, dados_proprietario, imagens, data_cadastro,
           valor_anterior, valor_locacao_anterior, informacoes
@@ -462,7 +463,7 @@ export class ServerDb {
           tipo = EXCLUDED.tipo,
           modalidade = EXCLUDED.modalidade,
           valor_venda = EXCLUDED.valor_venda,
-          valor_venda_com_desconto = EXCLUDED.valor_venda_com_desconto,
+          status_imovel = EXCLUDED.status_imovel,
           valor_locacao = EXCLUDED.valor_locacao,
           quartos = EXCLUDED.quartos,
           bwc = EXCLUDED.bwc,
@@ -488,7 +489,7 @@ export class ServerDb {
         finalImovel.tipoImovel,
         modalidade,
         valorVenda,
-        finalImovel.valorVendaComDesconto || null,
+        finalImovel.statusImovel || null,
         finalImovel.valorLocacao || null,
         finalImovel.dormitorios || finalImovel.quartos || 0,
         finalImovel.banheiros || 0,
@@ -570,11 +571,11 @@ export class ServerDb {
       cidade: r.cidade,
       bairro: r.bairro,
       tipoImovel: r.tipo || 'Apartamento',
+      statusImovel: r.status_imovel || undefined,
       tipo: r.modalidade || (valorLocacao && valorVenda ? 'ambos' : (valorLocacao ? 'locação' : 'venda')),
       valor: valorVenda,
       valorVenda,
       valorAnterior: r.valor_anterior ? parseFloat(r.valor_anterior) : undefined,
-      valorVendaComDesconto: r.valor_venda_com_desconto ? parseFloat(r.valor_venda_com_desconto) : undefined,
       valorLocacao,
       valorLocacaoAnterior: r.valor_locacao_anterior ? parseFloat(r.valor_locacao_anterior) : undefined,
       dormitorios: parseInt(r.quartos || '0', 10),

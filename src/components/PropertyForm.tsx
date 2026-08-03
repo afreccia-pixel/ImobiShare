@@ -48,8 +48,9 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
   const [cidade, setCidade] = useState(() => DbService.getActiveCorretor()?.cidade || 'Balneário Camboriú');
   const [bairro, setBairro] = useState('');
 
-  // 3. Tipo de imóvel, Negócio e Valor
+  // 3. Tipo de imóvel, Status, Negócio e Valor
   const [tipoImovel, setTipoImovel] = useState<PropertyTypeOption | ''>('Apartamento');
+  const [statusImovel, setStatusImovel] = useState<'Na planta' | 'Mobiliado' | 'Sem mobília' | ''>('');
   const [tipo, setTipo] = useState<'venda' | 'locação' | 'ambos'>('venda');
   const [valor, setValor] = useState<number | ''>('');
   const [valorLocacao, setValorLocacao] = useState<number | ''>('');
@@ -111,6 +112,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         setCidade(found.cidade || DbService.getActiveCorretor()?.cidade || 'Balneário Camboriú');
         setBairro(found.bairro || '');
         setTipoImovel((found.tipoImovel as PropertyTypeOption) || 'Apartamento');
+        setStatusImovel((found.statusImovel as any) || '');
         setTipo(found.tipo === 'ambos' ? 'venda' : (found.tipo || 'venda'));
         setValor(found.valor || '');
         setValorLocacao(found.valorLocacao || '');
@@ -236,7 +238,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
   };
 
   // Image Compression helper
-  const compressImage = (file: File, maxWidth = 1024, maxHeight = 1024, quality = 0.75): Promise<string> => {
+  const compressImage = (file: File, maxWidth = 800, maxHeight = 800, quality = 0.65): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (event) => {
@@ -541,6 +543,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         valorLocacaoAnterior: valorLocacaoAnteriorCalculado,
         tipo: finalTipo,
         tipoImovel: tipoImovel as any,
+        statusImovel: statusImovel || undefined,
         cidade,
         bairro: bairro || 'Centro',
         localizacao,
@@ -790,6 +793,20 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
                 {PROPERTY_TYPES.map((t) => (
                   <option key={t} value={t}>{t}</option>
                 ))}
+              </select>
+            </div>
+
+            <div>
+              <span className="text-[10px] text-slate-500 font-medium block mb-0.5 whitespace-nowrap">Status do imóvel:</span>
+              <select
+                value={statusImovel}
+                onChange={(e) => setStatusImovel(e.target.value as any)}
+                className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-slate-50 font-bold text-slate-800 focus:outline-hidden focus:border-[#003366]"
+              >
+                <option value="">Selecione o status (opcional)</option>
+                <option value="Na planta">Na planta</option>
+                <option value="Mobiliado">Mobiliado</option>
+                <option value="Sem mobília">Sem mobília</option>
               </select>
             </div>
 

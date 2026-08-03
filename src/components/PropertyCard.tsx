@@ -83,6 +83,11 @@ export function PropertyCard({
           }`}>
             {imovel.tipo === 'venda' ? 'Venda' : imovel.tipo === 'locação' ? 'Aluguel' : 'Venda & Aluguel'}
           </span>
+          {imovel.statusImovel && (
+            <span className="text-[6.5px] font-extrabold uppercase tracking-tight text-slate-800 bg-white/95 backdrop-blur-xs px-1 py-0.5 rounded-xs shadow-xs border border-slate-200/80">
+              {imovel.statusImovel}
+            </span>
+          )}
           {imovel.integrado && (
             <span className="text-[7px] font-black uppercase tracking-wider text-slate-900 bg-amber-300 px-1 py-0.5 rounded-sm shadow-xs" title="Imóvel importado via integração">
               Integração

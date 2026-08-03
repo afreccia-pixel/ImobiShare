@@ -139,12 +139,19 @@ Toque abaixo para ver fotos e todos os detalhes:
             </div>
           )}
 
-          {/* Type Badge */}
-          <span className={`absolute top-3 left-3 text-[10px] font-bold uppercase tracking-wider text-white px-2 py-0.5 rounded-full shadow-md z-10 ${
-            imovel.tipo === 'venda' ? 'bg-[#003366]' : imovel.tipo === 'locação' ? 'bg-emerald-600' : 'bg-indigo-900'
-          }`}>
-            {imovel.tipo === 'venda' ? 'Venda' : imovel.tipo === 'locação' ? 'Aluguel' : 'Venda & Aluguel'}
-          </span>
+          {/* Type Badge & Status Badge */}
+          <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap z-10">
+            <span className={`text-[10px] font-bold uppercase tracking-wider text-white px-2 py-0.5 rounded-full shadow-md ${
+              imovel.tipo === 'venda' ? 'bg-[#003366]' : imovel.tipo === 'locação' ? 'bg-emerald-600' : 'bg-indigo-900'
+            }`}>
+              {imovel.tipo === 'venda' ? 'Venda' : imovel.tipo === 'locação' ? 'Aluguel' : 'Venda & Aluguel'}
+            </span>
+            {imovel.statusImovel && (
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-800 bg-white/95 backdrop-blur-xs px-2 py-0.5 rounded-full shadow-md border border-slate-200/80">
+                {imovel.statusImovel}
+              </span>
+            )}
+          </div>
 
           {/* Palavra Destacada Badge overlay on main image */}
           {imovel.palavraDestacada?.trim() && (
@@ -303,17 +310,6 @@ Toque abaixo para ver fotos e todos os detalhes:
               {imovel.descricao}
             </p>
           </div>
-
-          {imovel.informacoes?.trim() && (
-            <div className="p-3 bg-amber-50/80 border border-amber-200/80 rounded-xl space-y-1">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-900 block">
-                Informações
-              </span>
-              <p className="text-xs text-amber-950 font-medium whitespace-pre-line leading-relaxed">
-                {imovel.informacoes.trim()}
-              </p>
-            </div>
-          )}
         </div>
 
         {/* Broker Information - ONLY shown if it's NOT the user's own property */}
@@ -382,7 +378,7 @@ Toque abaixo para ver fotos e todos os detalhes:
           );
         })()}
 
-        {/* Confidential Section - ONLY Visivel para o corretor que cadastrou */}
+        {/* Confidential Section - Controle do Proprietário e Informações */}
         {isOwner && (
           <div className="p-4 bg-slate-900 text-slate-100 space-y-3">
             <div className="flex items-center justify-between">
@@ -409,6 +405,27 @@ Toque abaixo para ver fotos e todos os detalhes:
                 )}
               </div>
             </div>
+
+            {imovel.informacoes?.trim() && (
+              <div className="pt-2.5 border-t border-slate-800 space-y-1">
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Informações Adicionais / Controle:</span>
+                <p className="text-xs font-medium text-amber-200/95 whitespace-pre-line leading-relaxed bg-slate-800/80 p-2.5 rounded-lg border border-slate-700/60">
+                  {imovel.informacoes.trim()}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Informações do imóvel para outros corretores */}
+        {!isOwner && imovel.informacoes?.trim() && (
+          <div className="p-4 bg-amber-50/90 border-b border-amber-200/80 space-y-1">
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-900 block">
+              Informações do Imóvel
+            </span>
+            <p className="text-xs text-amber-950 font-medium whitespace-pre-line leading-relaxed">
+              {imovel.informacoes.trim()}
+            </p>
           </div>
         )}
 

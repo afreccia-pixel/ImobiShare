@@ -42,6 +42,49 @@ function notifySubscribers() {
   });
 }
 
+function safeSetLocalStorage(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch (err) {
+    console.warn(`[DbService] localStorage quota exceeded for key "${key}". Optimizing cached data...`, err);
+    if (key === 'imobishare_imoveis') {
+      try {
+        // Optimization fallback: Prune base64 photos for local cache storage to stay within ~5MB browser quota
+        const items: Imovel[] = JSON.parse(value);
+        const pruned = items.map(imovel => {
+          if (!imovel.fotos || imovel.fotos.length === 0) return imovel;
+          const prunedFotos = imovel.fotos.slice(0, 2).map((f, idx) => {
+            if (idx > 0 && f.startsWith('data:image') && f.length > 5000) {
+              return imovel.fotos[0] || f;
+            }
+            return f;
+          });
+          return {
+            ...imovel,
+            fotos: prunedFotos
+          };
+        });
+        localStorage.setItem(key, JSON.stringify(pruned));
+        return;
+      } catch (e2) {
+        try {
+          const items: Imovel[] = JSON.parse(value);
+          const ultraPruned = items.map(imovel => ({
+            ...imovel,
+            fotos: (imovel.fotos || []).slice(0, 1)
+          }));
+          localStorage.setItem(key, JSON.stringify(ultraPruned));
+          return;
+        } catch (e3) {
+          console.warn(`[DbService] Local storage write for ${key} bypassed gracefully due to strict storage quota:`, e3);
+        }
+      }
+    } else {
+      console.warn(`[DbService] Storage write for key "${key}" skipped due to quota:`, err);
+    }
+  }
+}
+
 function loadInitialFromLocalStorage() {
   try {
     const savedActive = localStorage.getItem('imobishare_active_corretor');
@@ -135,7 +178,7 @@ export class DbService {
   static setActiveCorretor(corretor: Corretor | null): void {
     cachedCorretor = corretor;
     if (corretor) {
-      localStorage.setItem('imobishare_active_corretor', JSON.stringify(corretor));
+      safeSetLocalStorage('imobishare_active_corretor', JSON.stringify(corretor));
       // Update in cachedCorretores list
       const idx = cachedCorretores.findIndex(c => c.id === corretor.id || (c.email && c.email.toLowerCase() === corretor.email.toLowerCase()));
       if (idx >= 0) {
@@ -143,7 +186,7 @@ export class DbService {
       } else {
         cachedCorretores.push(corretor);
       }
-      localStorage.setItem('imobishare_corretores', JSON.stringify(cachedCorretores));
+      safeSetLocalStorage('imobishare_corretores', JSON.stringify(cachedCorretores));
     } else {
       localStorage.removeItem('imobishare_active_corretor');
     }
@@ -166,7 +209,7 @@ export class DbService {
         const list = await res.json();
         if (Array.isArray(list)) {
           cachedCorretores = list;
-          localStorage.setItem('imobishare_corretores', JSON.stringify(list));
+          safeSetLocalStorage('imobishare_corretores', JSON.stringify(list));
           notifySubscribers();
           return list;
         }
@@ -303,7 +346,7 @@ export class DbService {
         const list = await res.json();
         if (Array.isArray(list)) {
           cachedImoveis = list;
-          localStorage.setItem('imobishare_imoveis', JSON.stringify(list));
+          safeSetLocalStorage('imobishare_imoveis', JSON.stringify(list));
           notifySubscribers();
           return list;
         }
@@ -354,16 +397,16 @@ export class DbService {
         if (saved.id) {
           if (saved.favorito && !cachedFavorites.includes(saved.id)) {
             cachedFavorites.push(saved.id);
-            localStorage.setItem('imobishare_favorites', JSON.stringify(cachedFavorites));
+            safeSetLocalStorage('imobishare_favorites', JSON.stringify(cachedFavorites));
           } else if (saved.favorito === false) {
             const favIdx = cachedFavorites.indexOf(saved.id);
             if (favIdx >= 0) {
               cachedFavorites.splice(favIdx, 1);
-              localStorage.setItem('imobishare_favorites', JSON.stringify(cachedFavorites));
+              safeSetLocalStorage('imobishare_favorites', JSON.stringify(cachedFavorites));
             }
           }
         }
-        localStorage.setItem('imobishare_imoveis', JSON.stringify(cachedImoveis));
+        safeSetLocalStorage('imobishare_imoveis', JSON.stringify(cachedImoveis));
         notifySubscribers();
         return saved;
       } else {
@@ -381,6 +424,7 @@ export class DbService {
         cidade: imovel.cidade || 'Balneário Camboriú',
         bairro: imovel.bairro || 'Centro',
         tipoImovel: imovel.tipoImovel || 'Apartamento',
+        statusImovel: imovel.statusImovel,
         tipo: imovel.tipo || 'venda',
         valor: imovel.valor || 0,
         dormitorios: imovel.dormitorios || 0,
@@ -400,7 +444,7 @@ export class DbService {
       } else {
         cachedImoveis.unshift(fallbackImovel);
       }
-      localStorage.setItem('imobishare_imoveis', JSON.stringify(cachedImoveis));
+      safeSetLocalStorage('imobishare_imoveis', JSON.stringify(cachedImoveis));
       notifySubscribers();
       return fallbackImovel;
     }
@@ -416,7 +460,7 @@ export class DbService {
       });
       if (res.ok) {
         cachedImoveis = cachedImoveis.filter(p => p.id !== id);
-        localStorage.setItem('imobishare_imoveis', JSON.stringify(cachedImoveis));
+        safeSetLocalStorage('imobishare_imoveis', JSON.stringify(cachedImoveis));
         notifySubscribers();
         return true;
       }
@@ -425,7 +469,7 @@ export class DbService {
     }
     // Fallback local deletion
     cachedImoveis = cachedImoveis.filter(p => p.id !== id);
-    localStorage.setItem('imobishare_imoveis', JSON.stringify(cachedImoveis));
+    safeSetLocalStorage('imobishare_imoveis', JSON.stringify(cachedImoveis));
     notifySubscribers();
     return true;
   }
@@ -530,8 +574,8 @@ export class DbService {
       found.favorito = isNowFav;
     }
 
-    localStorage.setItem('imobishare_favorites', JSON.stringify(cachedFavorites));
-    localStorage.setItem('imobishare_imoveis', JSON.stringify(cachedImoveis));
+    safeSetLocalStorage('imobishare_favorites', JSON.stringify(cachedFavorites));
+    safeSetLocalStorage('imobishare_imoveis', JSON.stringify(cachedImoveis));
     notifySubscribers();
 
     // Async REST toggle

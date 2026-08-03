@@ -183,6 +183,7 @@ export default function App() {
   const [filterCidade, setFilterCidade] = useState(() => DbService.getActiveCorretor()?.cidade || 'Balneário Camboriú');
   const [filterTipo, setFilterTipo] = useState<'comprar' | 'alugar' | 'todos'>('todos');
   const [filterTipoImovel, setFilterTipoImovel] = useState<string>('todos');
+  const [filterStatusImovel, setFilterStatusImovel] = useState<string>('todos');
   const [filterValorMin, setFilterValorMin] = useState<number>(0);
   const [filterValorMax, setFilterValorMax] = useState<number>(15000000);
   const [filterDormitorios, setFilterDormitorios] = useState<number>(0);
@@ -206,6 +207,7 @@ export default function App() {
     if (filterCidade && filterCidade !== 'Todas') count++;
     if (filterTipo !== 'todos') count++;
     if (filterTipoImovel !== 'todos') count++;
+    if (filterStatusImovel !== 'todos') count++;
     if (filterValorMin > 0) count++;
     if (filterValorMax > 0 && filterValorMax < 15000000) count++;
     if (filterDormitorios > 0) count++;
@@ -224,6 +226,7 @@ export default function App() {
     setFilterCidade('Balneário Camboriú');
     setFilterTipo('todos');
     setFilterTipoImovel('todos');
+    setFilterStatusImovel('todos');
     setFilterValorMin(0);
     setFilterValorMax(15000000);
     setFilterDormitorios(0);
@@ -898,6 +901,13 @@ const handleGoogleLogin = async () => {
         if (targetTipo === 'casa') {
           if (!impTipo.includes('casa') && !impTipo.includes('sobrado')) return false;
         } else if (!impTipo.includes(targetTipo)) {
+          return false;
+        }
+      }
+
+      // 5b. Status do Imóvel (Na planta, Mobiliado, Sem mobília)
+      if (filterStatusImovel !== 'todos') {
+        if (imovel.statusImovel !== filterStatusImovel) {
           return false;
         }
       }
@@ -2283,7 +2293,33 @@ Toque abaixo para ver fotos e todos os detalhes:
                     </div>
                   </div>
 
-                  {/* 4. Faixa de Preço */}
+                  {/* Status do Imóvel */}
+                  <div className="space-y-1.5 border-t border-slate-100 pt-3">
+                    <label className="font-bold text-slate-700 block uppercase tracking-wider text-[10px]">Status do Imóvel</label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { id: 'todos', label: 'Todos os Status' },
+                        { id: 'Na planta', label: 'Na Planta' },
+                        { id: 'Mobiliado', label: 'Mobiliado' },
+                        { id: 'Sem mobília', label: 'Sem Mobília' },
+                      ].map((st) => (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() => setFilterStatusImovel(st.id)}
+                          className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                            filterStatusImovel === st.id
+                              ? 'bg-[#003366] text-white border-[#003366]'
+                              : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          {st.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 5. Faixa de Preço */}
                   <div className="space-y-2 border-t border-slate-100 pt-3">
                     <div className="flex items-center justify-between">
                       <label className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">5. Faixa de Valor (R$)</label>
