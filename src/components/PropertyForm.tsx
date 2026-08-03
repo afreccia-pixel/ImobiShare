@@ -9,6 +9,7 @@ import { DbService } from '../services/db';
 import { auth } from '../services/firebase';
 import { Sparkles, MapPin, Search, Plus, Trash2, Check, ArrowLeft, Image as ImageIcon, Upload, Building2, Bed, Car, Maximize, Bath, Star, GripVertical } from 'lucide-react';
 import { getValidImage, handleImageError } from '../utils/imageUtils';
+import { getPropertyCode } from '../utils/codeUtils';
 
 interface PropertyFormProps {
   imovelId?: string | null; // If editing
@@ -503,31 +504,30 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
     let valorAnteriorCalculado: number | undefined = undefined;
     let valorLocacaoAnteriorCalculado: number | undefined = undefined;
 
-    if (imovelId) {
-      const existingImovel = DbService.getImoveisSync().find(i => i.id === imovelId);
-      if (existingImovel) {
-        const targetValor = numValor > 0 ? numValor : numValorLocacao;
-        const previousBaseValor = existingImovel.valorAnterior || existingImovel.valor;
-        if (targetValor > 0 && previousBaseValor > 0 && targetValor < previousBaseValor) {
-          valorAnteriorCalculado = previousBaseValor;
-        } else if (targetValor >= previousBaseValor) {
-          valorAnteriorCalculado = undefined;
-        }
+    const existingImovel = imovelId ? DbService.getImoveisSync().find(i => i.id === imovelId) : undefined;
 
-        if (numValorLocacao > 0) {
-          const previousLocBase = existingImovel.valorLocacaoAnterior || existingImovel.valorLocacao;
-          if (previousLocBase && previousLocBase > 0 && numValorLocacao < previousLocBase) {
-            valorLocacaoAnteriorCalculado = previousLocBase;
-          } else if (previousLocBase && numValorLocacao >= previousLocBase) {
-            valorLocacaoAnteriorCalculado = undefined;
-          }
+    if (existingImovel) {
+      const targetValor = numValor > 0 ? numValor : numValorLocacao;
+      const previousBaseValor = existingImovel.valorAnterior || existingImovel.valor;
+      if (targetValor > 0 && previousBaseValor > 0 && targetValor < previousBaseValor) {
+        valorAnteriorCalculado = previousBaseValor;
+      } else if (targetValor >= previousBaseValor) {
+        valorAnteriorCalculado = undefined;
+      }
+
+      if (numValorLocacao > 0) {
+        const previousLocBase = existingImovel.valorLocacaoAnterior || existingImovel.valorLocacao;
+        if (previousLocBase && previousLocBase > 0 && numValorLocacao < previousLocBase) {
+          valorLocacaoAnteriorCalculado = previousLocBase;
+        } else if (previousLocBase && numValorLocacao >= previousLocBase) {
+          valorLocacaoAnteriorCalculado = undefined;
         }
       }
     }
 
     try {
-      const saved = await DbService.saveImovel({
-        id: imovelId || undefined,
+      const imovelPayload: Imovel = {
+        id: imovelId || `imovel-${Date.now()}`,
         corretorEmail: activeEmail,
         corretorId: activeId,
         corretorNome: activeNome,
@@ -555,6 +555,15 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         vagas: vagas !== '' ? Number(vagas) : undefined,
         banheiros: banheiros !== '' ? Number(banheiros) : undefined,
         metragem: metragem !== '' ? Number(metragem) : undefined,
+        visibilidade: 'todos',
+        dataCadastro: existingImovel?.dataCadastro || new Date().toISOString(),
+      };
+
+      imovelPayload.codigo = existingImovel?.codigo || getPropertyCode(imovelPayload);
+
+      const saved = await DbService.saveImovel({
+        ...imovelPayload,
+        id: imovelId || undefined,
       });
 
       onSave(saved);
@@ -979,7 +988,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
             <input
               type="text"
               maxLength={90}
-              placeholder="Ex: Apartamento Alto Padrão Frente Mar Barra Sul"
+              placeholder="Ex: Apartamento Alto Padrão Barra Sul"
               value={titulo}
               onChange={(e) => setTitulo(e.target.value.slice(0, 90))}
               className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366]"

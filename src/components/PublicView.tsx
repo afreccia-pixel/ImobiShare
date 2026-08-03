@@ -4,11 +4,12 @@
  */
 
 import React, { useState } from 'react';
-import logoImg from '../assets/images/imobishare_logo_1784239677798.jpg';
+import logoImg from '../assets/images/app_icon_1785762115971.jpg';
 import { Imovel } from '../types';
 import { MOCK_CORRETORES } from '../data';
 import { MapPin, Phone, MessageCircle, Building2, Check, ArrowLeft, Home, Bed, Car, Maximize, Bath } from 'lucide-react';
 import { getValidImage, handleImageError } from '../utils/imageUtils';
+import { getPropertyCode } from '../utils/codeUtils';
 
 interface PublicViewProps {
   imovel: Imovel;
@@ -156,7 +157,7 @@ export function PublicView({ imovel, onExit }: PublicViewProps) {
             
             <div className="text-right">
               <span className="text-[9px] uppercase text-slate-400 font-bold block">Código do Imóvel</span>
-              <span className="text-xs font-mono font-bold text-slate-600 mt-1 block">#{imovel.id.replace('imovel-', '')}</span>
+              <span className="text-xs font-mono font-bold text-slate-600 mt-1 block">#{getPropertyCode(imovel)}</span>
             </div>
           </div>
 

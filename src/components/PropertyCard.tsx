@@ -178,9 +178,6 @@ export function PropertyCard({
                       <span className="text-[11px] sm:text-xs font-bold text-slate-800">
                         <span className="text-[8px] text-slate-400 font-normal">Por </span>{formatPrice(imovel.valor)}
                       </span>
-                      <span className="text-[7px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
-                        Baixou
-                      </span>
                     </div>
                   </>
                 ) : (
@@ -203,9 +200,6 @@ export function PropertyCard({
                       <span className="text-[8px] text-slate-400 font-normal">Por </span>{formatPrice(imovel.valorLocacao || imovel.valor)}
                       <span className="text-[8px] font-normal text-slate-400"> /mês</span>
                     </span>
-                    <span className="text-[7px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
-                      Baixou
-                    </span>
                   </div>
                 </div>
               ) : (
@@ -224,9 +218,6 @@ export function PropertyCard({
                     <span className="text-[11px] sm:text-xs font-bold text-slate-800">
                       <span className="text-[8px] text-slate-400 font-normal">Por </span>{formatPrice(imovel.valor)}
                     </span>
-                    <span className="text-[7px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
-                      Baixou
-                    </span>
                   </div>
                 </div>
               ) : (
@@ -239,64 +230,22 @@ export function PropertyCard({
 
           {/* Action Row */}
           <div className="flex items-center gap-0.5">
-            {isMyProperty ? (
-              /* Broker's Private Properties Panel - full management */
-              <div className="flex items-center gap-0.5 interactive-action">
+            <div className="flex items-center gap-0.5 interactive-action">
+              {onShareToggle && (
                 <button
-                  onClick={(e) => { e.stopPropagation(); onEdit?.(); }}
-                  className="p-1 text-slate-400 hover:text-[#003366] hover:bg-slate-50 rounded-full transition-colors"
-                  title="Editar Imóvel"
-                >
-                  <Edit2 size={12} />
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); onDuplicate?.(); }}
-                  className="p-1 text-slate-400 hover:text-emerald-700 hover:bg-slate-50 rounded-full transition-colors"
-                  title="Duplicar"
-                >
-                  <Copy size={12} />
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); onShareToggle?.(); }}
-                  className={`p-1 rounded-full transition-colors ${
-                    imovel.compartilhar ? 'text-[#003366] bg-[#003366]/5 hover:bg-[#003366]/10' : 'text-slate-400 hover:bg-slate-50'
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onShareToggle();
+                  }}
+                  className={`p-1.5 rounded-full transition-colors cursor-pointer ${
+                    imovel.compartilhar ? 'text-[#003366] bg-[#003366]/5 hover:bg-[#003366]/10' : 'text-slate-400 hover:text-[#003366] hover:bg-slate-50'
                   }`}
-                  title={imovel.compartilhar ? "Compartilhado com corretores" : "Apenas eu"}
+                  title={imovel.compartilhar ? "Compartilhado" : "Compartilhar"}
                 >
-                  {imovel.compartilhar ? <Share2 size={12} /> : <EyeOff size={12} />}
+                  <Share2 size={14} />
                 </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); onFavoriteToggle?.(); }}
-                  className={`p-1 rounded-full transition-colors ${
-                    isFavorite ? 'text-rose-500 bg-rose-50 hover:bg-rose-100' : 'text-slate-400 hover:bg-slate-50'
-                  }`}
-                  title="Favoritar"
-                >
-                  <Heart size={12} fill={isFavorite ? "currentColor" : "none"} />
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); onDelete?.(); }}
-                  className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-full transition-colors"
-                  title="Excluir"
-                >
-                  <Trash2 size={12} />
-                </button>
-              </div>
-            ) : (
-              /* Public / Others properties: only Favorite and quick Share */
-              <div className="flex items-center gap-0.5 interactive-action">
-                {onFavoriteToggle && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onFavoriteToggle(); }}
-                    className={`p-1 rounded-full transition-colors ${
-                      isFavorite ? 'text-rose-500 bg-rose-50' : 'text-slate-400 hover:bg-slate-50'
-                    }`}
-                  >
-                    <Heart size={13} fill={isFavorite ? "currentColor" : "none"} />
-                  </button>
-                )}
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </div>

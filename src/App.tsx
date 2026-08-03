@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import logoImg from './assets/images/imobishare_logo_1784239677798.jpg';
+import logoImg from './assets/images/app_icon_1785762115971.jpg';
 import { Imovel, Corretor } from './types';
 import { DbService, isProfileComplete } from './services/db';
 import { 
@@ -23,6 +23,7 @@ import { getApiUrl } from './utils/apiUrl';
 import { StoryBubble } from './components/StoryBubble';
 import { PropertyCard } from './components/PropertyCard';
 import { CompactPropertyRow } from './components/CompactPropertyRow';
+import { getPropertyCode } from './utils/codeUtils';
 import { MapView } from './components/MapView';
 import { PropertyForm } from './components/PropertyForm';
 import { PropertyDetails } from './components/PropertyDetails';
@@ -196,7 +197,7 @@ export default function App() {
   const [filterIntegracao, setFilterIntegracao] = useState(true);
   const [isFilterModalOpen, setIsFilterModalOpen] = useState<boolean>(false);
   const [searchViewMode, setSearchViewMode] = useState<'como_esta_hoje' | 'lista' | 'mapa'>('como_esta_hoje');
-  const [myPropertiesViewMode, setMyPropertiesViewMode] = useState<'lista' | 'cards'>('lista');
+  const [myPropertiesSearch, setMyPropertiesSearch] = useState('');
 
   // Active filter count computation
   const getActiveFilterCount = () => {
@@ -1602,32 +1603,62 @@ Toque abaixo para ver fotos e todos os detalhes:
 
                   {/* FAVORITES CAROUSEL */}
                   {getFavoriteImoveis().length > 0 && (
-                    <div className="space-y-2 px-4">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                        <Heart size={11} className="text-rose-500 fill-rose-500" />
-                        Seus Favoritos
-                      </span>
+                    <div className="space-y-1.5 px-4 pt-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                          <Heart size={11} className="text-rose-500 fill-rose-500" />
+                          Seus Favoritos
+                        </span>
+                        <span className="text-[9px] font-semibold text-slate-400">
+                          {getFavoriteImoveis().length} {getFavoriteImoveis().length === 1 ? 'imóvel' : 'imóveis'}
+                        </span>
+                      </div>
                       
-                      <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">
-                        {getFavoriteImoveis().map((imovel) => (
-                          <motion.div
-                            whileTap={{ scale: 0.98 }}
-                            key={imovel.id}
-                            onClick={() => setSelectedPropertyId(imovel.id)}
-                            className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-xs flex-shrink-0 w-44 cursor-pointer hover:border-[#003366]/40 transition-all"
-                          >
-                            <div className="h-24 w-full bg-slate-100 relative">
-                              <img src={getValidImage(imovel.fotos?.[0])} alt="" onError={handleImageError} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                              <span className="absolute bottom-1.5 right-1.5 bg-black/60 text-[8px] font-black uppercase text-white px-1.5 py-0.5 rounded">
-                                {imovel.bairro}
-                              </span>
-                            </div>
-                            <div className="p-3 space-y-1">
-                              <h4 className="font-bold text-slate-900 text-xs truncate tracking-tight">{imovel.titulo}</h4>
-                              <span className="text-[#003366] font-black text-xs">{formatPriceBRL(imovel.valor)}</span>
-                            </div>
-                          </motion.div>
-                        ))}
+                      <div className="flex gap-2.5 overflow-x-auto pb-2 pt-0.5 scrollbar-none snap-x">
+                        {getFavoriteImoveis().map((imovel) => {
+                          const buildingName = imovel.nomeEdificio?.trim() || imovel.titulo;
+                          const displayPrice = imovel.tipo === 'locação' && imovel.valorLocacao 
+                            ? `${formatPriceBRL(imovel.valorLocacao)}/mês` 
+                            : formatPriceBRL(imovel.valor);
+
+                          return (
+                            <motion.div
+                              whileTap={{ scale: 0.97 }}
+                              whileHover={{ y: -2 }}
+                              key={imovel.id}
+                              onClick={() => setSelectedPropertyId(imovel.id)}
+                              className="bg-white border border-slate-200/80 rounded-lg overflow-hidden shadow-xs flex-shrink-0 w-24 sm:w-28 cursor-pointer hover:border-[#003366] hover:shadow-xs transition-all snap-start flex flex-col"
+                            >
+                              <div className="h-11 w-full bg-slate-100 relative overflow-hidden flex-shrink-0">
+                                <img 
+                                  src={getValidImage(imovel.fotos?.[0])} 
+                                  alt={buildingName} 
+                                  onError={handleImageError} 
+                                  className="w-full h-full object-cover hover:scale-105 transition-transform duration-300" 
+                                  referrerPolicy="no-referrer" 
+                                />
+                                {imovel.bairro && (
+                                  <span className="absolute bottom-0.5 right-0.5 bg-black/60 text-[7px] font-bold text-white px-1 py-0.2 rounded backdrop-blur-xs truncate max-w-[85%] leading-none">
+                                    {imovel.bairro}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="p-1 flex flex-col justify-between flex-1 gap-0.5">
+                                <h4 
+                                  className="font-bold text-slate-800 text-[8px] leading-tight line-clamp-2 min-h-[1.1rem]" 
+                                  title={buildingName}
+                                >
+                                  {buildingName}
+                                </h4>
+                                <div>
+                                  <span className="text-[#003366] font-extrabold text-[9px] block truncate leading-none">
+                                    {displayPrice}
+                                  </span>
+                                </div>
+                              </div>
+                            </motion.div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -1837,73 +1868,124 @@ Toque abaixo para ver fotos e todos os detalhes:
                 </div>
               )}
 
-              {activeTab === 'my-properties' && (
-                <div className="p-4 space-y-4" id="my-properties-tab-view">
-                  <div className="flex justify-between items-center gap-2">
-                    <div className="min-w-0 flex-1">
-                      <h2 className="font-extrabold text-slate-800 text-sm sm:text-base md:text-lg truncate whitespace-nowrap">Meus Imóveis Cadastrados</h2>
-                      <p className="text-[10px] text-slate-400 truncate">Gerencie, edite, exclua e compartilhe seus imóveis</p>
-                    </div>
-                    
-                    <button
-                      onClick={() => {
-                        setEditingPropertyId(null);
-                        setIsAddingProperty(true);
-                      }}
-                      className="bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold px-3.5 py-2 rounded-xl flex items-center shadow-md transition-colors uppercase tracking-wider text-[10px] flex-shrink-0 cursor-pointer"
-                    >
-                      <PlusCircle size={14} className="mr-1.5" /> Novo
-                    </button>
-                  </div>
+              {activeTab === 'my-properties' && (() => {
+                const rawMyProperties = allImoveis.filter(i => isMyProperty(i));
+                const filteredMyProperties = rawMyProperties.filter(imovel => {
+                  if (!myPropertiesSearch.trim()) return true;
+                  const term = myPropertiesSearch.toLowerCase().trim();
+                  const title = (imovel.nomeEdificio || imovel.titulo || '').toLowerCase();
+                  const neighborhood = (imovel.bairro || '').toLowerCase();
+                  const code = getPropertyCode(imovel, allImoveis).toLowerCase();
+                  const keyword = (imovel.palavraDestacada || '').toLowerCase();
+                  const city = (imovel.cidade || '').toLowerCase();
+                  return title.includes(term) || neighborhood.includes(term) || code.includes(term) || keyword.includes(term) || city.includes(term);
+                });
 
-                  {/* My properties count header */}
-                  <div className="flex items-center justify-between bg-white p-2 px-3 rounded-xl border border-slate-100 shadow-xs">
-                    <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">
-                      Meus Imóveis ({allImoveis.filter(i => isMyProperty(i)).length})
-                    </span>
-                  </div>
-
-                  {/* My properties list */}
-                  <div className="bg-slate-100/70 p-2 sm:p-2.5 rounded-xl border border-slate-200/50 space-y-1.5">
-                    {allImoveis.filter(i => isMyProperty(i)).map((imovel) => {
-                      const isFav = favoritos.includes(imovel.id) || imovel.favorito === true;
-                      const isSel = selectedPropertyIds.includes(imovel.id);
-
-                      return (
-                        <CompactPropertyRow
-                          key={imovel.id}
-                          imovel={imovel}
-                          isMyProperty={true}
-                          isFavorite={isFav}
-                          isSelected={isSel}
-                          showImage={false}
-                          onSelectToggle={() => handleSelectToggle(imovel.id)}
-                          onFavoriteToggle={() => handleFavoriteToggle(imovel.id)}
-                          onShareToggle={() => handleShareToggle(imovel.id)}
-                          onEdit={() => {
-                            setEditingPropertyId(imovel.id);
-                            setIsAddingProperty(true);
-                          }}
-                          onDelete={() => handleDeleteProperty(imovel.id)}
-                          onClick={() => setSelectedPropertyId(imovel.id)}
-                        />
-                      );
-                    })}
-
-                    {allImoveis.filter(i => isMyProperty(i)).length === 0 && (
-                      <div className="text-center py-12 bg-white border border-slate-100 rounded-xl space-y-2">
-                        <p className="text-xs text-slate-400">Você ainda não tem imóveis cadastrados.</p>
-                        <button
-                          onClick={() => setIsAddingProperty(true)}
-                          className="text-xs font-bold text-blue-900 hover:underline cursor-pointer"
-                        >
-                          Cadastre seu primeiro imóvel agora!
-                        </button>
+                return (
+                  <div className="p-4 space-y-4" id="my-properties-tab-view">
+                    <div className="flex justify-between items-center gap-2">
+                      <div className="min-w-0 flex-1">
+                        <h2 className="font-extrabold text-slate-800 text-sm sm:text-base md:text-lg truncate whitespace-nowrap">Meus Imóveis Cadastrados</h2>
+                        <p className="text-[10px] text-slate-400 truncate">Gerencie, edite, exclua e compartilhe seus imóveis</p>
                       </div>
-                    )}
+                      
+                      <button
+                        onClick={() => {
+                          setEditingPropertyId(null);
+                          setIsAddingProperty(true);
+                        }}
+                        className="bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold px-3.5 py-2 rounded-xl flex items-center shadow-md transition-colors uppercase tracking-wider text-[10px] flex-shrink-0 cursor-pointer"
+                      >
+                        <PlusCircle size={14} className="mr-1.5" /> Novo
+                      </button>
+                    </div>
+
+                    {/* Search Field + Filter Button */}
+                    <div className="flex items-center gap-2 w-full">
+                      <div className="relative flex-1 min-w-0">
+                        <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="text"
+                          value={myPropertiesSearch}
+                          onChange={(e) => setMyPropertiesSearch(e.target.value)}
+                          placeholder="Buscar nos meus imóveis (título, bairro, código...)"
+                          className="w-full pl-10 pr-9 py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#003366]/20 focus:border-[#003366] transition-all shadow-xs"
+                        />
+                        {myPropertiesSearch && (
+                          <button
+                            onClick={() => setMyPropertiesSearch('')}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full cursor-pointer"
+                            title="Limpar busca"
+                          >
+                            <X size={14} />
+                          </button>
+                        )}
+                      </div>
+
+                      <button
+                        onClick={() => setIsFilterModalOpen(true)}
+                        className="relative bg-white hover:bg-slate-50 border border-slate-200 text-[#003366] p-2.5 rounded-xl font-medium text-xs flex items-center justify-center shadow-xs transition-colors cursor-pointer flex-shrink-0"
+                        title="Filtros Avançados"
+                      >
+                        <SlidersHorizontal size={16} />
+                        {getActiveFilterCount() > 0 && (
+                          <span className="absolute -top-1.5 -right-1.5 bg-[#003366] text-white text-[9px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center">
+                            {getActiveFilterCount()}
+                          </span>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* My properties list in list format */}
+                    <div className="bg-slate-100/70 p-1 sm:p-1.5 rounded-xl border border-slate-200/50 space-y-1.5">
+                      {filteredMyProperties.map((imovel) => {
+                        const isFav = favoritos.includes(imovel.id) || imovel.favorito === true;
+
+                        return (
+                          <CompactPropertyRow
+                            key={imovel.id}
+                            imovel={imovel}
+                            isMyProperty={true}
+                            isFavorite={isFav}
+                            onFavoriteToggle={() => handleFavoriteToggle(imovel.id)}
+                            onShareToggle={() => handleShareToggle(imovel.id)}
+                            onEdit={() => {
+                              setEditingPropertyId(imovel.id);
+                              setIsAddingProperty(true);
+                            }}
+                            onDelete={() => handleDeleteProperty(imovel.id)}
+                            onClick={() => setSelectedPropertyId(imovel.id)}
+                          />
+                        );
+                      })}
+
+                      {rawMyProperties.length === 0 && (
+                        <div className="text-center py-12 bg-white border border-slate-100 rounded-xl space-y-2">
+                          <p className="text-xs text-slate-400">Você ainda não tem imóveis cadastrados.</p>
+                          <button
+                            onClick={() => setIsAddingProperty(true)}
+                            className="text-xs font-bold text-[#003366] hover:underline cursor-pointer"
+                          >
+                            Cadastre seu primeiro imóvel agora!
+                          </button>
+                        </div>
+                      )}
+
+                      {rawMyProperties.length > 0 && filteredMyProperties.length === 0 && (
+                        <div className="text-center py-10 bg-white border border-slate-100 rounded-xl space-y-2">
+                          <p className="text-xs text-slate-400">Nenhum imóvel encontrado para "{myPropertiesSearch}".</p>
+                          <button
+                            onClick={() => setMyPropertiesSearch('')}
+                            className="text-xs font-bold text-[#003366] hover:underline cursor-pointer"
+                          >
+                            Limpar busca
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
               {activeTab === 'profile' && activeCorretor && (
                 <div id="profile-tab-view">
                   <UserProfile

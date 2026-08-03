@@ -8,6 +8,7 @@ import { Imovel, Corretor } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { MapPin, Phone, MessageCircle, ArrowLeft, Building2, UserCheck, ShieldAlert, Check, Bed, Car, Maximize, Bath } from 'lucide-react';
 import { getValidImage, handleImageError } from '../utils/imageUtils';
+import { getPropertyCode } from '../utils/codeUtils';
 import { DbService } from '../services/db';
 
 interface PropertyDetailsProps {
@@ -201,63 +202,63 @@ Toque abaixo para ver fotos e todos os detalhes:
           <div className="py-3 border-y border-slate-100 flex items-center justify-between">
             <div>
               <span className="text-[10px] uppercase text-slate-400 font-bold block">
-                {imovel.tipo === 'ambos' ? 'Valores Solicitados' : 'Valor Solicitado'}
+                {imovel.tipo === 'ambos' ? 'Valores' : 'Valor'}
               </span>
               {imovel.tipo === 'ambos' ? (
                 <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4 mt-1">
                   <div>
                     <span className="text-[10px] text-slate-400 font-bold uppercase block">Venda:</span>
                     {imovel.valorAnterior && imovel.valorAnterior > imovel.valor ? (
-                      <div className="flex items-baseline gap-1.5">
-                        <span className="text-xs text-slate-400 line-through font-semibold">
+                      <div className="flex flex-col mt-0.5">
+                        <span className="text-xs text-slate-400 line-through font-medium leading-tight">
                           De {formatPrice(imovel.valorAnterior)}
                         </span>
-                        <span className="text-lg font-black text-emerald-600">
+                        <span className="text-base font-bold text-emerald-600 leading-tight">
                           Por {formatPrice(imovel.valor)}
                         </span>
                       </div>
                     ) : (
-                      <span className="text-lg font-extrabold text-[#003366]">
+                      <span className="text-base font-bold text-[#003366]">
                         {formatPrice(imovel.valor)}
                       </span>
                     )}
                   </div>
                   <div>
                     <span className="text-[10px] text-slate-400 font-bold uppercase block">Locação:</span>
-                    <span className="text-lg font-extrabold text-emerald-800">
+                    <span className="text-base font-bold text-emerald-800">
                       {formatPrice(imovel.valorLocacao || 0)}<span className="text-xs font-medium text-slate-500"> /mês</span>
                     </span>
                   </div>
                 </div>
               ) : imovel.tipo === 'locação' ? (
                 imovel.valorLocacaoAnterior && imovel.valorLocacaoAnterior > (imovel.valorLocacao || imovel.valor) ? (
-                  <div className="flex items-baseline gap-2 mt-1">
-                    <span className="text-sm text-slate-400 line-through font-semibold">
+                  <div className="flex flex-col mt-0.5">
+                    <span className="text-xs text-slate-400 line-through font-medium leading-tight">
                       De {formatPrice(imovel.valorLocacaoAnterior)}
                     </span>
-                    <span className="text-xl font-black text-emerald-600">
+                    <span className="text-base font-bold text-emerald-600 leading-tight">
                       Por {formatPrice(imovel.valorLocacao || imovel.valor)}
-                      <span className="text-sm font-medium text-slate-500"> /mês</span>
+                      <span className="text-xs font-medium text-slate-500"> /mês</span>
                     </span>
                   </div>
                 ) : (
-                  <span className="text-xl font-extrabold text-emerald-800">
+                  <span className="text-base font-bold text-emerald-800">
                     {formatPrice(imovel.valorLocacao || imovel.valor)}
-                    <span className="text-sm font-medium text-slate-500"> /mês</span>
+                    <span className="text-xs font-medium text-slate-500"> /mês</span>
                   </span>
                 )
               ) : (
                 imovel.valorAnterior && imovel.valorAnterior > imovel.valor ? (
-                  <div className="flex items-baseline gap-2 mt-1">
-                    <span className="text-sm text-slate-400 line-through font-semibold">
+                  <div className="flex flex-col mt-0.5">
+                    <span className="text-xs text-slate-400 line-through font-medium leading-tight">
                       De {formatPrice(imovel.valorAnterior)}
                     </span>
-                    <span className="text-xl md:text-2xl font-black text-emerald-600">
+                    <span className="text-base font-bold text-emerald-600 leading-tight">
                       Por {formatPrice(imovel.valor)}
                     </span>
                   </div>
                 ) : (
-                  <span className="text-xl font-extrabold text-slate-900">
+                  <span className="text-base font-bold text-slate-900">
                     {formatPrice(imovel.valor)}
                   </span>
                 )
@@ -265,11 +266,9 @@ Toque abaixo para ver fotos e todos os detalhes:
             </div>
 
             <div className="text-right">
-              <span className="text-[10px] uppercase text-slate-400 font-bold block">Parceria</span>
-              <span className={`text-xs font-semibold px-2 py-1 rounded-md inline-block mt-0.5 ${
-                imovel.compartilhar ? 'bg-[#003366]/5 text-[#003366]' : 'bg-slate-100 text-slate-500'
-              }`}>
-                {imovel.compartilhar ? 'Aberta a Outros Corretores' : 'Exclusiva'}
+              <span className="text-[10px] uppercase text-slate-400 font-bold block">Código do Imóvel</span>
+              <span className="text-xs font-mono font-bold text-[#003366] bg-[#003366]/5 px-2.5 py-1 rounded-md inline-block mt-0.5 border border-[#003366]/10">
+                #{getPropertyCode(imovel)}
               </span>
             </div>
           </div>

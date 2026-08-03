@@ -29,6 +29,7 @@ export interface Corretor {
 
 export interface Imovel {
   id: string;
+  codigo?: string; // Código amigável (e.g. FRE01)
   corretorEmail: string; // E-mail do corretor proprietário (fonte da verdade)
   corretorId?: string;
   corretorNome?: string;
