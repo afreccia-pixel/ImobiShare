@@ -6,6 +6,7 @@
 import pg from 'pg';
 import fs from 'fs/promises';
 import path from 'path';
+import bcrypt from 'bcryptjs';
 import { Imovel, Corretor } from './src/types';
 
 interface DbSchema {
@@ -79,7 +80,10 @@ export class ServerDb {
         imobiliaria_ou_autonomo VARCHAR(100),
         foto_url TEXT,
         slug_site VARCHAR(255) UNIQUE,
-        is_admin BOOLEAN DEFAULT false
+        is_admin BOOLEAN DEFAULT false,
+        restringir_parceiros BOOLEAN DEFAULT false,
+        parceiros_emails TEXT DEFAULT '[]',
+        password TEXT
       );
     `);
 
@@ -87,6 +91,9 @@ export class ServerDb {
     await this.pool.query(`ALTER TABLE corretores ADD COLUMN IF NOT EXISTS slug_site VARCHAR(255);`);
     await this.pool.query(`ALTER TABLE corretores ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT false;`);
     await this.pool.query(`ALTER TABLE corretores ADD COLUMN IF NOT EXISTS imobiliaria_ou_autonomo VARCHAR(100);`);
+    await this.pool.query(`ALTER TABLE corretores ADD COLUMN IF NOT EXISTS restringir_parceiros BOOLEAN DEFAULT false;`);
+    await this.pool.query(`ALTER TABLE corretores ADD COLUMN IF NOT EXISTS parceiros_emails TEXT DEFAULT '[]';`);
+    await this.pool.query(`ALTER TABLE corretores ADD COLUMN IF NOT EXISTS password TEXT;`);
 
     // 2. Tabela imoveis
     await this.pool.query(`
@@ -224,11 +231,68 @@ export class ServerDb {
         tipoAtuacao: r.imobiliaria_ou_autonomo === 'autonomo' ? 'autonomo' : 'imobiliaria',
         foto: r.foto_url || '',
         slugSite: r.slug_site || '',
-        isAdmin: Boolean(r.is_admin)
+        isAdmin: Boolean(r.is_admin),
+        restringirParceiros: Boolean(r.restringir_parceiros),
+        parceirosEmails: Array.isArray(r.parceiros_emails) ? r.parceiros_emails : (r.parceiros_emails ? JSON.parse(r.parceiros_emails) : [])
       }));
     } else {
       const db = await this.readJson();
       return db.brokers || [];
+    }
+  }
+
+  static async hashPassword(password: string): Promise<string> {
+    if (!password) return '';
+    if (password.startsWith('$2a$') || password.startsWith('$2b$')) return password;
+    return await bcrypt.hash(password, 10);
+  }
+
+  static async verifyPassword(password: string, hash: string): Promise<boolean> {
+    if (!hash || !password) return false;
+    if (hash.startsWith('$2a$') || hash.startsWith('$2b$')) {
+      return await bcrypt.compare(password, hash);
+    }
+    // Fallback for plain text legacy passwords
+    return password === hash;
+  }
+
+  static async getCorretorByPhone(phone: string): Promise<Corretor | null> {
+    const targetDigits = phone ? phone.replace(/\D/g, '') : '';
+    if (!targetDigits || targetDigits.length < 8) return null;
+
+    if (this.isPostgres && this.pool) {
+      const res = await this.pool.query('SELECT * FROM corretores WHERE telefone IS NOT NULL AND telefone <> \'\'');
+      for (const r of res.rows) {
+        const dbDigits = (r.telefone || '').replace(/\D/g, '');
+        if (dbDigits && (dbDigits === targetDigits || (dbDigits.length >= 8 && targetDigits.length >= 8 && (dbDigits.endsWith(targetDigits) || targetDigits.endsWith(dbDigits))))) {
+          return {
+            id: r.id || `broker-${r.email.replace(/[^a-z0-9]/gi, '_')}`,
+            email: r.email,
+            nome: r.nome,
+            creci: r.creci || '',
+            telefone: r.telefone || '',
+            whatsapp: r.telefone || '',
+            cidade: r.cidade || '',
+            estado: r.estado || '',
+            imobiliaria: r.imobiliaria_ou_autonomo || '',
+            tipoAtuacao: r.imobiliaria_ou_autonomo === 'autonomo' ? 'autonomo' : 'imobiliaria',
+            foto: r.foto_url || '',
+            slugSite: r.slug_site || '',
+            isAdmin: Boolean(r.is_admin) || (r.email && r.email.toLowerCase().trim() === 'afreccia@gmail.com'),
+            password: r.password || '',
+            restringirParceiros: Boolean(r.restringir_parceiros),
+            parceirosEmails: Array.isArray(r.parceiros_emails) ? r.parceiros_emails : (r.parceiros_emails ? JSON.parse(r.parceiros_emails) : [])
+          };
+        }
+      }
+      return null;
+    } else {
+      const db = await this.readJson();
+      const found = (db.brokers || []).find(b => {
+        const dbDigits = (b.telefone || b.whatsapp || '').replace(/\D/g, '');
+        return dbDigits && (dbDigits === targetDigits || (dbDigits.length >= 8 && targetDigits.length >= 8 && (dbDigits.endsWith(targetDigits) || targetDigits.endsWith(dbDigits))));
+      });
+      return found || null;
     }
   }
 
@@ -253,7 +317,10 @@ export class ServerDb {
         tipoAtuacao: r.imobiliaria_ou_autonomo === 'autonomo' ? 'autonomo' : 'imobiliaria',
         foto: r.foto_url || '',
         slugSite: r.slug_site || '',
-        isAdmin: Boolean(r.is_admin)
+        isAdmin: Boolean(r.is_admin) || (cleanEmail === 'afreccia@gmail.com'),
+        password: r.password || '',
+        restringirParceiros: Boolean(r.restringir_parceiros),
+        parceirosEmails: Array.isArray(r.parceiros_emails) ? r.parceiros_emails : (r.parceiros_emails ? JSON.parse(r.parceiros_emails) : [])
       };
     } else {
       const db = await this.readJson();
@@ -266,10 +333,15 @@ export class ServerDb {
     const cleanEmail = corretor.email.toLowerCase().trim();
     const cleanNome = corretor.nome || cleanEmail.split('@')[0];
 
+    let passwordHash = corretor.password || '';
+    if (passwordHash && !passwordHash.startsWith('$2a$') && !passwordHash.startsWith('$2b$')) {
+      passwordHash = await this.hashPassword(passwordHash);
+    }
+
     if (this.isPostgres && this.pool) {
       await this.pool.query(`
-        INSERT INTO corretores (email, id, nome, creci, telefone, cidade, estado, imobiliaria_ou_autonomo, foto_url, slug_site, is_admin)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        INSERT INTO corretores (email, id, nome, creci, telefone, cidade, estado, imobiliaria_ou_autonomo, foto_url, slug_site, is_admin, restringir_parceiros, parceiros_emails, password)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         ON CONFLICT (email) DO UPDATE SET
           nome = EXCLUDED.nome,
           creci = COALESCE(NULLIF(EXCLUDED.creci, ''), corretores.creci),
@@ -279,7 +351,10 @@ export class ServerDb {
           imobiliaria_ou_autonomo = COALESCE(NULLIF(EXCLUDED.imobiliaria_ou_autonomo, ''), corretores.imobiliaria_ou_autonomo),
           foto_url = COALESCE(NULLIF(EXCLUDED.foto_url, ''), corretores.foto_url),
           slug_site = COALESCE(NULLIF(EXCLUDED.slug_site, ''), corretores.slug_site),
-          is_admin = COALESCE(EXCLUDED.is_admin, corretores.is_admin);
+          is_admin = COALESCE(EXCLUDED.is_admin, corretores.is_admin),
+          restringir_parceiros = EXCLUDED.restringir_parceiros,
+          parceiros_emails = EXCLUDED.parceiros_emails,
+          password = COALESCE(NULLIF(EXCLUDED.password, ''), corretores.password);
       `, [
         cleanEmail,
         corretor.id || `broker-${cleanEmail.replace(/[^a-z0-9]/gi, '_')}`,
@@ -291,7 +366,10 @@ export class ServerDb {
         corretor.imobiliaria || corretor.tipoAtuacao || '',
         corretor.foto || '',
         corretor.slugSite || null,
-        Boolean(corretor.isAdmin)
+        Boolean(corretor.isAdmin),
+        Boolean(corretor.restringirParceiros),
+        JSON.stringify(corretor.parceirosEmails || []),
+        passwordHash
       ]);
 
       const saved = await this.getCorretorByEmail(cleanEmail);
@@ -311,7 +389,10 @@ export class ServerDb {
         imobiliaria: corretor.imobiliaria || (idx >= 0 ? db.brokers[idx].imobiliaria : ''),
         foto: corretor.foto || (idx >= 0 ? db.brokers[idx].foto : ''),
         slugSite: corretor.slugSite || (idx >= 0 ? db.brokers[idx].slugSite : ''),
-        isAdmin: corretor.isAdmin !== undefined ? corretor.isAdmin : (idx >= 0 ? db.brokers[idx].isAdmin : cleanEmail === 'afreccia@gmail.com')
+        isAdmin: corretor.isAdmin !== undefined ? corretor.isAdmin : (idx >= 0 ? db.brokers[idx].isAdmin : cleanEmail === 'afreccia@gmail.com'),
+        password: passwordHash || (idx >= 0 ? db.brokers[idx].password : ''),
+        restringirParceiros: corretor.restringirParceiros !== undefined ? corretor.restringirParceiros : (idx >= 0 ? db.brokers[idx].restringirParceiros : false),
+        parceirosEmails: corretor.parceirosEmails !== undefined ? corretor.parceirosEmails : (idx >= 0 ? db.brokers[idx].parceirosEmails : [])
       };
 
       if (idx >= 0) {

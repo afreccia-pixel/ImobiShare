@@ -9,6 +9,7 @@ import { DbService } from '../services/db';
 import { User, Phone, Mail, MapPin, Award, Check, RefreshCw, LogOut, CheckCircle2, Users, Plus, Trash2, Camera, Edit2, Save, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { getApiUrl } from '../utils/apiUrl';
+import { getValidImage, isValidImageString, handleImageError } from '../utils/imageUtils';
 
 interface UserProfileProps {
   corretor: Corretor;
@@ -140,11 +141,13 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
       ...corretor,
       nome: editNome.trim(),
       creci: editCreci.trim(),
-      telefone: editTelefone.trim() || editWhatsapp.trim(),
+      telefone: editWhatsapp.trim() || editTelefone.trim(),
       whatsapp: editWhatsapp.trim() || editTelefone.trim(),
       cidade: editCidade.trim(),
       estado: editEstado.trim().toUpperCase(),
-      imobiliaria: editImobiliaria.trim()
+      imobiliaria: editImobiliaria.trim(),
+      restringirParceiros: restringir,
+      parceirosEmails: parceiros
     };
 
     DbService.saveCorretor(updatedCorretor);
@@ -153,22 +156,12 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
 
     // Sync updated info to server
     try {
-      await fetch(getApiUrl('/api/auth/sync-firebase-user'), {
-        method: 'POST',
+      await fetch(getApiUrl('/api/auth/profile'), {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          uid: updatedCorretor.id,
-          email: updatedCorretor.email,
-          nome: updatedCorretor.nome,
-          foto: updatedCorretor.foto,
-          creci: updatedCorretor.creci,
-          telefone: updatedCorretor.telefone,
-          whatsapp: updatedCorretor.whatsapp,
-          cidade: updatedCorretor.cidade,
-          estado: updatedCorretor.estado,
-          imobiliaria: updatedCorretor.imobiliaria
-        })
+        body: JSON.stringify(updatedCorretor)
       });
+      await DbService.fetchBrokers();
     } catch (err) {
       console.warn('Could not sync updated profile to backend:', err);
     }
@@ -177,7 +170,7 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
     setTimeout(() => setSuccessMsg(''), 4000);
   };
 
-  const handleToggleRestringir = (checked: boolean) => {
+  const handleToggleRestringir = async (checked: boolean) => {
     setRestringir(checked);
     const updatedCorretor = {
       ...corretor,
@@ -186,11 +179,12 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
     };
     DbService.saveCorretor(updatedCorretor);
     onProfileSwitched(updatedCorretor);
+    await DbService.fetchBrokers();
     setSuccessMsg(checked ? 'Restrição de visualização ativada!' : 'Seus imóveis agora estão visíveis para todos os parceiros.');
     setTimeout(() => setSuccessMsg(''), 3000);
   };
 
-  const handleAddPartner = (e: React.FormEvent) => {
+  const handleAddPartner = async (e: React.FormEvent) => {
     e.preventDefault();
     setInputError('');
 
@@ -225,11 +219,12 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
     };
     DbService.saveCorretor(updatedCorretor);
     onProfileSwitched(updatedCorretor);
+    await DbService.fetchBrokers();
     setSuccessMsg('Corretor parceiro adicionado com sucesso!');
     setTimeout(() => setSuccessMsg(''), 3000);
   };
 
-  const handleDeletePartner = (emailToDelete: string) => {
+  const handleDeletePartner = async (emailToDelete: string) => {
     const updatedParceiros = parceiros.filter(email => email !== emailToDelete);
     setParceiros(updatedParceiros);
 
@@ -240,6 +235,7 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
     };
     DbService.saveCorretor(updatedCorretor);
     onProfileSwitched(updatedCorretor);
+    await DbService.fetchBrokers();
     setSuccessMsg('Parceiro removido do grupo.');
     setTimeout(() => setSuccessMsg(''), 3000);
   };
@@ -283,12 +279,19 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
         {/* Profile Details Card */}
         <div className="bg-white border border-slate-100 rounded-xl p-4 shadow-xs flex flex-col items-center text-center">
           <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()} title="Clique para alterar sua foto de perfil">
-            <img
-              src={corretor.foto}
-              alt={corretor.nome}
-              referrerPolicy="no-referrer"
-              className="w-24 h-24 rounded-full object-cover border-4 border-slate-100 shadow-sm group-hover:opacity-80 transition-opacity"
-            />
+            {isValidImageString(corretor.foto) ? (
+              <img
+                src={corretor.foto}
+                alt={corretor.nome}
+                onError={handleImageError}
+                referrerPolicy="no-referrer"
+                className="w-24 h-24 rounded-full object-cover border-4 border-slate-100 shadow-sm group-hover:opacity-80 transition-opacity"
+              />
+            ) : (
+              <div className="w-24 h-24 rounded-full bg-[#003366] text-white font-bold text-2xl flex items-center justify-center border-4 border-slate-100 shadow-sm group-hover:opacity-80 transition-opacity">
+                {(corretor.nome || 'C').charAt(0).toUpperCase()}
+              </div>
+            )}
             <div className="absolute bottom-0 right-0 bg-[#003366] text-white p-1.5 rounded-full border border-white shadow-sm group-hover:scale-110 transition-transform">
               <Camera size={14} />
             </div>
@@ -419,27 +422,18 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 block mb-1">WhatsApp</label>
-                  <input
-                    type="text"
-                    placeholder="Ex: (47) 99999-8888"
-                    value={editWhatsapp}
-                    onChange={(e) => setEditWhatsapp(e.target.value)}
-                    className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-[#003366] font-medium text-slate-800"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 block mb-1">Telefone Alternativo</label>
-                  <input
-                    type="text"
-                    placeholder="Ex: (47) 3333-2222"
-                    value={editTelefone}
-                    onChange={(e) => setEditTelefone(e.target.value)}
-                    className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-[#003366] font-medium text-slate-800"
-                  />
-                </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 block mb-1">Telefone / WhatsApp</label>
+                <input
+                  type="text"
+                  placeholder="Ex: (47) 99999-8888"
+                  value={editWhatsapp}
+                  onChange={(e) => {
+                    setEditWhatsapp(e.target.value);
+                    setEditTelefone(e.target.value);
+                  }}
+                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-[#003366] font-medium text-slate-800"
+                />
               </div>
 
               <div className="grid grid-cols-3 gap-2">
@@ -577,12 +571,19 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
                       <div className="flex items-center gap-2">
                         {partnerBroker ? (
                           <>
-                            <img
-                              src={partnerBroker.foto}
-                              alt=""
-                              className="w-7 h-7 rounded-full object-cover border border-slate-200"
-                              referrerPolicy="no-referrer"
-                            />
+                            {isValidImageString(partnerBroker.foto) ? (
+                              <img
+                                src={partnerBroker.foto}
+                                alt=""
+                                onError={handleImageError}
+                                className="w-7 h-7 rounded-full object-cover border border-slate-200"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <div className="w-7 h-7 rounded-full bg-[#003366] text-white font-bold text-[10px] flex items-center justify-center border border-slate-200 flex-shrink-0">
+                                {(partnerBroker.nome || 'C').charAt(0).toUpperCase()}
+                              </div>
+                            )}
                             <div>
                               <span className="font-bold text-slate-800 block">{partnerBroker.nome}</span>
                               <span className="text-[9px] text-slate-400 block leading-tight">

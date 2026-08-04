@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 import { Imovel, Corretor } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { MapPin, Phone, MessageCircle, ArrowLeft, Building2, UserCheck, ShieldAlert, Check, Bed, Car, Maximize, Bath } from 'lucide-react';
-import { getValidImage, handleImageError } from '../utils/imageUtils';
+import { getValidImage, isValidImageString, handleImageError } from '../utils/imageUtils';
 import { getPropertyCode } from '../utils/codeUtils';
 import { DbService } from '../services/db';
 
@@ -315,50 +315,48 @@ Toque abaixo para ver fotos e todos os detalhes:
           const cleanWhatsapp = rawWhatsapp.replace(/\D/g, '');
 
           return (
-            <div className="p-3 bg-white border-b border-slate-100 space-y-2">
+            <div className="p-3.5 bg-white border-b border-slate-100 space-y-3">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Responsável pelo Cadastro</span>
-              <div className="flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
-                <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                  <div className="w-9 h-9 rounded-full bg-slate-100 overflow-hidden border border-slate-200 flex-shrink-0">
-                    {responsibleBroker.foto ? (
-                      <img src={responsibleBroker.foto} alt={responsibleBroker.nome} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                    ) : (
-                      <div className="w-full h-full bg-[#003366] flex items-center justify-center text-white font-bold text-xs">
-                        {(responsibleBroker.nome || imovel.corretorNome || 'C').charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <span className="font-semibold text-slate-800 text-xs sm:text-sm block truncate">
-                      Corretor: {responsibleBroker.nome || imovel.corretorNome || 'Parceiro'}
-                    </span>
-                    <span className="text-[10px] sm:text-xs text-slate-400 block truncate">
-                      CRECI: {responsibleBroker.creci ? responsibleBroker.creci.replace(/^creci[\:\s]*/i, '') : 'Parceria Autorizada'}
-                    </span>
-                  </div>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-slate-100 overflow-hidden border border-slate-200 flex-shrink-0">
+                  {isValidImageString(responsibleBroker.foto) ? (
+                    <img src={responsibleBroker.foto} alt={responsibleBroker.nome} onError={handleImageError} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  ) : (
+                    <div className="w-full h-full bg-[#003366] flex items-center justify-center text-white font-bold text-sm">
+                      {(responsibleBroker.nome || imovel.corretorNome || 'C').charAt(0).toUpperCase()}
+                    </div>
+                  )}
                 </div>
+                <div className="min-w-0 flex-1">
+                  <span className="font-bold text-slate-800 text-sm block truncate">
+                    Corretor: {responsibleBroker.nome || imovel.corretorNome || 'Parceiro'}
+                  </span>
+                  <span className="text-xs text-slate-400 block truncate font-medium">
+                    CRECI: {responsibleBroker.creci ? responsibleBroker.creci.replace(/^creci[\:\s]*/i, '') : 'Parceria Autorizada'}
+                  </span>
+                </div>
+              </div>
 
-                {/* Direct Action links for Phone and WhatsApp */}
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <a
-                    href={`tel:${cleanPhone}`}
-                    className="flex items-center justify-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold rounded-lg transition-all border border-slate-200/80 active:scale-95"
-                    title="Ligar para o corretor responsável"
-                  >
-                    <Phone size={12} className="text-[#003366]" />
-                    <span>Ligar</span>
-                  </a>
-                  <a
-                    href={`https://wa.me/${cleanWhatsapp}?text=${encodeURIComponent(`Olá ${responsibleBroker.nome.split(' ')[0]}, vi o imóvel "${imovel.titulo}" (#${imovel.id.replace('imovel-', '')}) no ImobiShare e gostaria de informações.`)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center justify-center gap-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-lg transition-all shadow-2xs active:scale-95"
-                    title="Enviar WhatsApp ao corretor responsável"
-                  >
-                    <MessageCircle size={12} />
-                    <span>WhatsApp</span>
-                  </a>
-                </div>
+              {/* Direct Action links for Phone and WhatsApp placed 2 lines below */}
+              <div className="pt-1.5 flex items-center gap-2">
+                <a
+                  href={`tel:${cleanPhone}`}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl transition-all border border-slate-200/80 active:scale-95 shadow-2xs"
+                  title="Ligar para o corretor responsável"
+                >
+                  <Phone size={14} className="text-[#003366]" />
+                  <span>Ligar</span>
+                </a>
+                <a
+                  href={`https://wa.me/${cleanWhatsapp}?text=${encodeURIComponent(`Olá ${responsibleBroker.nome.split(' ')[0]}, vi o imóvel "${imovel.titulo}" (#${imovel.id.replace('imovel-', '')}) no ImobiShare e gostaria de informações.`)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-all shadow-2xs active:scale-95"
+                  title="Enviar WhatsApp ao corretor responsável"
+                >
+                  <MessageCircle size={14} />
+                  <span>WhatsApp</span>
+                </a>
               </div>
             </div>
           );

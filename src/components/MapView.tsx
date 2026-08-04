@@ -6,6 +6,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Imovel } from '../types';
 import { MapPin, Eye, CheckCircle2, Bed, Car, Maximize } from 'lucide-react';
+import { getValidImage } from '../utils/imageUtils';
 
 interface MapViewProps {
   imoveis: Imovel[];
@@ -158,7 +159,7 @@ export function MapView({ imoveis, selectedIds, onSelectToggle, onViewDetails }:
       popupDiv.className = 'p-1.5 max-w-[190px] font-sans';
       popupDiv.innerHTML = `
         <div class="rounded-lg overflow-hidden mb-1.5">
-          <img src="${imovel.fotos[0]}" class="w-full h-20 object-cover rounded-md" referrerPolicy="no-referrer" />
+          <img src="${getValidImage(imovel.fotos?.[0])}" class="w-full h-20 object-cover rounded-md" referrerPolicy="no-referrer" />
         </div>
         <div class="space-y-1">
           <div class="flex items-center gap-1">

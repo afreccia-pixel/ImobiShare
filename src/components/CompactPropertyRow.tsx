@@ -6,7 +6,7 @@
 import React from 'react';
 import { Imovel } from '../types';
 import { motion } from 'motion/react';
-import { CheckCircle2, Edit2, Trash2, Share2, EyeOff } from 'lucide-react';
+import { CheckCircle2, Edit2, Trash2, Share2, EyeOff, Globe } from 'lucide-react';
 import { getValidImage, handleImageError } from '../utils/imageUtils';
 
 interface CompactPropertyRowProps {
@@ -95,16 +95,16 @@ export function CompactPropertyRow({
           {/* Linha 1: Nome do edifício + Selo de Status + Palavra destacada + Valor + Ações na mesma linha */}
           <div className="flex items-center justify-between gap-2 min-w-0">
             <div className="flex items-center gap-1.5 min-w-0 truncate">
-              <span className={`${isMyProperty ? 'text-[8px]' : 'text-[13px]'} font-medium text-slate-900 truncate min-w-0 leading-tight`}>
+              <span className="text-[9px] font-medium text-slate-900 truncate min-w-0 leading-tight">
                 {imovel.nomeEdificio?.trim() ? imovel.nomeEdificio.trim() : imovel.titulo}
               </span>
               {!isMyProperty && imovel.statusImovel && (
-                <span className="font-extrabold uppercase tracking-tight text-slate-800 bg-slate-100 border border-slate-200/80 px-1 py-[0.5px] rounded-full flex-shrink-0 text-[7.5px]">
+                <span className="font-extrabold uppercase tracking-tight text-slate-800 bg-slate-100 border border-slate-200/80 px-1 py-[0.5px] rounded-full flex-shrink-0 text-[4px]">
                   {imovel.statusImovel}
                 </span>
               )}
               {!isMyProperty && imovel.palavraDestacada?.trim() && (
-                <span className="text-[9.5px] font-medium text-amber-800 bg-amber-50 border border-amber-200/60 px-1.5 py-0.2 rounded flex-shrink-0 truncate max-w-[80px]">
+                <span className="text-[4px] font-medium text-amber-800 bg-amber-50 border border-amber-200/60 px-1.5 py-0.2 rounded flex-shrink-0 truncate max-w-[80px]">
                   {imovel.palavraDestacada.trim()}
                 </span>
               )}
@@ -155,10 +155,18 @@ export function CompactPropertyRow({
                         e.stopPropagation();
                         onShareToggle();
                       }}
-                      className="p-1 text-slate-400 hover:text-[#003366] transition-colors cursor-pointer"
-                      title={imovel.compartilhar ? 'Compartilhado' : 'Apenas eu'}
+                      className={`p-1 transition-colors cursor-pointer ${
+                        imovel.compartilhar !== false
+                          ? 'text-emerald-600 hover:text-emerald-700'
+                          : 'text-slate-400 hover:text-[#003366]'
+                      }`}
+                      title={imovel.compartilhar !== false ? 'Imóvel disponível para corretores parceiros e para o site (Clique para alterar)' : 'Imóvel privado (Clique para disponibilizar)'}
                     >
-                      {imovel.compartilhar ? <Share2 size={13} /> : <EyeOff size={13} />}
+                      {imovel.compartilhar !== false ? (
+                        <Globe size={13} />
+                      ) : (
+                        <EyeOff size={13} />
+                      )}
                     </button>
                   )}
                   {onDelete && (

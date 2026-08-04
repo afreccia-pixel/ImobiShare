@@ -123,7 +123,10 @@
     if (code === 'auth/unauthorized-domain') {
       return 'Este domínio não está autorizados no Firebase Console (Authentication > Settings > Authorized domains).';
     }
-    if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+    if (code === 'auth/user-not-found') {
+      return 'Usuário não encontrado. Verifique se digitou o e-mail corretamente.';
+    }
+    if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
       return 'E-mail ou senha incorretos. Por favor, verifique seus dados.';
     }
     if (code === 'auth/email-already-in-use') {

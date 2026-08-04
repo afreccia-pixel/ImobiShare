@@ -207,6 +207,93 @@ app.get('/api/health', async (req: Request, res: Response) => {
   }
 });
 
+// Login route
+app.post('/api/auth/login', async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body || {};
+    const cleanEmail = email ? String(email).toLowerCase().trim() : '';
+    const cleanPassword = password ? String(password) : '';
+
+    if (!cleanEmail || !cleanPassword) {
+      return res.status(400).json({ error: 'Informe e-mail e senha para realizar o login.' });
+    }
+
+    const broker = await ServerDb.getCorretorByEmail(cleanEmail);
+    if (!broker) {
+      return res.status(401).json({ error: 'Usuário não encontrado.' });
+    }
+
+    // Check password
+    if (broker.password && broker.password.trim() !== '') {
+      const isMatch = await ServerDb.verifyPassword(cleanPassword, broker.password);
+      if (!isMatch) {
+        return res.status(401).json({ error: 'E-mail ou senha inválidos.' });
+      }
+      // Upgrade unhashed legacy password to bcrypt hash
+      if (!broker.password.startsWith('$2a$') && !broker.password.startsWith('$2b$')) {
+        broker.password = await ServerDb.hashPassword(cleanPassword);
+        await ServerDb.saveCorretor(broker);
+      }
+    } else {
+      // First time password set for existing broker record
+      broker.password = await ServerDb.hashPassword(cleanPassword);
+      await ServerDb.saveCorretor(broker);
+    }
+
+    const { password: _, ...safeBroker } = broker;
+    return res.json({ success: true, corretor: safeBroker });
+  } catch (err: any) {
+    logBackendError('/api/auth/login', err);
+    return res.status(500).json({ error: 'Erro ao realizar login.' });
+  }
+});
+
+// Register route
+app.post('/api/auth/register', async (req: Request, res: Response) => {
+  try {
+    const { email, password, nome, creci, telefone, whatsapp, cidade, estado, imobiliaria, foto } = req.body || {};
+    const cleanEmail = email ? String(email).toLowerCase().trim() : '';
+    const cleanPassword = password ? String(password) : '';
+    const cleanPhone = (telefone || whatsapp || '').trim();
+
+    if (!cleanEmail || !cleanPassword) {
+      return res.status(400).json({ error: 'E-mail e senha são obrigatórios para cadastro.' });
+    }
+
+    // 1. Check existing email
+    const existingEmail = await ServerDb.getCorretorByEmail(cleanEmail);
+    if (existingEmail) {
+      return res.status(400).json({ error: 'Já existe uma conta cadastrada com este e-mail.' });
+    }
+
+    // 2. Check existing phone
+    if (cleanPhone) {
+      const existingPhone = await ServerDb.getCorretorByPhone(cleanPhone);
+      if (existingPhone) {
+        return res.status(400).json({ error: 'Já existe uma conta cadastrada com este telefone.' });
+      }
+    }
+
+    const saved = await ServerDb.saveCorretor({
+      email: cleanEmail,
+      password: cleanPassword,
+      nome: nome || cleanEmail.split('@')[0],
+      creci: creci || '',
+      telefone: cleanPhone,
+      cidade: cidade || 'Balneário Camboriú',
+      estado: estado || 'SC',
+      imobiliaria: imobiliaria || '',
+      foto: foto || ''
+    });
+
+    const { password: _, ...safeSaved } = saved;
+    return res.json({ success: true, corretor: safeSaved });
+  } catch (err: any) {
+    logBackendError('/api/auth/register', err);
+    return res.status(500).json({ error: 'Erro ao cadastrar corretor.' });
+  }
+});
+
 // Verify Auth Token & Return/Create Broker Profile
 app.post('/api/auth/verify', verifyAuthToken, async (req: AuthenticatedRequest, res: Response) => {
   try {

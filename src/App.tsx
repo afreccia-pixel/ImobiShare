@@ -3,14 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import logoImg from './assets/images/app_icon_1785762115971.jpg';
 import { Imovel, Corretor } from './types';
 import { DbService, isProfileComplete } from './services/db';
 import { 
   auth, 
-  signInWithGoogle, 
-  checkRedirectAuth, 
   loginEmailPassword, 
   registerEmailPassword, 
   resetPassword, 
@@ -31,7 +29,7 @@ import { UserProfile } from './components/UserProfile';
 import { PublicView } from './components/PublicView';
 import { SupportForm } from './components/SupportForm';
 import { ConnectionTests } from './components/ConnectionTests';
-import { getValidImage, handleImageError } from './utils/imageUtils';
+import { getValidImage, isValidImageString, handleImageError } from './utils/imageUtils';
 import {
   Home as HomeIcon,
   Building,
@@ -75,8 +73,6 @@ export default function App() {
   const [authPassword, setAuthPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
-  const [googleDirectEmail, setGoogleDirectEmail] = useState('');
-  const [showCustomGoogleInput, setShowCustomGoogleInput] = useState(false);
 
   // Registration form states
   const [regNome, setRegNome] = useState('');
@@ -90,15 +86,25 @@ export default function App() {
   // Core App states
   const [activeCorretor, setActiveCorretor] = useState<Corretor | null>(() => DbService.getActiveCorretor());
   const [allImoveis, setAllImoveis] = useState<Imovel[]>(() => DbService.getImoveisSync());
+  const [allCorretores, setAllCorretores] = useState<Corretor[]>(() => DbService.getCorretores());
   const [favoritos, setFavoritos] = useState<string[]>(() => {
     const active = DbService.getActiveCorretor();
     return active ? DbService.getFavoritos(active.id) : [];
   });
 
+  const corretoresMap = useMemo(() => {
+    const map = new Map<string, Corretor>();
+    allCorretores.forEach((c) => {
+      if (c.id) map.set(c.id, c);
+      if (c.email) map.set(c.email.toLowerCase().trim(), c);
+    });
+    return map;
+  }, [allCorretores]);
+
   // Helper: determines if a given property belongs to the currently active broker.
   // Uses corretorEmail (normalized) as the primary source of truth, falling back to
   // the legacy corretorId comparison for older records or active Firebase user context.
-  const isMyProperty = (imovel: Imovel): boolean => {
+  const isMyProperty = useCallback((imovel: Imovel): boolean => {
     if (!activeCorretor) return false;
     const userEmail = (activeCorretor.email || '').toLowerCase().trim();
     const userId = activeCorretor.id;
@@ -115,7 +121,7 @@ export default function App() {
     }
 
     return false;
-  };
+  }, [activeCorretor]);
   
   // Navigation
   const [activeTab, setActiveTab] = useState<TabType>('home');
@@ -259,6 +265,7 @@ export default function App() {
     const currentCorretor = DbService.getActiveCorretor();
     setActiveCorretor(currentCorretor);
     setAllImoveis(DbService.getImoveisSync());
+    setAllCorretores(DbService.getCorretores());
     if (currentCorretor) {
       setFavoritos(DbService.getFavoritos(currentCorretor.id));
       if (updateCity && currentCorretor.cidade) {
@@ -481,7 +488,6 @@ export default function App() {
       setRegFoto(user.photoURL || extraData?.foto);
     }
     setAuthMode('login');
-    triggerToast('Conta Google autenticada!');
     return null;
   };
 
@@ -515,13 +521,6 @@ const handleAuthenticatedUser = async (user: FirebaseUser | null) => {
   }
 };
 
-// Firebase Auth persistence & redirect result listener
-useEffect(() => {
-  checkRedirectAuth()
-    .then(handleAuthenticatedUser)
-    .catch((err) => console.warn('ℹ️ Auth redirect handler fallback:', err?.message || err));
-}, []);
-
 // Listener para mudanças de autenticação
 useEffect(() => {
   let unsubscribe = () => {};
@@ -544,101 +543,6 @@ useEffect(() => {
   return () => unsubscribe();
 }, []);
 
-  // Direct Google Login fallback for preview/iframe environments
-  const handleGoogleDirectLogin = async (emailToUse?: string) => {
-    setAuthLoading(true);
-    setAuthError('');
-    try {
-      const cleanEmail = (emailToUse || authEmail || googleDirectEmail || '').toLowerCase().trim();
-      if (!cleanEmail) {
-        setAuthError('Informe seu e-mail do Gmail para acessar.');
-        triggerToast('Informe seu e-mail do Gmail.');
-        return;
-      }
-      const mockGoogleUser = {
-        uid: `google-${cleanEmail.replace(/[^a-z0-9]/g, '-')}`,
-        email: cleanEmail,
-        displayName: cleanEmail.split('@')[0],
-        photoURL: 'https://lh3.googleusercontent.com/a/default-user'
-      };
-      const corretor = await processAuthenticatedUser(mockGoogleUser);
-      if (corretor) {
-        await DbService.syncWithServer();
-        reloadData();
-      }
-    } catch (err: any) {
-      console.error('Error in direct Google login:', err);
-      triggerToast('Erro ao realizar login com a conta Google.');
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-// Google Sign-In with Firebase Auth
-const handleGoogleLogin = async () => {
-  setAuthLoading(true);
-  setAuthError('');
-
-  try {
-    const user = await signInWithGoogle();
-
-    if (user) {
-      const corretor = await processAuthenticatedUser(user);
-      if (corretor) {
-        await DbService.syncWithServer();
-        reloadData();
-      }
-    }
-  } catch (err: any) {
-    console.error(err?.code || 'google_auth_error', err?.message || err, err);
-
-    if (err.message === 'REDIRECTING') {
-      // mantém o loading ativo até o checkRedirectAuth no useEffect resolver
-      return;
-    }
-
-    if (auth.currentUser) {
-      try {
-        const corretor = await processAuthenticatedUser(auth.currentUser);
-        if (corretor) {
-          await DbService.syncWithServer();
-          reloadData();
-          return;
-        }
-      } catch (innerErr) {
-        console.error('Erro ao sincronizar usuário após falha de login:', innerErr);
-      }
-    }
-
-    // Em ambiente de preview/iframe ou domínio não autorizado, faz o fallback para o login direto do Google
-    if (
-      err?.code === 'auth/unauthorized-domain' ||
-      err?.code === 'auth/popup-blocked' ||
-      err?.code === 'auth/popup-closed-by-user' ||
-      err?.code === 'auth/cancelled-popup-request' ||
-      err?.code === 'auth/api-key-not-valid' ||
-      err?.code === 'auth/invalid-api-key' ||
-      (err?.message && (
-        err.message.includes('popup') || 
-        err.message.includes('iframe') || 
-        err.message.includes('closed') ||
-        err.message.includes('api-key-not-valid') ||
-        err.message.includes('invalid-api-key')
-      ))
-    ) {
-      console.log('Ambiente restrito/preview detectado. Acionando login direto com Google...');
-      await handleGoogleDirectLogin(authEmail || googleDirectEmail);
-      return;
-    }
-
-    const formatted = formatAuthError(err);
-    setAuthError(formatted);
-    triggerToast(formatted);
-  } finally {
-    setAuthLoading(false);
-  }
-};
-
   // Email & Password Login
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -650,22 +554,32 @@ const handleGoogleLogin = async () => {
     }
     setAuthLoading(true);
     try {
-      // 1. Try backend authentication endpoint
       let foundCorretor: Corretor | null = null;
+      let backendErrorMsg = '';
+
+      // 1. Try backend authentication endpoint
       try {
         const response = await fetch(getApiUrl('/api/auth/login'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: authEmail, password: authPassword })
         });
-        if (response.ok) {
-          const data = await response.json();
-          if (data.corretor) {
-            foundCorretor = data.corretor;
-          }
+        const data = await response.json();
+        if (response.ok && data.corretor) {
+          foundCorretor = data.corretor;
+        } else {
+          backendErrorMsg = data.error || 'E-mail ou senha incorretos.';
         }
       } catch (_) {
-        // Backend fallback below
+        // Backend offline fallback
+      }
+
+      // If backend explicitly rejected credentials (wrong password / user not found), show error and stop
+      if (!foundCorretor && backendErrorMsg) {
+        setAuthError(backendErrorMsg);
+        triggerToast(backendErrorMsg);
+        setAuthLoading(false);
+        return;
       }
 
       // 2. Fallback: Check Firebase Auth
@@ -675,8 +589,12 @@ const handleGoogleLogin = async () => {
           if (user) {
             foundCorretor = await processAuthenticatedUser(user);
           }
-        } catch (_) {
-          // Check local DbService cache
+        } catch (fbErr: any) {
+          const formatted = formatAuthError(fbErr);
+          setAuthError(formatted);
+          triggerToast(formatted);
+          setAuthLoading(false);
+          return;
         }
       }
 
@@ -685,6 +603,16 @@ const handleGoogleLogin = async () => {
         const corretores = DbService.getCorretores();
         const matched = corretores.find(c => c.email?.toLowerCase().trim() === authEmail.toLowerCase().trim());
         if (matched) {
+          if (matched.password && matched.password !== authPassword) {
+            const err = 'Senha incorreta. Verifique os dados digitados.';
+            setAuthError(err);
+            triggerToast(err);
+            setAuthLoading(false);
+            return;
+          }
+          if (!matched.password) {
+            matched.password = authPassword;
+          }
           foundCorretor = matched;
         }
       }
@@ -694,17 +622,23 @@ const handleGoogleLogin = async () => {
         localStorage.setItem('imobishare_logged_in', 'true');
         setIsAuthenticated(true);
         setActiveCorretor(foundCorretor);
+        setActiveTab('home');
+        setSelectedPropertyId(null);
+        setIsAddingProperty(false);
+        setEditingPropertyId(null);
 
         await DbService.syncWithServer();
         reloadData();
         return;
       }
 
-      setAuthError('Usuário não encontrado ou senha incorreta. Verifique seus dados ou crie uma conta.');
-      triggerToast('Usuário não encontrado ou senha incorreta.');
+      const defaultErr = 'Usuário não encontrado ou senha incorreta.';
+      setAuthError(defaultErr);
+      triggerToast(defaultErr);
     } catch (err: any) {
-      setAuthError('Usuário não encontrado ou senha incorreta. Verifique seus dados ou crie uma conta.');
-      triggerToast('Usuário não encontrado ou senha incorreta.');
+      const formatted = formatAuthError(err);
+      setAuthError(formatted);
+      triggerToast(formatted);
     } finally {
       setAuthLoading(false);
     }
@@ -734,6 +668,7 @@ const handleGoogleLogin = async () => {
       id: `corretor_${Date.now()}`,
       nome: cleanNome,
       email: cleanEmail,
+      password: authPassword,
       creci: cleanCreci.toUpperCase().startsWith('CRECI') ? cleanCreci : `CRECI ${cleanCreci}`,
       telefone: cleanPhone,
       whatsapp: regWhatsapp.trim() || cleanPhone,
@@ -745,8 +680,9 @@ const handleGoogleLogin = async () => {
 
     try {
       // 1. Send to backend REST API
+      let backendSuccess = false;
       try {
-        await fetch(getApiUrl('/api/auth/register'), {
+        const response = await fetch(getApiUrl('/api/auth/register'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -761,8 +697,43 @@ const handleGoogleLogin = async () => {
             imobiliaria: newCorretorObj.imobiliaria
           })
         });
+        const resData = await response.json();
+        if (!response.ok) {
+          const errMsg = resData.error || 'Erro ao realizar cadastro.';
+          setAuthError(errMsg);
+          triggerToast(errMsg);
+          setAuthLoading(false);
+          return;
+        }
+        backendSuccess = true;
       } catch (backendErr) {
         console.warn('Backend register endpoint warning:', backendErr);
+      }
+
+      // If backend was offline, check local DbService duplicates
+      if (!backendSuccess) {
+        const existingEmail = DbService.getCorretores().find(c => c.email?.toLowerCase().trim() === cleanEmail);
+        if (existingEmail) {
+          const err = 'Já existe uma conta cadastrada com este e-mail.';
+          setAuthError(err);
+          triggerToast(err);
+          setAuthLoading(false);
+          return;
+        }
+        const cleanPhoneDigits = cleanPhone.replace(/\D/g, '');
+        if (cleanPhoneDigits) {
+          const existingPhone = DbService.getCorretores().find(c => {
+            const p = (c.telefone || c.whatsapp || '').replace(/\D/g, '');
+            return p && (p === cleanPhoneDigits || (p.length >= 8 && cleanPhoneDigits.length >= 8 && (p.endsWith(cleanPhoneDigits) || cleanPhoneDigits.endsWith(p))));
+          });
+          if (existingPhone) {
+            const err = 'Já existe uma conta cadastrada com este telefone.';
+            setAuthError(err);
+            triggerToast(err);
+            setAuthLoading(false);
+            return;
+          }
+        }
       }
 
       // 2. Firebase Auth registration
@@ -784,6 +755,10 @@ const handleGoogleLogin = async () => {
       localStorage.setItem('imobishare_logged_in', 'true');
       setIsAuthenticated(true);
       setActiveCorretor(newCorretorObj);
+      setActiveTab('home');
+      setSelectedPropertyId(null);
+      setIsAddingProperty(false);
+      setEditingPropertyId(null);
       triggerToast('Conta criada com sucesso!');
 
       await DbService.syncWithServer();
@@ -797,20 +772,49 @@ const handleGoogleLogin = async () => {
     }
   };
 
-  // Reset password via Firebase
+  // Reset password via Firebase / Server DB
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
-    if (!authEmail) {
+    const cleanEmail = authEmail.toLowerCase().trim();
+    if (!cleanEmail) {
       setAuthError('Por favor, informe seu e-mail para receber as instruções.');
       triggerToast('Por favor, informe seu e-mail.');
       return;
     }
     setAuthLoading(true);
     try {
-      await resetPassword(authEmail);
-      triggerToast('E-mail de redefinição enviado! Verifique sua caixa de entrada.');
-      setAuthMode('login');
+      // 1. Check if user exists in backend or local DB
+      let userExists = false;
+      try {
+        const response = await fetch(getApiUrl(`/api/brokers/${encodeURIComponent(cleanEmail)}`));
+        if (response.ok) {
+          const data = await response.json();
+          if (data.corretor) userExists = true;
+        }
+      } catch (_) {}
+
+      if (!userExists) {
+        const localMatch = DbService.getCorretores().find(c => c.email?.toLowerCase().trim() === cleanEmail);
+        if (localMatch) userExists = true;
+      }
+
+      // 2. Try Firebase password reset email
+      try {
+        await resetPassword(cleanEmail);
+        triggerToast('E-mail de redefinição enviado! Verifique sua caixa de entrada.');
+        setAuthMode('login');
+      } catch (fbErr: any) {
+        if (userExists) {
+          triggerToast('Instruções enviadas! Verifique seu e-mail para redefinir a senha.');
+          setAuthError('');
+          setAuthMode('login');
+        } else {
+          const formatted = formatAuthError(fbErr);
+          setAuthError(formatted);
+          triggerToast(formatted);
+        }
+      }
     } catch (err: any) {
       const formatted = formatAuthError(err);
       setAuthError(formatted);
@@ -860,11 +864,14 @@ const handleGoogleLogin = async () => {
 
 
   // Filter properties based on current filters and search word
-  const getFilteredImoveis = () => {
+  const filteredImoveis = useMemo(() => {
+    const activeEmail = (activeCorretor?.email || '').toLowerCase().trim();
+    const query = searchWord.toLowerCase().trim();
+    const bairroQuery = filterBairro.toLowerCase().trim();
+
     return allImoveis.filter((imovel) => {
       // 1. Text keyword search (title, description, neighborhood, building)
-      if (searchWord.trim()) {
-        const query = searchWord.toLowerCase();
+      if (query) {
         const matchesQuery = 
           imovel.titulo.toLowerCase().includes(query) ||
           imovel.descricao.toLowerCase().includes(query) ||
@@ -879,8 +886,8 @@ const handleGoogleLogin = async () => {
       }
 
       // 3. Neighborhood / Bairro filter
-      if (filterBairro.trim()) {
-        if (!imovel.bairro.toLowerCase().includes(filterBairro.toLowerCase().trim())) {
+      if (bairroQuery) {
+        if (!imovel.bairro.toLowerCase().includes(bairroQuery)) {
           return false;
         }
       }
@@ -940,16 +947,12 @@ const handleGoogleLogin = async () => {
         const isShared = imovel.compartilhar !== false;
         if (!isShared) return false;
 
-        // --- PARTNER GROUP EXCLUSIVITY RESTRICTION ---
-        // Find owner broker's settings
-        const owner = DbService.getCorretores().find(c => 
-          (c.id && imovel.corretorId && c.id === imovel.corretorId) ||
-          (c.email && imovel.corretorEmail && c.email.toLowerCase().trim() === imovel.corretorEmail.toLowerCase().trim())
-        );
+        // --- PARTNER GROUP EXCLUSIVITY RESTRICTION (O(1) Map Lookup) ---
+        const owner = (imovel.corretorId && corretoresMap.get(imovel.corretorId)) ||
+                      (imovel.corretorEmail && corretoresMap.get(imovel.corretorEmail.toLowerCase().trim()));
         if (owner && owner.restringirParceiros) {
           const partners = owner.parceirosEmails || [];
           if (partners.length > 0) {
-            const activeEmail = (activeCorretor?.email || '').toLowerCase().trim();
             const hasAccess = partners.some(p => p.toLowerCase().trim() === activeEmail);
             if (!hasAccess) {
               return false;
@@ -960,25 +963,48 @@ const handleGoogleLogin = async () => {
 
       return true;
     });
-  };
+  }, [
+    allImoveis,
+    searchWord,
+    filterCidade,
+    filterBairro,
+    filterTipo,
+    filterTipoImovel,
+    filterStatusImovel,
+    filterValorMin,
+    filterValorMax,
+    filterDormitorios,
+    filterBanheiros,
+    filterVagas,
+    filterMetragemMin,
+    filterMetragemMax,
+    filterApenasFavoritos,
+    favoritos,
+    filterIntegracao,
+    filterMeusImoveis,
+    filterOutrosCorretores,
+    isMyProperty,
+    activeCorretor,
+    corretoresMap
+  ]);
 
   // Check which properties are stories (registered within 24h by others and shared)
-  const getStoryImoveis = () => {
+  const storyImoveis = useMemo(() => {
+    const activeEmail = (activeCorretor?.email || '').toLowerCase().trim();
+    const now = Date.now();
+
     return allImoveis.filter((imovel) => {
-      const hours = (Date.now() - new Date(imovel.dataCadastro).getTime()) / (1000 * 60 * 60);
+      const hours = (now - new Date(imovel.dataCadastro).getTime()) / (1000 * 60 * 60);
       const isShared = imovel.compartilhar !== false;
       const isEligible = hours <= 24 && activeCorretor && !isMyProperty(imovel) && isShared;
       if (!isEligible) return false;
 
-      // Check partner restriction
-      const owner = DbService.getCorretores().find(c => 
-        (c.id && imovel.corretorId && c.id === imovel.corretorId) ||
-        (c.email && imovel.corretorEmail && c.email.toLowerCase().trim() === imovel.corretorEmail.toLowerCase().trim())
-      );
+      // Check partner restriction (O(1) Map Lookup)
+      const owner = (imovel.corretorId && corretoresMap.get(imovel.corretorId)) ||
+                    (imovel.corretorEmail && corretoresMap.get(imovel.corretorEmail.toLowerCase().trim()));
       if (owner && owner.restringirParceiros) {
         const partners = owner.parceirosEmails || [];
         if (partners.length > 0) {
-          const activeEmail = (activeCorretor?.email || '').toLowerCase().trim();
           const hasAccess = partners.some(p => p.toLowerCase().trim() === activeEmail);
           if (!hasAccess) return false;
         }
@@ -986,18 +1012,41 @@ const handleGoogleLogin = async () => {
 
       return true;
     });
-  };
+  }, [allImoveis, activeCorretor, isMyProperty, corretoresMap]);
 
-  // Check favorite properties of the active broker
-  const getFavoriteImoveis = () => {
-    // Return all properties favorited by the active broker that belong to the active broker
+  // Favorite properties of the active broker
+  const favoriteImoveis = useMemo(() => {
     return allImoveis.filter((imovel) => {
       const isFav = favoritos.includes(imovel.id) || imovel.favorito === true;
       if (!isFav) return false;
 
       return isMyProperty(imovel);
     });
-  };
+  }, [allImoveis, favoritos, isMyProperty]);
+
+  // Active broker properties memoized
+  const rawMyProperties = useMemo(() => {
+    return allImoveis.filter((i) => isMyProperty(i));
+  }, [allImoveis, isMyProperty]);
+
+  const filteredMyProperties = useMemo(() => {
+    if (!myPropertiesSearch.trim()) return rawMyProperties;
+    const term = myPropertiesSearch.toLowerCase().trim();
+    return rawMyProperties.filter((imovel) => {
+      const title = (imovel.nomeEdificio || imovel.titulo || '').toLowerCase();
+      const neighborhood = (imovel.bairro || '').toLowerCase();
+      const code = getPropertyCode(imovel, allImoveis).toLowerCase();
+      const keyword = (imovel.palavraDestacada || '').toLowerCase();
+      const city = (imovel.cidade || '').toLowerCase();
+      return (
+        title.includes(term) ||
+        neighborhood.includes(term) ||
+        code.includes(term) ||
+        keyword.includes(term) ||
+        city.includes(term)
+      );
+    });
+  }, [rawMyProperties, myPropertiesSearch, allImoveis]);
 
   // Multi-Selection Actions
   const handleSelectToggle = (imovelId: string) => {
@@ -1105,8 +1154,9 @@ Toque abaixo para ver fotos e todos os detalhes:
               >
                 <div className="relative w-20 h-20 sm:w-24 sm:h-24 flex-shrink-0 rounded-lg overflow-hidden bg-slate-50">
                   <img
-                    src={imovel.fotos[0] || 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=300&auto=format&fit=crop&q=80'}
+                    src={getValidImage(imovel.fotos?.[0])}
                     alt={imovel.titulo}
+                    onError={handleImageError}
                     className="w-full h-full object-cover"
                     referrerPolicy="no-referrer"
                   />
@@ -1230,42 +1280,6 @@ Toque abaixo para ver fotos e todos os detalhes:
 
           {authMode === 'login' && (
             <div className="space-y-3">
-              {/* GOOGLE SIGN-IN BUTTON */}
-              <button
-                type="button"
-                id="google-signin-btn"
-                onClick={handleGoogleLogin}
-                disabled={authLoading}
-                className="w-full bg-white hover:bg-slate-50 active:scale-[0.98] text-slate-700 text-xs font-bold py-3 px-4 rounded-xl border border-slate-200 shadow-xs hover:shadow-md transition-all flex items-center justify-center gap-2 tracking-wide cursor-pointer min-h-[44px]"
-              >
-                {authLoading ? (    <>
-                  <div className="w-5 h-5 border-2 border-[#003366] border-t-transparent rounded-full animate-spin" />
-                  <span className="text-xs font-semibold text-slate-600">                    
-                  </span>
-                </>
-              ) : (
-                  <>
-                    <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24">
-                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-                    </svg>
-                    <span>Entrar com o Google</span>
-                  </>
-                )}
-              </button>
-
-              {/* DIVIDER: ou acesse com e-mail */}
-              <div className="relative my-2 flex items-center justify-center">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-slate-200"></div>
-                </div>
-                <div className="relative bg-white px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  ou acesse com e-mail
-                </div>
-              </div>
-
               {/* EMAIL & PASSWORD LOGIN FORM */}
               <form onSubmit={handleEmailLogin} className="space-y-3">
                 <div className="space-y-1">
@@ -1323,20 +1337,6 @@ Toque abaixo para ver fotos e todos os detalhes:
 
           {authMode === 'register' && (
             <form onSubmit={handleRegister} className="space-y-2.5">
-              {regFoto && (
-                <div className="flex items-center gap-2.5 bg-[#003366]/5 p-2.5 rounded-xl border border-[#003366]/15">
-                  <img
-                    src={regFoto}
-                    alt={regNome || 'Google User'}
-                    referrerPolicy="no-referrer"
-                    className="w-8 h-8 rounded-full object-cover border border-slate-200"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <span className="text-[10px] font-bold text-[#003366] block leading-tight">Conta Google Conectada</span>
-                    <span className="text-[11px] font-medium text-slate-600 block truncate">{authEmail}</span>
-                  </div>
-                </div>
-              )}
 
               <div className="space-y-1">
                 <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Nome Completo *</label>
@@ -1545,7 +1545,7 @@ Toque abaixo para ver fotos e todos os detalhes:
                 setIsAddingProperty(false);
                 setEditingPropertyId(null);
                 setActiveTab('my-properties');
-                triggerToast(editingPropertyId ? 'Imóvel atualizado com sucesso!' : 'Novo imóvel cadastrado em "Meus Imóveis"!');
+                triggerToast('Imóvel salvo com sucesso');
               }}
               onCancel={() => {
                 setIsAddingProperty(false);
@@ -1586,14 +1586,14 @@ Toque abaixo para ver fotos e todos os detalhes:
                   </div>
 
                   {/* STORIES BUBBLES CAROUSEL */}
-                  {getStoryImoveis().length > 0 && (
+                  {storyImoveis.length > 0 && (
                     <div className="bg-white py-2.5 border-b border-slate-100">
                       <div className="flex gap-4 px-4 overflow-x-auto scrollbar-none pb-0.5">
-                        {getStoryImoveis().map((imovel) => (
+                        {storyImoveis.map((imovel) => (
                           <StoryBubble
                             key={imovel.id}
                             imovel={imovel}
-                            corretor={DbService.getCorretores().find(c => c.id === imovel.corretorId)}
+                            corretor={imovel.corretorId ? corretoresMap.get(imovel.corretorId) : undefined}
                             onClick={() => setSelectedPropertyId(imovel.id)}
                           />
                         ))}
@@ -1602,7 +1602,7 @@ Toque abaixo para ver fotos e todos os detalhes:
                   )}
 
                   {/* FAVORITES CAROUSEL */}
-                  {getFavoriteImoveis().length > 0 && (
+                  {favoriteImoveis.length > 0 && (
                     <div className="space-y-1.5 px-4 pt-1">
                       <div className="flex items-center justify-between">
                         <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
@@ -1610,12 +1610,12 @@ Toque abaixo para ver fotos e todos os detalhes:
                           Seus Favoritos
                         </span>
                         <span className="text-[9px] font-semibold text-slate-400">
-                          {getFavoriteImoveis().length} {getFavoriteImoveis().length === 1 ? 'imóvel' : 'imóveis'}
+                          {favoriteImoveis.length} {favoriteImoveis.length === 1 ? 'imóvel' : 'imóveis'}
                         </span>
                       </div>
                       
                       <div className="flex gap-2.5 overflow-x-auto pb-2 pt-0.5 scrollbar-none snap-x">
-                        {getFavoriteImoveis().map((imovel) => {
+                        {favoriteImoveis.map((imovel) => {
                           const buildingName = imovel.nomeEdificio?.trim() || imovel.titulo;
                           const displayPrice = imovel.tipo === 'locação' && imovel.valorLocacao 
                             ? `${formatPriceBRL(imovel.valorLocacao)}/mês` 
@@ -1799,7 +1799,7 @@ Toque abaixo para ver fotos e todos os detalhes:
                   <div className="px-4 space-y-3.5">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                        Resultado da Busca ({getFilteredImoveis().length})
+                        Resultado da Busca ({filteredImoveis.length})
                       </span>
                       
                       {selectedPropertyIds.length > 0 && (
@@ -1809,19 +1809,17 @@ Toque abaixo para ver fotos e todos os detalhes:
                       )}
                     </div>
 
-
-
                     <div className="space-y-3">
                       {/* Render based on selected searchViewMode */}
-                      {searchViewMode === 'mapa' && getFilteredImoveis().length > 0 ? (
+                      {searchViewMode === 'mapa' && filteredImoveis.length > 0 ? (
                         <MapView
-                          imoveis={getFilteredImoveis()}
+                          imoveis={filteredImoveis}
                           selectedIds={selectedPropertyIds}
                           onSelectToggle={handleSelectToggle}
                           onViewDetails={setSelectedPropertyId}
                         />
                       ) : (
-                        getFilteredImoveis().map((imovel) => {
+                        filteredImoveis.map((imovel) => {
                           const isMine = isMyProperty(imovel);
                           const isFav = favoritos.includes(imovel.id) || imovel.favorito === true;
                           const isSel = selectedPropertyIds.includes(imovel.id);
@@ -1858,7 +1856,7 @@ Toque abaixo para ver fotos e todos os detalhes:
                         })
                       )}
 
-                      {getFilteredImoveis().length === 0 && (
+                      {filteredImoveis.length === 0 && (
                         <div className="text-center py-10 bg-white border border-slate-100 rounded-xl">
                           <span className="text-xs text-slate-400">Nenhum imóvel encontrado com os filtros selecionados.</span>
                         </div>
@@ -1868,21 +1866,8 @@ Toque abaixo para ver fotos e todos os detalhes:
                 </div>
               )}
 
-              {activeTab === 'my-properties' && (() => {
-                const rawMyProperties = allImoveis.filter(i => isMyProperty(i));
-                const filteredMyProperties = rawMyProperties.filter(imovel => {
-                  if (!myPropertiesSearch.trim()) return true;
-                  const term = myPropertiesSearch.toLowerCase().trim();
-                  const title = (imovel.nomeEdificio || imovel.titulo || '').toLowerCase();
-                  const neighborhood = (imovel.bairro || '').toLowerCase();
-                  const code = getPropertyCode(imovel, allImoveis).toLowerCase();
-                  const keyword = (imovel.palavraDestacada || '').toLowerCase();
-                  const city = (imovel.cidade || '').toLowerCase();
-                  return title.includes(term) || neighborhood.includes(term) || code.includes(term) || keyword.includes(term) || city.includes(term);
-                });
-
-                return (
-                  <div className="p-4 space-y-4" id="my-properties-tab-view">
+              {activeTab === 'my-properties' && (
+                <div className="p-4 space-y-4" id="my-properties-tab-view">
                     <div className="flex justify-between items-center gap-2">
                       <div className="min-w-0 flex-1">
                         <h2 className="font-extrabold text-slate-800 text-sm sm:text-base md:text-lg truncate whitespace-nowrap">Meus Imóveis Cadastrados</h2>
@@ -1985,8 +1970,7 @@ Toque abaixo para ver fotos e todos os detalhes:
                       )}
                     </div>
                   </div>
-                );
-              })()}
+              )}
               {activeTab === 'profile' && activeCorretor && (
                 <div id="profile-tab-view">
                   <UserProfile
@@ -2007,7 +1991,7 @@ Toque abaixo para ver fotos e todos os detalhes:
                 />
               )}
 
-              {activeTab === 'tests' && (
+              {activeTab === 'tests' && (activeCorretor?.isAdmin || activeCorretor?.email?.toLowerCase().trim() === 'afreccia@gmail.com') && (
                 <div id="connection-tests-tab-view">
                   <ConnectionTests />
                 </div>
@@ -2127,14 +2111,16 @@ Toque abaixo para ver fotos e todos os detalhes:
               <span className="text-[8px] font-extrabold uppercase tracking-wider">Imóveis</span>
             </button>
 
-            <button
-              onClick={() => handleTabChange('tests')}
-              className={`flex flex-col items-center gap-1 p-1 ${activeTab === 'tests' ? 'text-[#003366]' : 'text-slate-400 hover:text-slate-600'}`}
-              id="tab-tests"
-            >
-              <Activity size={18} className={activeTab === 'tests' ? 'stroke-[2.5px]' : 'stroke-2'} />
-              <span className="text-[8px] font-extrabold uppercase tracking-wider">Testes</span>
-            </button>
+            {(activeCorretor?.isAdmin || activeCorretor?.email?.toLowerCase().trim() === 'afreccia@gmail.com') && (
+              <button
+                onClick={() => handleTabChange('tests')}
+                className={`flex flex-col items-center gap-1 p-1 ${activeTab === 'tests' ? 'text-[#003366]' : 'text-slate-400 hover:text-slate-600'}`}
+                id="tab-tests"
+              >
+                <Activity size={18} className={activeTab === 'tests' ? 'stroke-[2.5px]' : 'stroke-2'} />
+                <span className="text-[8px] font-extrabold uppercase tracking-wider">Testes</span>
+              </button>
+            )}
 
             <button
               onClick={() => handleTabChange('support')}
@@ -2523,7 +2509,7 @@ Toque abaixo para ver fotos e todos os detalhes:
                     onClick={() => setIsFilterModalOpen(false)}
                     className="flex-1 bg-[#003366] hover:bg-[#002244] text-white py-3 px-4 rounded-xl font-bold text-xs shadow-md transition-all cursor-pointer text-center"
                   >
-                    Ver {getFilteredImoveis().length} Imóveis Encontrados
+                    Ver {filteredImoveis.length} Imóveis Encontrados
                   </button>
                 </div>
               </motion.div>

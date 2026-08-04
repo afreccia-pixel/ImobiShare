@@ -133,8 +133,8 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
     }
   }, [imovelId]);
 
-  // Handle Autocomplete Address
-  const handleAutocomplete = () => {
+  // Handle Autocomplete Address (CEP, Cidade, Bairro, Endereço)
+  const handleAutocomplete = async () => {
     if (!localizacao.trim()) {
       setErrorMsg('Escreva uma localização (rua, avenida ou ponto de referência) primeiro para autocompletar.');
       return;
@@ -142,10 +142,33 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
     setErrorMsg('');
     setAutocompleteLoading(true);
 
-    setTimeout(() => {
+    try {
+      const query = `${localizacao.trim()}, ${cidade || DbService.getActiveCorretor().cidade}, Brasil`;
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&countrycodes=br&limit=1&q=${encodeURIComponent(query)}`);
+      
+      if (res.ok) {
+        const results = await res.json();
+        if (results && results.length > 0) {
+          const addr = results[0].address;
+          const detectedBairro = addr.suburb || addr.neighbourhood || addr.residential || addr.district || addr.quarter || 'Centro';
+          const detectedCidade = addr.city || addr.town || addr.municipality || addr.village || cidade || DbService.getActiveCorretor().cidade;
+          const detectedPostcode = addr.postcode ? addr.postcode.replace(/\D/g, '').replace(/^(\d{5})(\d{3})$/, '$1-$2') : '';
+          const detectedRoad = addr.road || addr.pedestrian || addr.street;
+
+          if (detectedBairro) setBairro(detectedBairro);
+          if (detectedCidade) setCidade(detectedCidade);
+          if (detectedPostcode && !cep) setCep(detectedPostcode);
+          if (detectedRoad && (!localizacao || localizacao.length < detectedRoad.length)) {
+            setLocalizacao(detectedRoad);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Erro ao consultar autocomplete via geocoding:', err);
+    } finally {
       const text = localizacao.toLowerCase();
-      let detectedBairro = 'Centro';
-      let detectedCidade = DbService.getActiveCorretor().cidade;
+      let detectedBairro = bairro || 'Centro';
+      let detectedCidade = cidade || DbService.getActiveCorretor().cidade;
       let detectedEdificio = '';
 
       if (text.includes('barra sul') || text.includes('atlântica 4000') || text.includes('atlântica 5000')) {
@@ -154,26 +177,18 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
       } else if (text.includes('pioneiros') || text.includes('atlântica 100') || text.includes('atlântica 500')) {
         detectedBairro = 'Pioneiros';
         detectedEdificio = 'Infinity Coast';
-      } else if (text.includes('itapema') || text.includes('meia praia') || text.includes('rua 2')) {
+      } else if (text.includes('itapema') || text.includes('meia praia')) {
         detectedCidade = 'Itapema';
         detectedBairro = 'Meia Praia';
-      } else if (text.includes('haras') || text.includes('rio do ouro')) {
-        detectedBairro = 'Bandeirantes';
-        detectedEdificio = 'Haras Rio do Ouro';
       }
 
-      setCidade(detectedCidade);
-      setBairro(detectedBairro);
+      if (detectedCidade) setCidade(detectedCidade);
+      if (detectedBairro) setBairro(detectedBairro);
       if (detectedEdificio && !nomeEdificio && !isLandOrCommercial) {
         setNomeEdificio(detectedEdificio);
       }
-
-      if (!localizacao.includes(detectedCidade)) {
-        setLocalizacao(`${localizacao}, ${detectedBairro} - ${detectedCidade} - SC`);
-      }
-
       setAutocompleteLoading(false);
-    }, 600);
+    }
   };
 
   // Handle Fetch CEP via ViaCEP API
@@ -194,6 +209,8 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
       if (res.ok) {
         const data = await res.json();
         if (!data.erro) {
+          const formattedCep = raw.replace(/^(\d{5})(\d{3})$/, '$1-$2');
+          setCep(formattedCep);
           if (data.logradouro) setLocalizacao(data.logradouro);
           if (data.bairro) setBairro(data.bairro);
           if (data.localidade) setCidade(data.localidade);
@@ -486,6 +503,12 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
     // 11. Descrição validation
     if (!descricao.trim()) {
       setErrorMsg('Descrição do imóvel é obrigatória.');
+      return;
+    }
+
+    // 12. Status do imóvel validation
+    if (!statusImovel) {
+      setErrorMsg('Status do imóvel (Na planta, Mobiliado, Sem mobília) é obrigatório.');
       return;
     }
 
@@ -797,13 +820,14 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
             </div>
 
             <div>
-              <span className="text-[10px] text-slate-500 font-medium block mb-0.5 whitespace-nowrap">Status do imóvel:</span>
+              <span className="text-[10px] text-[#003366] font-bold block mb-0.5 whitespace-nowrap">Status do imóvel *:</span>
               <select
                 value={statusImovel}
                 onChange={(e) => setStatusImovel(e.target.value as any)}
                 className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-slate-50 font-bold text-slate-800 focus:outline-hidden focus:border-[#003366]"
+                required
               >
-                <option value="">Selecione o status (opcional)</option>
+                <option value="">Selecione o status *</option>
                 <option value="Na planta">Na planta</option>
                 <option value="Mobiliado">Mobiliado</option>
                 <option value="Sem mobília">Sem mobília</option>

@@ -9,7 +9,7 @@ import { Imovel, Corretor } from '../types';
 import { MOCK_CORRETORES } from '../data';
 import { DbService } from '../services/db';
 import { MapPin, Phone, MessageCircle, Bed, Car, Maximize, Bath } from 'lucide-react';
-import { getValidImage, handleImageError } from '../utils/imageUtils';
+import { getValidImage, isValidImageString, handleImageError } from '../utils/imageUtils';
 import { getPropertyCode } from '../utils/codeUtils';
 
 interface PublicViewProps {
@@ -208,10 +208,11 @@ export function PublicView({ imovel, activeCorretor, onExit }: PublicViewProps) 
           {/* Broker details card */}
           <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
             <div className="flex items-center gap-2.5 min-w-0 flex-1">
-              {broker.foto ? (
+              {isValidImageString(broker.foto) ? (
                 <img
                   src={broker.foto}
                   alt={broker.nome}
+                  onError={handleImageError}
                   referrerPolicy="no-referrer"
                   className="w-10 h-10 rounded-full object-cover border border-slate-200 flex-shrink-0"
                 />

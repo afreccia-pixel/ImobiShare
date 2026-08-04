@@ -81,16 +81,16 @@ export function PropertyCard({
           <div className="absolute top-1 left-1 flex flex-col gap-0.5 z-10">
             <span className={`font-extrabold uppercase tracking-tight text-white px-1 py-0.5 rounded-xs shadow-xs ${
               imovel.tipo === 'venda' ? 'bg-[#003366]' : imovel.tipo === 'locação' ? 'bg-emerald-700' : 'bg-indigo-900'
-            } text-[6.5px]`}>
+            } text-[4px]`}>
               {imovel.tipo === 'venda' ? 'Venda' : imovel.tipo === 'locação' ? 'Aluguel' : 'Venda & Aluguel'}
             </span>
             {imovel.statusImovel && (
-              <span className="font-extrabold uppercase tracking-tight text-slate-800 bg-white/95 backdrop-blur-xs shadow-xs border border-slate-200/80 text-[6.5px] px-1 py-0.5 rounded-xs">
+              <span className="font-extrabold uppercase tracking-tight text-slate-800 bg-white/95 backdrop-blur-xs shadow-xs border border-slate-200/80 text-[4px] px-1 py-0.5 rounded-xs">
                 {imovel.statusImovel}
               </span>
             )}
             {imovel.integrado && (
-              <span className="font-black uppercase tracking-wider text-slate-900 bg-amber-300 px-1 py-0.5 rounded-sm shadow-xs text-[7px]" title="Imóvel importado via integração">
+              <span className="font-black uppercase tracking-wider text-slate-900 bg-amber-300 px-1 py-0.5 rounded-sm shadow-xs text-[4px]" title="Imóvel importado via integração">
                 Integração
               </span>
             )}
@@ -100,7 +100,7 @@ export function PropertyCard({
         {/* Palavra Destacada Badge on Main Image */}
         {!isMyProperty && imovel.palavraDestacada?.trim() && (
           <div className="absolute bottom-1 left-1 right-1 max-w-full z-10">
-            <span className="block truncate font-black uppercase tracking-wider text-white bg-indigo-600/90 backdrop-blur-xs px-1 py-0.5 rounded-xs shadow-xs text-center border border-indigo-400/30 text-[6.5px] sm:text-[7.5px]">
+            <span className="block truncate font-black uppercase tracking-wider text-white bg-indigo-600/90 backdrop-blur-xs px-1 py-0.5 rounded-xs shadow-xs text-center border border-indigo-400/30 text-[4px]">
               {imovel.palavraDestacada.trim()}
             </span>
           </div>
@@ -119,9 +119,7 @@ export function PropertyCard({
         <div>
           {/* Top Row: Title & Optional Checkbox */}
           <div className="flex items-start justify-between gap-1">
-            <h3 className={`font-extrabold text-slate-900 tracking-tight leading-snug line-clamp-2 ${
-              isMyProperty ? 'text-[8px]' : 'text-xs sm:text-sm'
-            }`}>
+            <h3 className="font-extrabold text-slate-900 tracking-tight leading-snug line-clamp-2 text-[9px]">
               {imovel.nomeEdificio?.trim() ? imovel.nomeEdificio : imovel.titulo}
             </h3>
 
@@ -251,9 +249,9 @@ export function PropertyCard({
                     onShareToggle();
                   }}
                   className={`p-1.5 rounded-full transition-colors cursor-pointer ${
-                    imovel.compartilhar ? 'text-[#003366] bg-[#003366]/5 hover:bg-[#003366]/10' : 'text-slate-400 hover:text-[#003366] hover:bg-slate-50'
+                    imovel.compartilhar !== false ? 'text-emerald-600 hover:text-emerald-700 bg-emerald-50' : 'text-slate-400 hover:text-[#003366] hover:bg-slate-50'
                   }`}
-                  title={imovel.compartilhar ? "Compartilhado" : "Compartilhar"}
+                  title={imovel.compartilhar !== false ? "Compartilhado (Disponível)" : "Privado (Apenas você)"}
                 >
                   <Share2 size={14} />
                 </button>
