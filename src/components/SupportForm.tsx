@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { Corretor } from '../types';
-import { Mail, Phone, User, MessageCircle, AlertCircle, ArrowLeft, Send, Loader2 } from 'lucide-react';
+import { Mail, Phone, User, MessageCircle, AlertCircle, ArrowLeft, Send, Loader2, CheckCircle } from 'lucide-react';
 import { getApiUrl } from '../utils/apiUrl';
 
 interface SupportFormProps {
@@ -52,7 +52,8 @@ export function SupportForm({ activeCorretor, onBack, triggerToast }: SupportFor
 
       if (response.ok) {
         setIsSent(true);
-        triggerToast('Sua mensagem foi enviada diretamente aos desenvolvedores!');
+        setDescricao('');
+        triggerToast('Mensagem enviada com sucesso!');
       } else {
         const data = await response.json();
         triggerToast(data.error || 'Erro ao enviar a mensagem. Tente novamente.');
@@ -91,40 +92,24 @@ export function SupportForm({ activeCorretor, onBack, triggerToast }: SupportFor
 
       <div className="max-w-md mx-auto p-4 space-y-4">
         {isSent ? (
-          <div className="bg-white border border-emerald-100 rounded-3xl p-6 text-center space-y-4 shadow-xs animate-fadeIn">
-            <div className="mx-auto w-12 h-12 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center">
-              <Send size={24} />
+          <div className="bg-white border border-emerald-100 rounded-3xl p-6 sm:p-8 text-center space-y-4 shadow-xs animate-fadeIn">
+            <div className="mx-auto w-14 h-14 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center">
+              <CheckCircle size={32} />
             </div>
             <div className="space-y-1">
-              <h3 className="font-extrabold text-slate-800 text-sm">Mensagem Enviada com Sucesso!</h3>
-              <p className="text-xs text-slate-500 leading-relaxed px-2">
-                Sua sugestão ou relatório foi enviado diretamente para a nossa equipe e será analisado imediatamente.
-              </p>
+              <h3 className="font-extrabold text-slate-800 text-base">Mensagem enviada com sucesso!</h3>
             </div>
-            <div className="bg-slate-50 p-3 rounded-xl border border-slate-100/60 text-left space-y-1 text-[11px] text-slate-600">
-              <p><strong>De:</strong> {nome} ({email})</p>
-              <p><strong>Assunto:</strong> [Suporte] {tipo === 'problema' ? '🚨 Problema' : tipo === 'melhoria' ? '💡 Melhoria' : '❓ Dúvida'}</p>
-            </div>
-            <div className="pt-2 flex flex-col gap-2">
+            <div className="pt-2">
               <button
                 type="button"
                 onClick={() => {
                   setDescricao('');
                   setIsSent(false);
                 }}
-                className="w-full bg-[#003366] hover:bg-[#002244] text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-xs transition-all uppercase tracking-wider"
+                className="w-full bg-[#003366] hover:bg-[#002244] text-white font-bold text-xs py-3 px-4 rounded-xl shadow-xs transition-all uppercase tracking-wider"
               >
-                Escrever nova mensagem
+                Voltar ao Suporte
               </button>
-              {onBack && (
-                <button
-                  type="button"
-                  onClick={onBack}
-                  className="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs py-2 px-4 rounded-xl transition-all"
-                >
-                  Voltar ao Início
-                </button>
-              )}
             </div>
           </div>
         ) : (

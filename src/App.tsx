@@ -772,7 +772,7 @@ useEffect(() => {
     }
   };
 
-  // Reset password via Firebase / Server DB
+  // Reset password via Firebase
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
@@ -784,38 +784,13 @@ useEffect(() => {
     }
     setAuthLoading(true);
     try {
-      // 1. Check if user exists in backend or local DB
-      let userExists = false;
-      try {
-        const response = await fetch(getApiUrl(`/api/brokers/${encodeURIComponent(cleanEmail)}`));
-        if (response.ok) {
-          const data = await response.json();
-          if (data.corretor) userExists = true;
-        }
-      } catch (_) {}
-
-      if (!userExists) {
-        const localMatch = DbService.getCorretores().find(c => c.email?.toLowerCase().trim() === cleanEmail);
-        if (localMatch) userExists = true;
-      }
-
-      // 2. Try Firebase password reset email
-      try {
-        await resetPassword(cleanEmail);
-        triggerToast('E-mail de redefinição enviado! Verifique sua caixa de entrada.');
-        setAuthMode('login');
-      } catch (fbErr: any) {
-        if (userExists) {
-          triggerToast('Instruções enviadas! Verifique seu e-mail para redefinir a senha.');
-          setAuthError('');
-          setAuthMode('login');
-        } else {
-          const formatted = formatAuthError(fbErr);
-          setAuthError(formatted);
-          triggerToast(formatted);
-        }
-      }
+      // Direct call to sendPasswordResetEmail(auth, cleanEmail)
+      await resetPassword(cleanEmail);
+      triggerToast('E-mail de redefinição enviado com sucesso! Verifique sua caixa de entrada e a pasta de spam.');
+      setAuthError('');
+      setAuthMode('login');
     } catch (err: any) {
+      console.error('Erro ao enviar e-mail de redefinição de senha:', err);
       const formatted = formatAuthError(err);
       setAuthError(formatted);
       triggerToast(formatted);

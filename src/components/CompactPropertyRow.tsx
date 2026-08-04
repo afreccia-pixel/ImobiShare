@@ -98,16 +98,6 @@ export function CompactPropertyRow({
               <span className="text-[9px] font-medium text-slate-900 truncate min-w-0 leading-tight">
                 {imovel.nomeEdificio?.trim() ? imovel.nomeEdificio.trim() : imovel.titulo}
               </span>
-              {!isMyProperty && imovel.statusImovel && (
-                <span className="font-extrabold uppercase tracking-tight text-slate-800 bg-slate-100 border border-slate-200/80 px-1 py-[0.5px] rounded-full flex-shrink-0 text-[4px]">
-                  {imovel.statusImovel}
-                </span>
-              )}
-              {!isMyProperty && imovel.palavraDestacada?.trim() && (
-                <span className="text-[4px] font-medium text-amber-800 bg-amber-50 border border-amber-200/60 px-1.5 py-0.2 rounded flex-shrink-0 truncate max-w-[80px]">
-                  {imovel.palavraDestacada.trim()}
-                </span>
-              )}
             </div>
 
             {/* Valor reduzido e Botões de ação na mesma linha das informações */}

@@ -120,7 +120,9 @@ export class ServerDb {
         visibilidade VARCHAR(50) DEFAULT 'todos',
         dados_proprietario TEXT,
         imagens TEXT NOT NULL,
-        data_cadastro VARCHAR(100) NOT NULL
+        data_cadastro VARCHAR(100) NOT NULL,
+        origem VARCHAR(100) DEFAULT 'Imobishare',
+        construtora VARCHAR(255)
       );
     `);
 
@@ -132,6 +134,8 @@ export class ServerDb {
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS valor_anterior NUMERIC;`);
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS valor_locacao_anterior NUMERIC;`);
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS informacoes TEXT;`);
+    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS origem VARCHAR(100) DEFAULT 'Imobishare';`);
+    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS construtora VARCHAR(255);`);
 
     // 3. Tabela parcerias
     await this.pool.query(`
@@ -514,6 +518,8 @@ export class ServerDb {
       corretorEmail: cleanEmail,
       corretorNome: broker.nome || cleanEmail.split('@')[0],
       corretorId: broker.id,
+      origem: imovel.origem || 'Imobishare',
+      construtora: imovel.construtora || '',
       fotos: Array.isArray(imovel.fotos) ? imovel.fotos.slice(0, 15) : [],
       dataCadastro: imovel.dataCadastro || new Date().toISOString()
     };
@@ -529,13 +535,13 @@ export class ServerDb {
           valor_venda, status_imovel, valor_locacao, quartos, bwc, vagas,
           area_privativa, nome_edificio, titulo, palavra_destacada, descricao,
           visibilidade, dados_proprietario, imagens, data_cadastro,
-          valor_anterior, valor_locacao_anterior, informacoes
+          valor_anterior, valor_locacao_anterior, informacoes, origem, construtora
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8,
           $9, $10, $11, $12, $13, $14,
           $15, $16, $17, $18, $19,
           $20, $21, $22, $23,
-          $24, $25, $26
+          $24, $25, $26, $27, $28
         ) ON CONFLICT (id) DO UPDATE SET
           cep = EXCLUDED.cep,
           endereco = EXCLUDED.endereco,
@@ -559,7 +565,9 @@ export class ServerDb {
           imagens = EXCLUDED.imagens,
           valor_anterior = EXCLUDED.valor_anterior,
           valor_locacao_anterior = EXCLUDED.valor_locacao_anterior,
-          informacoes = EXCLUDED.informacoes;
+          informacoes = EXCLUDED.informacoes,
+          origem = EXCLUDED.origem,
+          construtora = EXCLUDED.construtora;
       `, [
         finalImovel.id,
         cleanEmail,
@@ -586,7 +594,9 @@ export class ServerDb {
         finalImovel.dataCadastro,
         finalImovel.valorAnterior || null,
         finalImovel.valorLocacaoAnterior || null,
-        finalImovel.informacoes || null
+        finalImovel.informacoes || null,
+        finalImovel.origem || 'Imobishare',
+        finalImovel.construtora || ''
       ]);
 
       return finalImovel;
@@ -669,6 +679,8 @@ export class ServerDb {
       palavraDestacada: r.palavra_destacada || '',
       descricao: r.descricao,
       informacoes: r.informacoes || undefined,
+      origem: r.origem || 'Imobishare',
+      construtora: r.construtora || '',
       visibilidade: r.visibilidade || 'todos',
       dadosProprietario: isOwner ? (r.dados_proprietario || '') : undefined,
       nomeProprietario: isOwner ? (r.dados_proprietario || '') : 'Confidencial',

@@ -76,36 +76,6 @@ export function PropertyCard({
           referrerPolicy="no-referrer"
           className="absolute inset-0 w-full h-full object-cover"
         />
-        {/* Buy / Rent Badge & Integrated Badge */}
-        {!isMyProperty && (
-          <div className="absolute top-1 left-1 flex flex-col gap-0.5 z-10">
-            <span className={`font-extrabold uppercase tracking-tight text-white px-1 py-0.5 rounded-xs shadow-xs ${
-              imovel.tipo === 'venda' ? 'bg-[#003366]' : imovel.tipo === 'locação' ? 'bg-emerald-700' : 'bg-indigo-900'
-            } text-[4px]`}>
-              {imovel.tipo === 'venda' ? 'Venda' : imovel.tipo === 'locação' ? 'Aluguel' : 'Venda & Aluguel'}
-            </span>
-            {imovel.statusImovel && (
-              <span className="font-extrabold uppercase tracking-tight text-slate-800 bg-white/95 backdrop-blur-xs shadow-xs border border-slate-200/80 text-[4px] px-1 py-0.5 rounded-xs">
-                {imovel.statusImovel}
-              </span>
-            )}
-            {imovel.integrado && (
-              <span className="font-black uppercase tracking-wider text-slate-900 bg-amber-300 px-1 py-0.5 rounded-sm shadow-xs text-[4px]" title="Imóvel importado via integração">
-                Integração
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* Palavra Destacada Badge on Main Image */}
-        {!isMyProperty && imovel.palavraDestacada?.trim() && (
-          <div className="absolute bottom-1 left-1 right-1 max-w-full z-10">
-            <span className="block truncate font-black uppercase tracking-wider text-white bg-indigo-600/90 backdrop-blur-xs px-1 py-0.5 rounded-xs shadow-xs text-center border border-indigo-400/30 text-[4px]">
-              {imovel.palavraDestacada.trim()}
-            </span>
-          </div>
-        )}
-
         {/* Private view badge if not shared */}
         {!imovel.compartilhar && (
           <span className="absolute bottom-1 right-1 bg-slate-950/80 backdrop-blur-xs text-white p-0.5 rounded-full shadow-xs z-10" title="Visível apenas para você">

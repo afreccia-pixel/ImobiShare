@@ -352,12 +352,16 @@ return {
   }
   
   /**
-   * Send password reset email
+   * Send password reset email via Firebase Auth
    */
   export async function resetPassword(email: string): Promise<void> {
+    const cleanEmail = email.toLowerCase().trim();
+    console.log(`🔑 Calling sendPasswordResetEmail for: ${cleanEmail}`);
     try {
-      await sendPasswordResetEmail(auth, email);
+      await sendPasswordResetEmail(auth, cleanEmail);
+      console.log(`✅ Password reset email successfully dispatched by Firebase Auth to: ${cleanEmail}`);
     } catch (err: any) {
+      console.error('❌ Firebase Auth sendPasswordResetEmail error:', err);
       if (err?.code === 'auth/api-key-not-valid' || err?.code === 'auth/invalid-api-key' || (err?.message && err.message.includes('api-key-not-valid'))) {
         throw new Error('Chave do Firebase não configurada. Não foi possível enviar e-mail de redefinição.');
       }

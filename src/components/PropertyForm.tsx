@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Imovel } from '../types';
 import { DbService } from '../services/db';
 import { auth } from '../services/firebase';
@@ -67,8 +67,9 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
   // 8. Metragem privativa
   const [metragem, setMetragem] = useState<number | ''>('');
 
-  // 9. Nome do edifício
+  // 9. Nome do edifício e Construtora
   const [nomeEdificio, setNomeEdificio] = useState('');
+  const [construtora, setConstrutora] = useState('');
 
   // 10. Título e Palavra Destacada
   const [titulo, setTitulo] = useState('');
@@ -101,6 +102,20 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
   // Conditional mandatory status check: Terreno or Comercial makes bedrooms, building name and garage optional
   const isLandOrCommercial = tipoImovel === 'Terreno' || tipoImovel === 'Comercial';
 
+  // Lista de construtoras já cadastradas no sistema para autocomplete e verificação
+  const construtorasCadastradas = useMemo(() => {
+    const list = DbService.getImoveisSync()
+      .map(i => i.construtora?.trim())
+      .filter((c): c is string => Boolean(c));
+    return Array.from(new Set(list)).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, []);
+
+  const construtoraExiste = useMemo(() => {
+    if (!construtora.trim()) return false;
+    const cleanInput = construtora.trim().toLowerCase();
+    return construtorasCadastradas.some(c => c.toLowerCase() === cleanInput);
+  }, [construtora, construtorasCadastradas]);
+
   useEffect(() => {
     if (imovelId) {
       const imoveis = DbService.getImoveisSync();
@@ -121,6 +136,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         setBanheiros(found.banheiros ?? '');
         setMetragem(found.metragem ?? '');
         setNomeEdificio(found.nomeEdificio || '');
+        setConstrutora(found.construtora || '');
         setTitulo(found.titulo || '');
         setPalavraDestacada(found.palavraDestacada || '');
         setDescricao(found.descricao || '');
@@ -572,6 +588,8 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         localizacao,
         cep: cep.trim() || undefined,
         nomeEdificio: nomeEdificio.trim() || undefined,
+        construtora: construtora.trim() || undefined,
+        origem: 'Imobishare',
         nomeProprietario: nomeProprietario.trim(),
         telefoneProprietario: telefoneProprietario.trim(),
         favorito,
@@ -991,11 +1009,11 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
           </div>
         </div>
 
-        {/* 5. Nome do edifício * */}
-        <div className="bg-white p-3 rounded-lg border border-slate-100 space-y-1">
+        {/* 5. EDIFÍCIO */}
+        <div className="bg-white p-3 rounded-lg border border-slate-100 space-y-1.5">
           <div className="flex items-center justify-between">
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 whitespace-nowrap">
-              5. Nome do Edifício / Condomínio {!isLandOrCommercial && <span className="text-rose-500">*</span>}
+              5. EDIFÍCIO {!isLandOrCommercial && <span className="text-rose-500">*</span>}
             </label>
             {isLandOrCommercial && (
               <span className="text-[9px] text-amber-600 font-semibold bg-amber-50 px-1.5 py-0.5 rounded-md whitespace-nowrap">Opcional</span>
@@ -1010,10 +1028,45 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
           />
         </div>
 
-        {/* 6. DESCRIÇÃO DO IMÓVEL */}
+        {/* 6. CONSTRUTORA (opcional) */}
+        <div className="bg-white p-3 rounded-lg border border-slate-100 space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 whitespace-nowrap">
+              6. CONSTRUTORA <span className="text-slate-400 font-normal lowercase">(opcional)</span>
+            </label>
+            {construtoraExiste && (
+              <span className="text-[9px] text-emerald-800 font-bold bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded-full flex items-center gap-1">
+                <Check size={10} className="text-emerald-700" />
+                Construtora cadastrada no sistema
+              </span>
+            )}
+          </div>
+          <div className="relative">
+            <input
+              type="text"
+              list="construtoras-list"
+              placeholder="Ex: FG Empreendimentos, Embraed, Pasqualotto..."
+              value={construtora}
+              onChange={(e) => setConstrutora(e.target.value)}
+              className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366]"
+            />
+            <datalist id="construtoras-list">
+              {construtorasCadastradas.map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+          </div>
+          {construtorasCadastradas.length > 0 && !construtora && (
+            <p className="text-[10px] text-slate-400">
+              💡 Dica: {construtorasCadastradas.length} construtora{construtorasCadastradas.length > 1 ? 's já cadastradas' : ' já cadastrada'} no sistema. Selecione da lista ou digite uma nova.
+            </p>
+          )}
+        </div>
+
+        {/* 7. DESCRIÇÃO DO IMÓVEL */}
         <div className="bg-white p-3 rounded-lg border border-slate-100 space-y-3">
           <label className="block text-xs font-bold uppercase tracking-wider text-slate-800">
-            6. Descrição do Imóvel
+            7. Descrição do Imóvel
           </label>
 
           {/* Título do Anúncio (90 caracteres) */}
@@ -1098,9 +1151,9 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
           </div>
         </div>
 
-        {/* 7. Preferências */}
+        {/* 8. Preferências */}
         <div className="bg-white p-3 rounded-lg border border-slate-100 space-y-2">
-          <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">7. Preferências do Imóvel</label>
+          <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">8. Preferências do Imóvel</label>
           
           <div className="grid grid-cols-2 gap-2 pt-0.5">
             {/* Favorito */}
@@ -1137,12 +1190,12 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
           </div>
         </div>
 
-        {/* 8. Dados do proprietário */}
+        {/* 9. Dados do proprietário */}
         <div className="bg-slate-900 text-slate-200 p-3 rounded-lg border border-slate-800 space-y-2">
           <div>
             <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400 mr-1.5 animate-pulse" />
-              8. Dados do Proprietário (Confidencial)
+              9. Dados do Proprietário (Confidencial)
             </h4>
             <p className="text-[10px] text-slate-400">Visível apenas para você. Nunca é compartilhado com terceiros.</p>
           </div>
@@ -1172,11 +1225,11 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
           </div>
         </div>
 
-        {/* 9. Informações para Corretores */}
+        {/* 10. Informações para Corretores */}
         <div className="bg-white p-3 rounded-lg border border-slate-100 space-y-1.5">
           <div className="flex items-center justify-between gap-2">
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-800">
-              9. Informações
+              10. Informações
             </label>
             <span className={`text-[10px] font-bold flex-shrink-0 ${informacoes.length >= 200 ? 'text-amber-600 font-extrabold' : 'text-slate-400'}`}>
               {informacoes.length}/200

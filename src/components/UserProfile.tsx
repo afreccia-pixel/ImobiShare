@@ -158,7 +158,10 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
     try {
       await fetch(getApiUrl('/api/auth/profile'), {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-corretor-email': updatedCorretor.email
+        },
         body: JSON.stringify(updatedCorretor)
       });
       await DbService.fetchBrokers();

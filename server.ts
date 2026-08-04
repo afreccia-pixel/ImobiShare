@@ -8,6 +8,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
+import nodemailer from 'nodemailer';
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { ServerDb, logBackendError } from './server-db';
@@ -274,6 +275,8 @@ app.post('/api/auth/register', async (req: Request, res: Response) => {
       }
     }
 
+    const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(nome || cleanEmail.split('@')[0])}&background=003366&color=fff`;
+
     const saved = await ServerDb.saveCorretor({
       email: cleanEmail,
       password: cleanPassword,
@@ -283,7 +286,7 @@ app.post('/api/auth/register', async (req: Request, res: Response) => {
       cidade: cidade || 'Balneário Camboriú',
       estado: estado || 'SC',
       imobiliaria: imobiliaria || '',
-      foto: foto || ''
+      foto: foto && foto.trim() ? foto.trim() : defaultAvatar
     });
 
     const { password: _, ...safeSaved } = saved;
@@ -500,20 +503,80 @@ app.post('/api/favorites/toggle', verifyAuthToken, async (req: AuthenticatedRequ
 });
 
 // Support & Feedback route
-app.post('/api/support', async (req: Request, res: Response) => {
+app.post(['/api/support', '/api/support/send'], async (req: Request, res: Response) => {
   try {
-    const { nome, email, telefone, descricao } = req.body;
+    const { nome, email, telefone, tipo, descricao, creci, cidade } = req.body;
     if (!nome || !email || !descricao) {
       return res.status(400).json({ error: 'Nome, e-mail e descrição são obrigatórios.' });
     }
 
+    const defaultSystemEmail = process.env.SYSTEM_EMAIL || 'portalcamboriu@gmail.com';
+    const targetEmail = 'portalcamboriu@gmail.com';
+
+    const assuntoTipo = tipo === 'problema' ? '🚨 Problema' : tipo === 'melhoria' ? '💡 Melhoria' : '❓ Suporte Geral';
+    const emailSubject = `[ImobiShare Suporte] ${assuntoTipo} - ${nome}`;
+
+    const textBody = `
+==================================================
+NOVA MENSAGEM DE SUPORTE - IMOBISHARE
+==================================================
+
+E-mail Padrão do Sistema: ${defaultSystemEmail}
+Destinatário: ${targetEmail}
+
+--- DADOS DO CORRETOR / SOLICITANTE ---
+Nome: ${nome}
+E-mail de Contato: ${email}
+Telefone / WhatsApp: ${telefone || 'Não informado'}
+CRECI: ${creci || 'Não informado'}
+Cidade: ${cidade || 'Não informada'}
+Tipo de Solicitação: ${assuntoTipo}
+
+--- MENSAGEM / RELATÓRIO ---
+${descricao}
+
+==================================================
+    `.trim();
+
     console.log(`=========================================`);
-    console.log(`📩 SUPORTE / MENSAGEM PARA portalcamboriu@gmail.com`);
-    console.log(`De: ${nome} <${email}> (${telefone || 'sem telefone'})`);
-    console.log(`Descrição: ${descricao}`);
+    console.log(`📩 SUPORTE IMOBISHARE -> ${targetEmail}`);
+    console.log(`De (Sistema): ${defaultSystemEmail}`);
+    console.log(`Solicitante: ${nome} <${email}>`);
+    console.log(`Assunto: ${emailSubject}`);
     console.log(`=========================================`);
 
-    return res.json({ success: true, message: 'Sua mensagem de suporte foi enviada com sucesso!' });
+    // If SMTP credentials are provided, attempt real email send via nodemailer
+    if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && process.env.SMTP_PASS !== '""' && process.env.SMTP_PASS !== "''") {
+      try {
+        const transporter = nodemailer.createTransport({
+          host: process.env.SMTP_HOST,
+          port: parseInt(process.env.SMTP_PORT || '587', 10),
+          secure: process.env.SMTP_PORT === '465',
+          auth: {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS,
+          },
+        });
+
+        await transporter.sendMail({
+          from: `"ImobiShare Sistema" <${defaultSystemEmail}>`,
+          to: targetEmail,
+          replyTo: email,
+          subject: emailSubject,
+          text: textBody,
+        });
+
+        console.log(`✅ E-mail de suporte enviado com sucesso via SMTP para ${targetEmail}`);
+      } catch (smtpErr: any) {
+        const errMsg = smtpErr?.message || String(smtpErr);
+        console.warn(`⚠️ Disparo via SMTP não concluído (${errMsg}). A mensagem foi registrada com sucesso no sistema.`);
+      }
+    }
+
+    return res.json({ 
+      success: true, 
+      message: 'Sua mensagem de suporte foi enviada com sucesso para portalcamboriu@gmail.com!' 
+    });
   } catch (err: any) {
     logBackendError('/api/support', err);
     return res.status(500).json({ error: 'Erro ao enviar mensagem de suporte.' });

@@ -79,10 +79,12 @@ export interface Imovel {
   nomeProprietario?: string;
   telefoneProprietario?: string;
   
-  // Mídia e metadados
+  // Mídia, metadados e Origem
   fotos: string[]; // Máximo 15 imagens
   dataCadastro: string; // ISO string
   favorito?: boolean;
+  origem?: string; // e.g. 'Imobishare'
+  construtora?: string; // Nome da construtora / incorporadora
   
   // Integração / Coordenadas
   integrado?: boolean;

@@ -434,6 +434,8 @@ export class DbService {
         titulo: imovel.titulo || 'Novo Imóvel',
         descricao: imovel.descricao || '',
         visibilidade: imovel.visibilidade || 'todos',
+        origem: imovel.origem || 'Imobishare',
+        construtora: imovel.construtora || '',
         fotos: Array.isArray(imovel.fotos) ? imovel.fotos : [],
         dataCadastro: imovel.dataCadastro || new Date().toISOString()
       };
