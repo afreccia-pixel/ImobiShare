@@ -94,6 +94,8 @@ export class ServerDb {
     await this.pool.query(`ALTER TABLE corretores ADD COLUMN IF NOT EXISTS restringir_parceiros BOOLEAN DEFAULT false;`);
     await this.pool.query(`ALTER TABLE corretores ADD COLUMN IF NOT EXISTS parceiros_emails TEXT DEFAULT '[]';`);
     await this.pool.query(`ALTER TABLE corretores ADD COLUMN IF NOT EXISTS password TEXT;`);
+    await this.pool.query(`ALTER TABLE corretores ADD COLUMN IF NOT EXISTS reset_token TEXT;`);
+    await this.pool.query(`ALTER TABLE corretores ADD COLUMN IF NOT EXISTS reset_token_expires BIGINT;`);
 
     // 2. Tabela imoveis
     await this.pool.query(`
@@ -323,6 +325,8 @@ export class ServerDb {
         slugSite: r.slug_site || '',
         isAdmin: Boolean(r.is_admin) || (cleanEmail === 'afreccia@gmail.com'),
         password: r.password || '',
+        resetToken: r.reset_token || undefined,
+        resetTokenExpires: r.reset_token_expires ? Number(r.reset_token_expires) : undefined,
         restringirParceiros: Boolean(r.restringir_parceiros),
         parceirosEmails: Array.isArray(r.parceiros_emails) ? r.parceiros_emails : (r.parceiros_emails ? JSON.parse(r.parceiros_emails) : [])
       };
@@ -344,8 +348,8 @@ export class ServerDb {
 
     if (this.isPostgres && this.pool) {
       await this.pool.query(`
-        INSERT INTO corretores (email, id, nome, creci, telefone, cidade, estado, imobiliaria_ou_autonomo, foto_url, slug_site, is_admin, restringir_parceiros, parceiros_emails, password)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        INSERT INTO corretores (email, id, nome, creci, telefone, cidade, estado, imobiliaria_ou_autonomo, foto_url, slug_site, is_admin, restringir_parceiros, parceiros_emails, password, reset_token, reset_token_expires)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         ON CONFLICT (email) DO UPDATE SET
           nome = EXCLUDED.nome,
           creci = COALESCE(NULLIF(EXCLUDED.creci, ''), corretores.creci),
@@ -358,7 +362,9 @@ export class ServerDb {
           is_admin = COALESCE(EXCLUDED.is_admin, corretores.is_admin),
           restringir_parceiros = EXCLUDED.restringir_parceiros,
           parceiros_emails = EXCLUDED.parceiros_emails,
-          password = COALESCE(NULLIF(EXCLUDED.password, ''), corretores.password);
+          password = COALESCE(NULLIF(EXCLUDED.password, ''), corretores.password),
+          reset_token = EXCLUDED.reset_token,
+          reset_token_expires = EXCLUDED.reset_token_expires;
       `, [
         cleanEmail,
         corretor.id || `broker-${cleanEmail.replace(/[^a-z0-9]/gi, '_')}`,
@@ -373,7 +379,9 @@ export class ServerDb {
         Boolean(corretor.isAdmin),
         Boolean(corretor.restringirParceiros),
         JSON.stringify(corretor.parceirosEmails || []),
-        passwordHash
+        passwordHash,
+        corretor.resetToken || null,
+        corretor.resetTokenExpires || null
       ]);
 
       const saved = await this.getCorretorByEmail(cleanEmail);
@@ -395,6 +403,8 @@ export class ServerDb {
         slugSite: corretor.slugSite || (idx >= 0 ? db.brokers[idx].slugSite : ''),
         isAdmin: corretor.isAdmin !== undefined ? corretor.isAdmin : (idx >= 0 ? db.brokers[idx].isAdmin : cleanEmail === 'afreccia@gmail.com'),
         password: passwordHash || (idx >= 0 ? db.brokers[idx].password : ''),
+        resetToken: corretor.resetToken !== undefined ? corretor.resetToken : (idx >= 0 ? db.brokers[idx].resetToken : undefined),
+        resetTokenExpires: corretor.resetTokenExpires !== undefined ? corretor.resetTokenExpires : (idx >= 0 ? db.brokers[idx].resetTokenExpires : undefined),
         restringirParceiros: corretor.restringirParceiros !== undefined ? corretor.restringirParceiros : (idx >= 0 ? db.brokers[idx].restringirParceiros : false),
         parceirosEmails: corretor.parceirosEmails !== undefined ? corretor.parceirosEmails : (idx >= 0 ? db.brokers[idx].parceirosEmails : [])
       };

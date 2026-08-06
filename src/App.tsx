@@ -74,6 +74,25 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
 
+  // Reset password token modal states
+  const [resetTokenData, setResetTokenData] = useState<{ email: string; token: string } | null>(null);
+  const [resetNewPassword, setResetNewPassword] = useState('');
+  const [resetConfirmPassword, setResetConfirmPassword] = useState('');
+  const [resetSubmitting, setResetSubmitting] = useState(false);
+  const [resetFormError, setResetFormError] = useState('');
+
+  // Check URL parameters for reset password link
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const action = params.get('action');
+    const token = params.get('token');
+    const email = params.get('email');
+
+    if (action === 'reset-password' && token && email) {
+      setResetTokenData({ email, token });
+    }
+  }, []);
+
   // Registration form states
   const [regNome, setRegNome] = useState('');
   const [regCreci, setRegCreci] = useState('');
@@ -796,6 +815,53 @@ useEffect(() => {
       triggerToast(formatted);
     } finally {
       setAuthLoading(false);
+    }
+  };
+
+  // Execute password reset with token
+  const handleExecuteResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetFormError('');
+
+    if (!resetNewPassword || resetNewPassword.length < 6) {
+      setResetFormError('A nova senha deve ter no mínimo 6 caracteres.');
+      return;
+    }
+
+    if (resetNewPassword !== resetConfirmPassword) {
+      setResetFormError('As senhas digitadas não coincidem.');
+      return;
+    }
+
+    setResetSubmitting(true);
+    try {
+      const res = await fetch(getApiUrl('/api/auth/reset-password-with-token'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: resetTokenData?.email,
+          token: resetTokenData?.token,
+          newPassword: resetNewPassword
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Erro ao redefinir a senha.');
+      }
+
+      triggerToast('Senha redefinida com sucesso! Entre com sua nova senha.');
+      setResetTokenData(null);
+      setResetNewPassword('');
+      setResetConfirmPassword('');
+      window.history.replaceState({}, '', window.location.pathname);
+      setAuthMode('login');
+      if (resetTokenData?.email) {
+        setAuthEmail(resetTokenData.email);
+      }
+    } catch (err: any) {
+      setResetFormError(err?.message || 'Não foi possível redefinir a senha.');
+    } finally {
+      setResetSubmitting(false);
     }
   };
 
@@ -2491,6 +2557,85 @@ Toque abaixo para ver fotos e todos os detalhes:
             </div>
           )}
         </AnimatePresence>
+
+        {/* Modal de Redefinição de Senha (via Link com Token) */}
+        {resetTokenData && (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-5 border border-slate-100">
+              <div className="text-center space-y-2">
+                <div className="mx-auto w-12 h-12 bg-blue-50 text-[#003366] rounded-2xl flex items-center justify-center">
+                  <Lock size={24} />
+                </div>
+                <h3 className="text-lg font-extrabold text-slate-800">Redefinir Sua Senha</h3>
+                <p className="text-xs text-slate-500">
+                  Crie uma nova senha de acesso para a conta <strong className="text-slate-700">{resetTokenData.email}</strong>
+                </p>
+              </div>
+
+              {resetFormError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl font-medium">
+                  {resetFormError}
+                </div>
+              )}
+
+              <form onSubmit={handleExecuteResetPassword} className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                    Nova Senha
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    placeholder="Mínimo 6 caracteres"
+                    value={resetNewPassword}
+                    onChange={(e) => setResetNewPassword(e.target.value)}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 focus:outline-hidden focus:border-[#003366]"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                    Confirmar Nova Senha
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    placeholder="Repita a nova senha"
+                    value={resetConfirmPassword}
+                    onChange={(e) => setResetConfirmPassword(e.target.value)}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 focus:outline-hidden focus:border-[#003366]"
+                  />
+                </div>
+
+                <div className="pt-2 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setResetTokenData(null);
+                      window.history.replaceState({}, '', window.location.pathname);
+                    }}
+                    className="w-1/3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs py-3 px-4 rounded-xl transition-all cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={resetSubmitting}
+                    className="flex-1 bg-[#003366] hover:bg-[#002244] text-white font-bold text-xs py-3 px-4 rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    {resetSubmitting ? (
+                      <span>Salvando...</span>
+                    ) : (
+                      <span>Salvar Nova Senha</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

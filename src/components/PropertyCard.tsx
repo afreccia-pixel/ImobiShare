@@ -152,57 +152,57 @@ export function PropertyCard({
               <div className="flex flex-col">
                 {imovel.valorAnterior && imovel.valorAnterior > imovel.valor ? (
                   <>
-                    <span className={`text-slate-400 line-through font-semibold ${isMyProperty ? 'text-[8px]' : 'text-[7.5px]'}`}>
+                    <span className="text-slate-400 line-through font-semibold text-[9px]">
                       De {formatPrice(imovel.valorAnterior)}
                     </span>
                     <div className="flex items-center gap-1">
-                      <span className={`font-bold text-slate-800 ${isMyProperty ? 'text-[8px]' : 'text-[11px] sm:text-xs'}`}>
-                        <span className="text-slate-400 font-normal text-[8px]">Por </span>{formatPrice(imovel.valor)}
+                      <span className="font-extrabold text-[#003366] text-xs sm:text-sm">
+                        <span className="text-slate-400 font-normal text-[9px]">Por </span>{formatPrice(imovel.valor)}
                       </span>
                     </div>
                   </>
                 ) : (
-                  <span className={`font-extrabold text-[#003366] leading-tight ${isMyProperty ? 'text-[8px]' : 'text-[11px] sm:text-xs'}`}>
-                    {formatPrice(imovel.valor)} <span className="font-semibold text-slate-400 text-[8px]">(Venda)</span>
+                  <span className="font-extrabold text-[#003366] leading-tight text-xs sm:text-sm">
+                    {formatPrice(imovel.valor)} <span className="font-semibold text-slate-400 text-[9px]">(Venda)</span>
                   </span>
                 )}
-                <span className={`font-bold text-slate-700 leading-tight mt-0.5 ${isMyProperty ? 'text-[8px]' : 'text-[10px]'}`}>
-                  {formatPrice(imovel.valorLocacao || 0)}<span className="font-normal text-slate-400 text-[8px]">/mês (Locação)</span>
+                <span className="font-bold text-slate-700 leading-tight mt-0.5 text-[10px]">
+                  {formatPrice(imovel.valorLocacao || 0)}<span className="font-normal text-slate-400 text-[9px]">/mês (Locação)</span>
                 </span>
               </div>
             ) : imovel.tipo === 'locação' ? (
               imovel.valorLocacaoAnterior && imovel.valorLocacaoAnterior > (imovel.valorLocacao || imovel.valor) ? (
                 <div className="flex flex-col leading-none">
-                  <span className={`text-slate-400 line-through font-semibold ${isMyProperty ? 'text-[8px]' : 'text-[7.5px]'}`}>
+                  <span className="text-slate-400 line-through font-semibold text-[9px]">
                     De {formatPrice(imovel.valorLocacaoAnterior)}
                   </span>
                   <div className="flex items-center gap-1">
-                    <span className={`font-bold text-slate-800 ${isMyProperty ? 'text-[8px]' : 'text-[11px] sm:text-xs'}`}>
-                      <span className="text-slate-400 font-normal text-[8px]">Por </span>{formatPrice(imovel.valorLocacao || imovel.valor)}
-                      <span className="font-normal text-slate-400 text-[8px]"> /mês</span>
+                    <span className="font-extrabold text-[#003366] text-xs sm:text-sm">
+                      <span className="text-slate-400 font-normal text-[9px]">Por </span>{formatPrice(imovel.valorLocacao || imovel.valor)}
+                      <span className="font-normal text-slate-400 text-[9px]"> /mês</span>
                     </span>
                   </div>
                 </div>
               ) : (
-                <span className={`font-extrabold text-slate-800 leading-tight ${isMyProperty ? 'text-[8px]' : 'text-[11px] sm:text-xs'}`}>
+                <span className="font-extrabold text-[#003366] leading-tight text-xs sm:text-sm">
                   {formatPrice(imovel.valorLocacao || imovel.valor)}
-                  <span className="font-normal text-slate-400 text-[8px]"> /mês</span>
+                  <span className="font-normal text-slate-400 text-[9px]"> /mês</span>
                 </span>
               )
             ) : (
               imovel.valorAnterior && imovel.valorAnterior > imovel.valor ? (
                 <div className="flex flex-col leading-none">
-                  <span className={`text-slate-400 line-through font-semibold ${isMyProperty ? 'text-[8px]' : 'text-[7.5px]'}`}>
+                  <span className="text-slate-400 line-through font-semibold text-[9px]">
                     De {formatPrice(imovel.valorAnterior)}
                   </span>
                   <div className="flex items-center gap-1">
-                    <span className={`font-bold text-slate-800 ${isMyProperty ? 'text-[8px]' : 'text-[11px] sm:text-xs'}`}>
-                      <span className="text-slate-400 font-normal text-[8px]">Por </span>{formatPrice(imovel.valor)}
+                    <span className="font-extrabold text-[#003366] text-xs sm:text-sm">
+                      <span className="text-slate-400 font-normal text-[9px]">Por </span>{formatPrice(imovel.valor)}
                     </span>
                   </div>
                 </div>
               ) : (
-                <span className={`font-extrabold text-[#003366] leading-tight ${isMyProperty ? 'text-[8px]' : 'text-[11px] sm:text-xs'}`}>
+                <span className="font-extrabold text-[#003366] leading-tight text-xs sm:text-sm">
                   {formatPrice(imovel.valor)}
                 </span>
               )

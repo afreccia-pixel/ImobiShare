@@ -18,6 +18,8 @@ export interface Corretor {
   slugSite?: string; // Slug único para site próprio do corretor
   isAdmin?: boolean; // Se é administrador com acesso à aba "Testes"
   password?: string;
+  resetToken?: string;
+  resetTokenExpires?: number;
   restringirParceiros?: boolean;
   parceirosEmails?: string[];
   

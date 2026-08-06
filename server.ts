@@ -9,6 +9,7 @@ import fs from 'fs/promises';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import nodemailer from 'nodemailer';
+import crypto from 'crypto';
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { ServerDb, logBackendError } from './server-db';
@@ -294,6 +295,169 @@ app.post('/api/auth/register', async (req: Request, res: Response) => {
   } catch (err: any) {
     logBackendError('/api/auth/register', err);
     return res.status(500).json({ error: 'Erro ao cadastrar corretor.' });
+  }
+});
+
+// Forgot / Reset Password route
+app.post('/api/auth/forgot-password', async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body || {};
+    const cleanEmail = email ? String(email).toLowerCase().trim() : '';
+
+    if (!cleanEmail) {
+      return res.status(400).json({ error: 'Informe o e-mail para redefinição de senha.' });
+    }
+
+    // Check if user exists in local DB
+    const broker = await ServerDb.getCorretorByEmail(cleanEmail);
+    if (!broker) {
+      return res.status(404).json({ error: 'Nenhum usuário cadastrado encontrado com este e-mail.' });
+    }
+
+    let resetLink = '';
+
+    // 1. Generate reset link via Firebase Admin SDK if available
+    if (getApps().length) {
+      try {
+        resetLink = await getAuth().generatePasswordResetLink(cleanEmail);
+        console.log(`🔑 Link de redefinição de senha gerado via Firebase Admin para ${cleanEmail}`);
+      } catch (fbErr: any) {
+        console.warn(`ℹ️ Firebase Admin reset link fail (${fbErr?.message}).`);
+        // If user not in Firebase Auth, create them and retry generatePasswordResetLink
+        if (fbErr?.code === 'auth/user-not-found' || fbErr?.message?.includes('user-not-found')) {
+          try {
+            await getAuth().createUser({ email: cleanEmail, displayName: broker.nome || '' });
+            resetLink = await getAuth().generatePasswordResetLink(cleanEmail);
+            console.log(`🔑 Criado usuário no Firebase e gerado link de redefinição para ${cleanEmail}`);
+          } catch (createErr: any) {
+            console.warn(`ℹ️ Não foi possível criar usuário no Firebase: ${createErr?.message}`);
+          }
+        }
+      }
+    }
+
+    // 2. If Firebase reset link is not available, generate secure local token reset link
+    if (!resetLink) {
+      const token = crypto.randomBytes(24).toString('hex');
+      broker.resetToken = token;
+      broker.resetTokenExpires = Date.now() + 1000 * 60 * 60 * 2; // 2 hours
+      await ServerDb.saveCorretor(broker);
+
+      const reqHost = (req.headers['x-forwarded-host'] || req.headers.host || '') as string;
+      const reqProto = (req.headers['x-forwarded-proto'] || 'https') as string;
+      const origin = req.headers.origin || (reqHost ? `${reqProto}://${reqHost}` : 'https://ais-dev-vockjze6fhgsof37jkvcju-570873971775.us-east1.run.app');
+
+      resetLink = `${origin}/?action=reset-password&token=${token}&email=${encodeURIComponent(cleanEmail)}`;
+      console.log(`🔑 Gerado link de redefinição com token interno para ${cleanEmail}`);
+    }
+
+    // 3. Send email via SMTP if configured
+    if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && process.env.SMTP_PASS !== '""' && process.env.SMTP_PASS !== "''") {
+      try {
+        const defaultSystemEmail = process.env.SYSTEM_EMAIL || 'portalcamboriu@gmail.com';
+        const transporter = nodemailer.createTransport({
+          host: process.env.SMTP_HOST,
+          port: parseInt(process.env.SMTP_PORT || '587', 10),
+          secure: process.env.SMTP_PORT === '465',
+          auth: {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS,
+          },
+        });
+
+        await transporter.sendMail({
+          from: `"ImobiShare Suporte" <${defaultSystemEmail}>`,
+          to: cleanEmail,
+          subject: '[ImobiShare] Instruções para Redefinição de Senha',
+          text: `Olá, ${broker.nome || 'Corretor'}.\n\nFoi solicitada a redefinição de senha para sua conta no ImobiShare.\n\nClique no link abaixo para criar uma nova senha:\n${resetLink}\n\nSe não foi você quem solicitou, pode ignorar esta mensagem.\n\nAtenciosamente,\nEquipe ImobiShare`,
+          html: `
+            <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
+              <h2 style="color: #003366; margin-top: 0; margin-bottom: 16px;">Redefinição de Senha - ImobiShare</h2>
+              <p style="font-size: 14px; line-height: 1.5; color: #334155;">Olá, <strong>${broker.nome || 'Corretor'}</strong>,</p>
+              <p style="font-size: 14px; line-height: 1.5; color: #334155;">Recebemos uma solicitação para redefinir a senha da sua conta (<code>${cleanEmail}</code>).</p>
+              <div style="margin: 28px 0; text-align: center;">
+                <a href="${resetLink}" style="background-color: #003366; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 14px; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                  Redefinir Minha Senha
+                </a>
+              </div>
+              <p style="font-size: 12px; color: #64748b; margin-bottom: 6px;">Se o botão acima não funcionar, copie e cole o link a seguir no seu navegador:</p>
+              <p style="font-size: 12px; color: #003366; word-break: break-all; background-color: #f8fafc; padding: 10px; border-radius: 6px; border: 1px solid #e2e8f0;">${resetLink}</p>
+              <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
+              <p style="font-size: 12px; color: #94a3b8; margin-bottom: 0;">Se você não solicitou esta alteração, nenhuma ação é necessária e sua senha permanecerá a mesma.</p>
+            </div>
+          `
+        });
+
+        console.log(`✅ E-mail de redefinição de senha enviado com sucesso para ${cleanEmail}`);
+      } catch (smtpErr: any) {
+        console.warn(`⚠️ Não foi possível enviar e-mail via SMTP (${smtpErr?.message}). Link gerado: ${resetLink}`);
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: 'Instruções para redefinição de senha enviadas com sucesso. Verifique sua caixa de entrada e spam.'
+    });
+  } catch (err: any) {
+    logBackendError('/api/auth/forgot-password', err);
+    return res.status(500).json({ error: 'Não foi possível processar a redefinição de senha no momento.' });
+  }
+});
+
+// Reset password with token route
+app.post('/api/auth/reset-password-with-token', async (req: Request, res: Response) => {
+  try {
+    const { email, token, newPassword } = req.body || {};
+    const cleanEmail = email ? String(email).toLowerCase().trim() : '';
+    const cleanToken = token ? String(token).trim() : '';
+    const cleanPassword = newPassword ? String(newPassword) : '';
+
+    if (!cleanEmail || !cleanToken || !cleanPassword) {
+      return res.status(400).json({ error: 'Informe o e-mail, token e a nova senha.' });
+    }
+
+    if (cleanPassword.length < 6) {
+      return res.status(400).json({ error: 'A nova senha deve ter no mínimo 6 caracteres.' });
+    }
+
+    const broker = await ServerDb.getCorretorByEmail(cleanEmail);
+    if (!broker) {
+      return res.status(404).json({ error: 'Usuário não encontrado.' });
+    }
+
+    if (!broker.resetToken || broker.resetToken !== cleanToken) {
+      return res.status(400).json({ error: 'Token de redefinição inválido ou já utilizado.' });
+    }
+
+    if (broker.resetTokenExpires && broker.resetTokenExpires < Date.now()) {
+      return res.status(400).json({ error: 'O link de redefinição expirou. Solicite um novo link.' });
+    }
+
+    // Save new password hash & invalidate reset token
+    broker.password = await ServerDb.hashPassword(cleanPassword);
+    broker.resetToken = undefined;
+    broker.resetTokenExpires = undefined;
+    await ServerDb.saveCorretor(broker);
+
+    // Sync in Firebase Auth if available
+    if (getApps().length) {
+      try {
+        const user = await getAuth().getUserByEmail(cleanEmail);
+        if (user) {
+          await getAuth().updateUser(user.uid, { password: cleanPassword });
+        }
+      } catch (fbErr) {
+        console.warn('⚠️ Firebase Auth password update warn:', fbErr);
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: 'Senha redefinida com sucesso! Você já pode realizar login com a nova senha.'
+    });
+  } catch (err: any) {
+    logBackendError('/api/auth/reset-password-with-token', err);
+    return res.status(500).json({ error: 'Erro ao redefinir a senha.' });
   }
 });
 

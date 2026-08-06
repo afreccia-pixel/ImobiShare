@@ -95,29 +95,29 @@ export function CompactPropertyRow({
           {/* Linha 1: Nome do edifício + Selo de Status + Palavra destacada + Valor + Ações na mesma linha */}
           <div className="flex items-center justify-between gap-2 min-w-0">
             <div className="flex items-center gap-1.5 min-w-0 truncate">
-              <span className="text-[9px] font-medium text-slate-900 truncate min-w-0 leading-tight">
+              <span className="text-xs font-semibold text-slate-900 truncate min-w-0 leading-tight">
                 {imovel.nomeEdificio?.trim() ? imovel.nomeEdificio.trim() : imovel.titulo}
               </span>
             </div>
 
-            {/* Valor reduzido e Botões de ação na mesma linha das informações */}
+            {/* Valor padronizado e Botões de ação na mesma linha das informações */}
             <div className="flex items-center gap-2 flex-shrink-0">
-              <div className={`text-right font-semibold text-slate-800 leading-tight ${isMyProperty ? 'text-[8px]' : 'text-xs'}`}>
+              <div className="text-right font-extrabold text-[#003366] leading-tight text-xs sm:text-sm">
                 {imovel.tipo === 'ambos' ? (
                   <div className="flex flex-col text-right leading-tight">
                     <span>
                       {formatPrice(imovel.valor)}{' '}
-                      <span className={`${isMyProperty ? 'text-[8px]' : 'text-[9.5px]'} font-normal text-slate-500`}>(Venda)</span>
+                      <span className="text-[10px] font-normal text-slate-500">(Venda)</span>
                     </span>
                     <span>
                       {formatPrice(imovel.valorLocacao || 0)}
-                      <span className={`${isMyProperty ? 'text-[8px]' : 'text-[9.5px]'} font-normal text-slate-500`}>/mês (Locação)</span>
+                      <span className="text-[10px] font-normal text-slate-500">/mês (Locação)</span>
                     </span>
                   </div>
                 ) : imovel.tipo === 'locação' ? (
                   <span>
                     {formatPrice(imovel.valorLocacao || imovel.valor)}
-                    <span className={`${isMyProperty ? 'text-[8px]' : 'text-[10px]'} font-normal text-slate-500`}>/mês</span>
+                    <span className="text-[10px] font-normal text-slate-500"> /mês</span>
                   </span>
                 ) : (
                   <span>{formatPrice(imovel.valor)}</span>
@@ -177,7 +177,7 @@ export function CompactPropertyRow({
           </div>
 
           {/* Linha 2: Especificações */}
-          <div className={`${isMyProperty ? 'text-[8px]' : 'text-[11px]'} text-slate-500 truncate leading-tight mt-0.5`}>
+          <div className="text-[11px] text-slate-500 truncate leading-tight mt-0.5">
             {specsText || 'Sem especificações'}
           </div>
         </div>

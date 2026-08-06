@@ -352,20 +352,41 @@ return {
   }
   
   /**
-   * Send password reset email via Firebase Auth
+   * Send password reset email via Backend API (or Firebase Auth fallback)
    */
   export async function resetPassword(email: string): Promise<void> {
     const cleanEmail = email.toLowerCase().trim();
-    console.log(`🔑 Calling sendPasswordResetEmail for: ${cleanEmail}`);
+    console.log(`🔑 Requesting password reset for: ${cleanEmail}`);
+    
     try {
-      await sendPasswordResetEmail(auth, cleanEmail);
-      console.log(`✅ Password reset email successfully dispatched by Firebase Auth to: ${cleanEmail}`);
-    } catch (err: any) {
-      console.error('❌ Firebase Auth sendPasswordResetEmail error:', err);
-      if (err?.code === 'auth/api-key-not-valid' || err?.code === 'auth/invalid-api-key' || (err?.message && err.message.includes('api-key-not-valid'))) {
-        throw new Error('Chave do Firebase não configurada. Não foi possível enviar e-mail de redefinição.');
+      const res = await fetch(getApiUrl('/api/auth/forgot-password'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Não foi possível enviar o e-mail de redefinição.');
       }
-      throw err;
+      console.log(`✅ Password reset requested successfully via server API for: ${cleanEmail}`);
+      return;
+    } catch (err: any) {
+      console.warn('⚠️ Backend forgot-password failed, checking client SDK fallback:', err?.message);
+      // If server returned a business error (e.g. user not found), rethrow
+      if (err?.message && !err.message.includes('Failed to fetch') && !err.message.includes('NetworkError')) {
+        throw err;
+      }
+      // Try client SDK as fallback if client key exists
+      try {
+        await sendPasswordResetEmail(auth, cleanEmail);
+        console.log(`✅ Password reset email dispatched via client SDK for: ${cleanEmail}`);
+      } catch (clientErr: any) {
+        console.error('❌ Firebase Auth client sendPasswordResetEmail error:', clientErr);
+        if (clientErr?.code === 'auth/api-key-not-valid' || clientErr?.code === 'auth/invalid-api-key' || (clientErr?.message && clientErr.message.includes('api-key-not-valid'))) {
+          throw new Error('Não foi possível enviar o e-mail de redefinição. Tente novamente mais tarde.');
+        }
+        throw clientErr;
+      }
     }
   }
   
