@@ -386,6 +386,18 @@ export class ServerDb {
         corretor.resetTokenExpires || null
       ]);
 
+      if (Array.isArray(corretor.parceirosEmails)) {
+        await this.pool.query(`DELETE FROM parcerias WHERE LOWER(corretor_email) = $1`, [cleanEmail]);
+        for (const pEmail of corretor.parceirosEmails) {
+          if (pEmail && pEmail.trim()) {
+            await this.pool.query(
+              `INSERT INTO parcerias (corretor_email, corretor_parceiro_email) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+              [cleanEmail, pEmail.trim().toLowerCase()]
+            );
+          }
+        }
+      }
+
       const saved = await this.getCorretorByEmail(cleanEmail);
       return saved!;
     } else {
@@ -437,13 +449,27 @@ export class ServerDb {
       if (cleanUserEmail) {
         query += `
           WHERE LOWER(i.corretor_email) = $1
-             OR i.compartilhar = 'SIM'
-             OR i.compartilhar = 'true'
-             OR (i.compartilhar IS NULL AND (i.visibilidade = 'todos' OR i.visibilidade IS NULL))
+             OR (
+               (i.compartilhar = 'SIM' OR i.compartilhar = 'true' OR (i.compartilhar IS NULL AND (i.visibilidade = 'todos' OR i.visibilidade IS NULL)))
+               AND (
+                 c.parceiros_emails IS NULL 
+                 OR c.parceiros_emails = '' 
+                 OR c.parceiros_emails = '[]'
+                 OR LOWER(c.parceiros_emails) LIKE '%' || $1 || '%'
+                 OR EXISTS (
+                   SELECT 1 FROM parcerias p 
+                   WHERE LOWER(p.corretor_email) = LOWER(i.corretor_email) 
+                     AND LOWER(p.corretor_parceiro_email) = $1
+                 )
+               )
+             )
         `;
         params.push(cleanUserEmail);
       } else {
-        query += ` WHERE i.compartilhar = 'SIM' OR i.compartilhar = 'true' OR (i.compartilhar IS NULL AND (i.visibilidade = 'todos' OR i.visibilidade IS NULL)) `;
+        query += ` 
+          WHERE (i.compartilhar = 'SIM' OR i.compartilhar = 'true' OR (i.compartilhar IS NULL AND (i.visibilidade = 'todos' OR i.visibilidade IS NULL)))
+            AND (c.parceiros_emails IS NULL OR c.parceiros_emails = '' OR c.parceiros_emails = '[]')
+        `;
       }
 
       query += ` ORDER BY i.data_cadastro DESC `;
@@ -457,8 +483,21 @@ export class ServerDb {
         const propEmail = (p.corretorEmail || '').toLowerCase().trim();
         const isMine = cleanUserEmail && propEmail === cleanUserEmail;
         if (isMine) return true;
+
         const isShared = p.compartilhar === 'SIM' || p.compartilhar === true || p.compartilhar === undefined || (p.compartilhar as any) === 'true';
-        return isShared;
+        if (!isShared) return false;
+
+        // Check property owner broker's partners list
+        const ownerBroker = db.brokers.find(b => b.email && b.email.toLowerCase().trim() === propEmail);
+        const ownerPartners = (ownerBroker?.parceirosEmails || []).map(e => e.toLowerCase().trim());
+
+        // If owner has no partner brokers registered, shared with everyone
+        if (ownerPartners.length === 0) return true;
+
+        // If owner has partner brokers registered, only visible if logged-in user is in owner's partner list
+        if (cleanUserEmail && ownerPartners.includes(cleanUserEmail)) return true;
+
+        return false;
       });
 
       return filtered.map(p => {

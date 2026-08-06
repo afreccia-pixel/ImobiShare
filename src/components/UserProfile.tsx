@@ -217,12 +217,12 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
 
     const updatedCorretor = {
       ...corretor,
-      restringirParceiros: restringir,
       parceirosEmails: updatedParceiros
     };
-    DbService.saveCorretor(updatedCorretor);
+    await DbService.updateProfile(updatedCorretor);
     onProfileSwitched(updatedCorretor);
     await DbService.fetchBrokers();
+    await DbService.getImoveis();
     setSuccessMsg('Corretor parceiro adicionado com sucesso!');
     setTimeout(() => setSuccessMsg(''), 3000);
   };
@@ -233,12 +233,12 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
 
     const updatedCorretor = {
       ...corretor,
-      restringirParceiros: restringir,
       parceirosEmails: updatedParceiros
     };
-    DbService.saveCorretor(updatedCorretor);
+    await DbService.updateProfile(updatedCorretor);
     onProfileSwitched(updatedCorretor);
     await DbService.fetchBrokers();
+    await DbService.getImoveis();
     setSuccessMsg('Parceiro removido do grupo.');
     setTimeout(() => setSuccessMsg(''), 3000);
   };
@@ -503,23 +503,11 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
             </span>
           </div>
 
-          {/* Toggle Restriction */}
-          <div className="flex items-start gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100/50">
-            <input
-              type="checkbox"
-              id="restringir-parceiros-toggle"
-              checked={restringir}
-              onChange={(e) => handleToggleRestringir(e.target.checked)}
-              className="mt-0.5 w-4 h-4 text-[#003366] accent-[#003366] border-slate-300 rounded focus:ring-[#003366] cursor-pointer"
-            />
-            <div className="flex-grow space-y-1">
-              <label htmlFor="restringir-parceiros-toggle" className="text-xs font-bold text-slate-700 cursor-pointer block">
-                Limitar meus imóveis ao Grupo
-              </label>
-              <p className="text-[10px] text-slate-400 leading-normal">
-                Ao ativar, seus imóveis só serão visíveis para os corretores parceiros cadastrados por você abaixo. Se não tiver nenhum parceiro cadastrado, o sistema entende que está compartilhado com todos.
-              </p>
-            </div>
+          {/* Descrição de Compartilhamento do Grupo */}
+          <div className="bg-slate-50 p-3 rounded-xl border border-slate-100/50">
+            <p className="text-[11px] text-slate-600 leading-relaxed font-medium">
+              Ao incluir o email de seu parceiro corretor só será visíveis para os corretores parceiros cadastrados por você abaixo. Se não tiver nenhum parceiro cadastrado, o sistema entende que está compartilhado com todos.
+            </p>
           </div>
 
           {/* Form to add partner by email */}
