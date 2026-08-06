@@ -314,42 +314,23 @@ app.post('/api/auth/forgot-password', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Nenhum usuário cadastrado encontrado com este e-mail.' });
     }
 
-    let resetLink = '';
+    // Always generate secure application reset link with token
+    const token = crypto.randomBytes(24).toString('hex');
+    broker.resetToken = token;
+    broker.resetTokenExpires = Date.now() + 1000 * 60 * 60 * 2; // 2 horas
+    await ServerDb.saveCorretor(broker);
 
-    // 1. Generate reset link via Firebase Admin SDK if available
-    if (getApps().length) {
-      try {
-        resetLink = await getAuth().generatePasswordResetLink(cleanEmail);
-        console.log(`🔑 Link de redefinição de senha gerado via Firebase Admin para ${cleanEmail}`);
-      } catch (fbErr: any) {
-        console.warn(`ℹ️ Firebase Admin reset link fail (${fbErr?.message}).`);
-        // If user not in Firebase Auth, create them and retry generatePasswordResetLink
-        if (fbErr?.code === 'auth/user-not-found' || fbErr?.message?.includes('user-not-found')) {
-          try {
-            await getAuth().createUser({ email: cleanEmail, displayName: broker.nome || '' });
-            resetLink = await getAuth().generatePasswordResetLink(cleanEmail);
-            console.log(`🔑 Criado usuário no Firebase e gerado link de redefinição para ${cleanEmail}`);
-          } catch (createErr: any) {
-            console.warn(`ℹ️ Não foi possível criar usuário no Firebase: ${createErr?.message}`);
-          }
-        }
-      }
+    const reqHost = (req.headers['x-forwarded-host'] || req.headers.host || '') as string;
+    const reqProto = (req.headers['x-forwarded-proto'] || 'https') as string;
+    let origin = (req.headers.origin as string) || (reqHost ? `${reqProto}://${reqHost}` : '');
+    
+    // Ensure origin is valid Cloud Run / Public App URL
+    if (!origin || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      origin = process.env.APP_URL || 'https://ais-dev-vockjze6fhgsof37jkvcju-570873971775.us-east1.run.app';
     }
 
-    // 2. If Firebase reset link is not available, generate secure local token reset link
-    if (!resetLink) {
-      const token = crypto.randomBytes(24).toString('hex');
-      broker.resetToken = token;
-      broker.resetTokenExpires = Date.now() + 1000 * 60 * 60 * 2; // 2 hours
-      await ServerDb.saveCorretor(broker);
-
-      const reqHost = (req.headers['x-forwarded-host'] || req.headers.host || '') as string;
-      const reqProto = (req.headers['x-forwarded-proto'] || 'https') as string;
-      const origin = req.headers.origin || (reqHost ? `${reqProto}://${reqHost}` : 'https://ais-dev-vockjze6fhgsof37jkvcju-570873971775.us-east1.run.app');
-
-      resetLink = `${origin}/?action=reset-password&token=${token}&email=${encodeURIComponent(cleanEmail)}`;
-      console.log(`🔑 Gerado link de redefinição com token interno para ${cleanEmail}`);
-    }
+    const resetLink = `${origin}/?action=reset-password&token=${token}&email=${encodeURIComponent(cleanEmail)}`;
+    console.log(`🔑 Link de redefinição gerado para ${cleanEmail}: ${resetLink}`);
 
     // 3. Send email via SMTP if configured
     if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && process.env.SMTP_PASS !== '""' && process.env.SMTP_PASS !== "''") {

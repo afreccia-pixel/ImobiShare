@@ -83,10 +83,18 @@ export default function App() {
 
   // Check URL parameters for reset password link
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const action = params.get('action');
-    const token = params.get('token');
-    const email = params.get('email');
+    const searchString = window.location.search || (window.location.hash.includes('?') ? window.location.hash.substring(window.location.hash.indexOf('?')) : '');
+    const params = new URLSearchParams(searchString);
+    
+    let action = params.get('action');
+    let token = params.get('token');
+    let email = params.get('email');
+
+    // Support Firebase oobCode mode fallback if ever present
+    if (!action && params.get('mode') === 'resetPassword') {
+      action = 'reset-password';
+      token = params.get('oobCode') || params.get('token') || '';
+    }
 
     if (action === 'reset-password' && token && email) {
       setResetTokenData({ email, token });
