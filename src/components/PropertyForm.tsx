@@ -324,17 +324,17 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    if (fotos.length >= 15) {
-      setErrorMsg('Você já atingiu o limite máximo de 15 fotos por imóvel.');
+    if (fotos.length >= 20) {
+      setErrorMsg('Você já atingiu o limite máximo de 20 fotos por imóvel.');
       e.target.value = '';
       return;
     }
 
-    const availableSlots = 15 - fotos.length;
+    const availableSlots = 20 - fotos.length;
     const filesToUpload: File[] = (Array.from(files) as File[]).slice(0, availableSlots);
 
     if (files.length > availableSlots) {
-      setErrorMsg(`Foram selecionadas ${availableSlots} foto(s) para respeitar o limite máximo de 15.`);
+      setErrorMsg(`Foram selecionadas ${availableSlots} foto(s) para respeitar o limite máximo de 20.`);
     }
 
     for (let i = 0; i < filesToUpload.length; i++) {
@@ -342,7 +342,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
       try {
         const compressedBase64 = await compressImage(file);
         setFotos((prev) => {
-          if (prev.length < 15 && !prev.includes(compressedBase64)) {
+          if (prev.length < 20 && !prev.includes(compressedBase64)) {
             return [...prev, compressedBase64];
           }
           return prev;
@@ -354,7 +354,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
           if (typeof reader.result === 'string') {
             const resultStr = reader.result;
             setFotos((prev) => {
-              if (prev.length < 15 && !prev.includes(resultStr)) {
+              if (prev.length < 20 && !prev.includes(resultStr)) {
                 return [...prev, resultStr];
               }
               return prev;
@@ -450,8 +450,8 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
       return;
     }
 
-    if (fotos.length > 15) {
-      setErrorMsg('O limite máximo é de 15 fotos por imóvel.');
+    if (fotos.length > 20) {
+      setErrorMsg('O limite máximo é de 20 fotos por imóvel.');
       return;
     }
 
@@ -655,8 +655,8 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
               1. Anexar imagens <span className="text-rose-500">*</span>
             </label>
-            <span className={`text-[10px] font-bold ${fotos.length >= 15 ? 'text-amber-600' : 'text-slate-400'}`}>
-              {fotos.length}/15 {fotos.length === 1 ? 'foto' : 'fotos'}
+            <span className={`text-[10px] font-bold ${fotos.length >= 20 ? 'text-amber-600' : 'text-slate-400'}`}>
+              {fotos.length}/20 {fotos.length === 1 ? 'foto' : 'fotos'}
             </span>
           </div>
           
@@ -723,13 +723,13 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
             {fotos.length === 0 && (
               <div className="w-full h-20 border border-dashed border-slate-200 rounded-xl flex items-center justify-center gap-2 text-slate-400 bg-slate-50/50 px-3">
                 <ImageIcon size={18} className="text-slate-300" />
-                <span className="text-xs text-slate-500">Nenhuma foto anexada. Adicione até 15 fotos.</span>
+                <span className="text-xs text-slate-500">Nenhuma foto anexada. Adicione até 20 fotos.</span>
               </div>
             )}
           </div>
 
           {/* Prominent Upload Button */}
-          {fotos.length < 15 ? (
+          {fotos.length < 20 ? (
             <>
               <input
                 type="file"
@@ -745,12 +745,12 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
                 className="flex items-center justify-center gap-2 w-full py-2 px-3 border border-dashed border-[#003366] bg-[#003366]/5 hover:bg-[#003366]/10 rounded-lg cursor-pointer text-xs font-bold text-[#003366] transition-all text-center active:scale-[0.99]"
               >
                 <Upload size={15} className="text-[#003366]" />
-                <span>Adicionar Fotos ({15 - fotos.length} restante{15 - fotos.length === 1 ? '' : 's'})</span>
+                <span>Adicionar Fotos ({20 - fotos.length} restante{20 - fotos.length === 1 ? '' : 's'})</span>
               </button>
             </>
           ) : (
             <div className="text-center py-1.5 px-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-[11px] font-semibold">
-              Limite máximo de 15 fotos atingido.
+              Limite máximo de 20 fotos atingido.
             </div>
           )}
         </div>
@@ -1163,60 +1163,60 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         </div>
 
         {/* 8. Preferências */}
-        <div className="bg-white p-3 rounded-lg border border-slate-100 space-y-2">
-          <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">8. Preferências do Imóvel</label>
+        <div className="bg-white p-2.5 rounded-lg border border-slate-100 space-y-1.5">
+          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-700">8. Preferências do Imóvel</label>
           
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-0.5">
+          <div className="grid grid-cols-3 gap-1.5 pt-0.5">
             {/* Favorito */}
-            <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-              <span className="text-xs font-bold text-slate-800">⭐ Favorito</span>
+            <div className="flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-100">
+              <span className="text-[11px] font-bold text-slate-800 truncate">⭐ Favorito</span>
               <button
                 type="button"
                 onClick={() => setFavorito(!favorito)}
-                className={`w-10 h-5 rounded-full p-0.5 transition-colors focus:outline-hidden ${
-                  favorito ? 'bg-[#003366]' : 'bg-slate-200'
+                className={`w-8 h-4 rounded-full p-0.5 transition-colors focus:outline-hidden cursor-pointer flex-shrink-0 ${
+                  favorito ? 'bg-[#003366]' : 'bg-slate-300'
                 }`}
               >
-                <div className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform ${
-                  favorito ? 'translate-x-5' : 'translate-x-0'
+                <div className={`w-3 h-3 rounded-full bg-white shadow-xs transform transition-transform ${
+                  favorito ? 'translate-x-4' : 'translate-x-0'
                 }`} />
               </button>
             </div>
 
             {/* Site (visível no website) */}
-            <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-              <div className="flex flex-col">
-                <span className="text-xs font-bold text-slate-800">🌐 Site</span>
-                <span className="text-[9px] text-slate-500 font-medium">Visível no website</span>
+            <div className="flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-100">
+              <div className="flex flex-col min-w-0 pr-1">
+                <span className="text-[11px] font-bold text-slate-800 truncate">🌐 Site</span>
+                <span className="text-[8px] text-slate-500 font-medium truncate">No website</span>
               </div>
               <button
                 type="button"
                 onClick={() => setWebsite(website === 'SIM' ? 'NAO' : 'SIM')}
-                className={`w-10 h-5 rounded-full p-0.5 transition-colors focus:outline-hidden ${
-                  website === 'SIM' ? 'bg-[#003366]' : 'bg-slate-200'
+                className={`w-8 h-4 rounded-full p-0.5 transition-colors focus:outline-hidden cursor-pointer flex-shrink-0 ${
+                  website === 'SIM' ? 'bg-[#003366]' : 'bg-slate-300'
                 }`}
               >
-                <div className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform ${
-                  website === 'SIM' ? 'translate-x-5' : 'translate-x-0'
+                <div className={`w-3 h-3 rounded-full bg-white shadow-xs transform transition-transform ${
+                  website === 'SIM' ? 'translate-x-4' : 'translate-x-0'
                 }`} />
               </button>
             </div>
 
             {/* Compartilhar */}
-            <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-              <div className="flex flex-col">
-                <span className="text-xs font-bold text-slate-800">🤝 Compartilhar</span>
-                <span className="text-[9px] text-slate-500 font-medium">Rede de corretores</span>
+            <div className="flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-100">
+              <div className="flex flex-col min-w-0 pr-1">
+                <span className="text-[11px] font-bold text-slate-800 truncate">🤝 Parceria</span>
+                <span className="text-[8px] text-slate-500 font-medium truncate">Rede parceira</span>
               </div>
               <button
                 type="button"
                 onClick={() => setCompartilhar(compartilhar === 'SIM' ? 'NAO' : 'SIM')}
-                className={`w-10 h-5 rounded-full p-0.5 transition-colors focus:outline-hidden ${
-                  compartilhar === 'SIM' ? 'bg-[#003366]' : 'bg-slate-200'
+                className={`w-8 h-4 rounded-full p-0.5 transition-colors focus:outline-hidden cursor-pointer flex-shrink-0 ${
+                  compartilhar === 'SIM' ? 'bg-[#003366]' : 'bg-slate-300'
                 }`}
               >
-                <div className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform ${
-                  compartilhar === 'SIM' ? 'translate-x-5' : 'translate-x-0'
+                <div className={`w-3 h-3 rounded-full bg-white shadow-xs transform transition-transform ${
+                  compartilhar === 'SIM' ? 'translate-x-4' : 'translate-x-0'
                 }`} />
               </button>
             </div>

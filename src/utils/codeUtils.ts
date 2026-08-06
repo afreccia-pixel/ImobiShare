@@ -41,8 +41,14 @@ export function getBrokerLastNamePrefix(brokerName?: string): string {
  * e.g., FRE01, FRE02, SIL01
  */
 export function getPropertyCode(imovel: Imovel, allImoveis?: Imovel[]): string {
-  if (imovel.codigo) {
-    return imovel.codigo;
+  if (
+    imovel.codigo &&
+    imovel.codigo.trim() &&
+    imovel.codigo.length <= 10 &&
+    !imovel.codigo.toLowerCase().startsWith('imovel_') &&
+    !/^\d{10,}$/.test(imovel.codigo)
+  ) {
+    return imovel.codigo.toUpperCase().trim();
   }
 
   // Identify broker name

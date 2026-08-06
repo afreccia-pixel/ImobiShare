@@ -83,7 +83,7 @@ export interface Imovel {
   telefoneProprietario?: string;
   
   // Mídia, metadados e Origem
-  fotos: string[]; // Máximo 15 imagens
+  fotos: string[]; // Máximo 20 imagens
   dataCadastro: string; // ISO string
   favorito?: boolean;
   origem?: string; // e.g. 'Imobishare'
