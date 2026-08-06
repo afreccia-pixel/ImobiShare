@@ -83,17 +83,29 @@ export default function App() {
 
   // Check URL parameters for reset password link
   useEffect(() => {
-    const searchString = window.location.search || (window.location.hash.includes('?') ? window.location.hash.substring(window.location.hash.indexOf('?')) : '');
-    const params = new URLSearchParams(searchString);
-    
-    let action = params.get('action');
-    let token = params.get('token');
-    let email = params.get('email');
+    const getParam = (paramName: string) => {
+      const searchParams = new URLSearchParams(window.location.search);
+      if (searchParams.get(paramName)) return searchParams.get(paramName);
 
-    // Support Firebase oobCode mode fallback if ever present
-    if (!action && params.get('mode') === 'resetPassword') {
+      if (window.location.hash) {
+        const hashQuery = window.location.hash.includes('?') 
+          ? window.location.hash.substring(window.location.hash.indexOf('?'))
+          : window.location.hash;
+        const hashParams = new URLSearchParams(hashQuery);
+        if (hashParams.get(paramName)) return hashParams.get(paramName);
+      }
+
+      const match = new RegExp(`[?&]${paramName}=([^&]*)`).exec(window.location.href);
+      return match ? decodeURIComponent(match[1]) : null;
+    };
+
+    let action = getParam('action');
+    let token = getParam('token');
+    let email = getParam('email');
+
+    if (!action && getParam('mode') === 'resetPassword') {
       action = 'reset-password';
-      token = params.get('oobCode') || params.get('token') || '';
+      token = getParam('oobCode') || getParam('token') || '';
     }
 
     if (action === 'reset-password' && token && email) {
@@ -873,6 +885,88 @@ useEffect(() => {
     }
   };
 
+  // Modal de Redefinição de Senha (Renderiza sobre a tela de login ou sobre o app)
+  const renderResetPasswordModal = () => {
+    if (!resetTokenData) return null;
+    return (
+      <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-5 border border-slate-100 animate-fade-in">
+          <div className="text-center space-y-2">
+            <div className="mx-auto w-12 h-12 bg-blue-50 text-[#003366] rounded-2xl flex items-center justify-center">
+              <Lock size={24} />
+            </div>
+            <h3 className="text-lg font-extrabold text-slate-800">Redefinir Sua Senha</h3>
+            <p className="text-xs text-slate-500">
+              Crie uma nova senha de acesso para a conta <strong className="text-slate-700">{resetTokenData.email}</strong>
+            </p>
+          </div>
+
+          {resetFormError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl font-medium">
+              {resetFormError}
+            </div>
+          )}
+
+          <form onSubmit={handleExecuteResetPassword} className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                Nova Senha
+              </label>
+              <input
+                type="password"
+                required
+                minLength={6}
+                placeholder="Mínimo 6 caracteres"
+                value={resetNewPassword}
+                onChange={(e) => setResetNewPassword(e.target.value)}
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 focus:outline-hidden focus:border-[#003366]"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                Confirmar Nova Senha
+              </label>
+              <input
+                type="password"
+                required
+                minLength={6}
+                placeholder="Repita a nova senha"
+                value={resetConfirmPassword}
+                onChange={(e) => setResetConfirmPassword(e.target.value)}
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 focus:outline-hidden focus:border-[#003366]"
+              />
+            </div>
+
+            <div className="pt-2 flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setResetTokenData(null);
+                  window.history.replaceState({}, '', window.location.pathname);
+                }}
+                className="w-1/3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs py-3 px-4 rounded-xl transition-all cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={resetSubmitting}
+                className="flex-1 bg-[#003366] hover:bg-[#002244] text-white font-bold text-xs py-3 px-4 rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                {resetSubmitting ? (
+                  <span>Salvando...</span>
+                ) : (
+                  <span>Salvar Nova Senha</span>
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
   // Logout
   const handleLogout = async () => {
     try {
@@ -1306,7 +1400,8 @@ Toque abaixo para ver fotos e todos os detalhes:
   // --- LOGIN SCREEN IF NOT AUTHENTICATED ---
   if (!isAuthenticated) {
     return (
-      <div className="bg-[#0F172A] min-h-screen flex flex-col justify-center items-center px-4 font-sans select-none" id="auth-screen">
+      <div className="bg-[#0F172A] min-h-screen flex flex-col justify-center items-center px-4 font-sans select-none relative" id="auth-screen">
+        {renderResetPasswordModal()}
         <div className="w-full max-w-sm bg-white rounded-[32px] p-6 shadow-2xl space-y-4 border border-gray-100 max-h-[95dvh] overflow-y-auto">
           <div className="text-center space-y-1">
             <img
@@ -2567,83 +2662,7 @@ Toque abaixo para ver fotos e todos os detalhes:
         </AnimatePresence>
 
         {/* Modal de Redefinição de Senha (via Link com Token) */}
-        {resetTokenData && (
-          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-5 border border-slate-100">
-              <div className="text-center space-y-2">
-                <div className="mx-auto w-12 h-12 bg-blue-50 text-[#003366] rounded-2xl flex items-center justify-center">
-                  <Lock size={24} />
-                </div>
-                <h3 className="text-lg font-extrabold text-slate-800">Redefinir Sua Senha</h3>
-                <p className="text-xs text-slate-500">
-                  Crie uma nova senha de acesso para a conta <strong className="text-slate-700">{resetTokenData.email}</strong>
-                </p>
-              </div>
-
-              {resetFormError && (
-                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl font-medium">
-                  {resetFormError}
-                </div>
-              )}
-
-              <form onSubmit={handleExecuteResetPassword} className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
-                    Nova Senha
-                  </label>
-                  <input
-                    type="password"
-                    required
-                    minLength={6}
-                    placeholder="Mínimo 6 caracteres"
-                    value={resetNewPassword}
-                    onChange={(e) => setResetNewPassword(e.target.value)}
-                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 focus:outline-hidden focus:border-[#003366]"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
-                    Confirmar Nova Senha
-                  </label>
-                  <input
-                    type="password"
-                    required
-                    minLength={6}
-                    placeholder="Repita a nova senha"
-                    value={resetConfirmPassword}
-                    onChange={(e) => setResetConfirmPassword(e.target.value)}
-                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 focus:outline-hidden focus:border-[#003366]"
-                  />
-                </div>
-
-                <div className="pt-2 flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setResetTokenData(null);
-                      window.history.replaceState({}, '', window.location.pathname);
-                    }}
-                    className="w-1/3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs py-3 px-4 rounded-xl transition-all cursor-pointer"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={resetSubmitting}
-                    className="flex-1 bg-[#003366] hover:bg-[#002244] text-white font-bold text-xs py-3 px-4 rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
-                  >
-                    {resetSubmitting ? (
-                      <span>Salvando...</span>
-                    ) : (
-                      <span>Salvar Nova Senha</span>
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
+        {renderResetPasswordModal()}
 
       </div>
     </div>

@@ -427,8 +427,8 @@ app.post('/api/auth/reset-password-with-token', async (req: Request, res: Respon
         if (user) {
           await getAuth().updateUser(user.uid, { password: cleanPassword });
         }
-      } catch (fbErr) {
-        console.warn('⚠️ Firebase Auth password update warn:', fbErr);
+      } catch (fbErr: any) {
+        console.warn('ℹ️ Firebase Auth não configurado ou indisponível para atualização de senha:', fbErr?.message || fbErr?.code || 'auth-disabled');
       }
     }
 

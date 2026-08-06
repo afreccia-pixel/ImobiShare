@@ -83,7 +83,8 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
 
   // 12. Preferências
   const [favorito, setFavorito] = useState(false);
-  const [compartilhar, setCompartilhar] = useState(true);
+  const [website, setWebsite] = useState<'SIM' | 'NAO'>('SIM');
+  const [compartilhar, setCompartilhar] = useState<'SIM' | 'NAO'>('SIM');
 
   // 13. Dados do proprietário
   const [nomeProprietario, setNomeProprietario] = useState('');
@@ -142,7 +143,8 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         setDescricao(found.descricao || '');
         setInformacoes(found.informacoes || '');
         setFavorito(found.favorito || false);
-        setCompartilhar(found.compartilhar !== false);
+        setWebsite(found.website === 'NAO' ? 'NAO' : 'SIM');
+        setCompartilhar(found.compartilhar === 'NAO' || (found.compartilhar as any) === false ? 'NAO' : 'SIM');
         setNomeProprietario(found.nomeProprietario || '');
         setTelefoneProprietario(found.telefoneProprietario || '');
       }
@@ -592,7 +594,9 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         origem: 'Imobishare',
         nomeProprietario: nomeProprietario.trim(),
         telefoneProprietario: telefoneProprietario.trim(),
+        dadosProprietario: [nomeProprietario.trim(), telefoneProprietario.trim()].filter(Boolean).join(' - ') || undefined,
         favorito,
+        website,
         compartilhar,
         fotos,
         dormitorios: dormitorios !== '' ? Number(dormitorios) : undefined,
@@ -1155,9 +1159,9 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         <div className="bg-white p-3 rounded-lg border border-slate-100 space-y-2">
           <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">8. Preferências do Imóvel</label>
           
-          <div className="grid grid-cols-2 gap-2 pt-0.5">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-0.5">
             {/* Favorito */}
-            <div className="flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-100">
+            <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-100">
               <span className="text-xs font-bold text-slate-800">⭐ Favorito</span>
               <button
                 type="button"
@@ -1172,18 +1176,40 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
               </button>
             </div>
 
-            {/* Compartilhar */}
-            <div className="flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-100">
-              <span className="text-xs font-bold text-slate-800">☑ Compartilhar</span>
+            {/* Site (visível no website) */}
+            <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+              <div className="flex flex-col">
+                <span className="text-xs font-bold text-slate-800">🌐 Site</span>
+                <span className="text-[9px] text-slate-500 font-medium">Visível no website</span>
+              </div>
               <button
                 type="button"
-                onClick={() => setCompartilhar(!compartilhar)}
+                onClick={() => setWebsite(website === 'SIM' ? 'NAO' : 'SIM')}
                 className={`w-10 h-5 rounded-full p-0.5 transition-colors focus:outline-hidden ${
-                  compartilhar ? 'bg-[#003366]' : 'bg-slate-200'
+                  website === 'SIM' ? 'bg-[#003366]' : 'bg-slate-200'
                 }`}
               >
                 <div className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform ${
-                  compartilhar ? 'translate-x-5' : 'translate-x-0'
+                  website === 'SIM' ? 'translate-x-5' : 'translate-x-0'
+                }`} />
+              </button>
+            </div>
+
+            {/* Compartilhar */}
+            <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+              <div className="flex flex-col">
+                <span className="text-xs font-bold text-slate-800">🤝 Compartilhar</span>
+                <span className="text-[9px] text-slate-500 font-medium">Rede de corretores</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCompartilhar(compartilhar === 'SIM' ? 'NAO' : 'SIM')}
+                className={`w-10 h-5 rounded-full p-0.5 transition-colors focus:outline-hidden ${
+                  compartilhar === 'SIM' ? 'bg-[#003366]' : 'bg-slate-200'
+                }`}
+              >
+                <div className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform ${
+                  compartilhar === 'SIM' ? 'translate-x-5' : 'translate-x-0'
                 }`} />
               </button>
             </div>

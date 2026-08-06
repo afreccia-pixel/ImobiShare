@@ -138,6 +138,8 @@ export class ServerDb {
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS informacoes TEXT;`);
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS origem VARCHAR(100) DEFAULT 'Imobishare';`);
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS construtora VARCHAR(255);`);
+    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS website VARCHAR(10) DEFAULT 'SIM';`);
+    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS compartilhar VARCHAR(10) DEFAULT 'SIM';`);
 
     // 3. Tabela parcerias
     await this.pool.query(`
@@ -434,20 +436,14 @@ export class ServerDb {
 
       if (cleanUserEmail) {
         query += `
-          WHERE i.visibilidade = 'todos'
-             OR LOWER(i.corretor_email) = $1
-             OR (
-               i.visibilidade = 'grupo_especifico' 
-               AND LOWER(i.corretor_email) IN (
-                 SELECT LOWER(corretor_email) 
-                 FROM parcerias 
-                 WHERE LOWER(corretor_parceiro_email) = $1
-               )
-             )
+          WHERE LOWER(i.corretor_email) = $1
+             OR i.compartilhar = 'SIM'
+             OR i.compartilhar = 'true'
+             OR (i.compartilhar IS NULL AND (i.visibilidade = 'todos' OR i.visibilidade IS NULL))
         `;
         params.push(cleanUserEmail);
       } else {
-        query += ` WHERE i.visibilidade = 'todos' `;
+        query += ` WHERE i.compartilhar = 'SIM' OR i.compartilhar = 'true' OR (i.compartilhar IS NULL AND (i.visibilidade = 'todos' OR i.visibilidade IS NULL)) `;
       }
 
       query += ` ORDER BY i.data_cadastro DESC `;
@@ -456,16 +452,13 @@ export class ServerDb {
       return res.rows.map(r => this.mapPostgresRowToImovel(r, cleanUserEmail));
     } else {
       const db = await this.readJson();
-      const partnerEmails = cleanUserEmail 
-        ? db.partnerships.filter(p => p.corretorParceiroEmail.toLowerCase().trim() === cleanUserEmail).map(p => p.corretorEmail.toLowerCase().trim())
-        : [];
 
       const filtered = db.properties.filter(p => {
         const propEmail = (p.corretorEmail || '').toLowerCase().trim();
-        if (p.visibilidade === 'todos' || !p.visibilidade) return true;
-        if (cleanUserEmail && propEmail === cleanUserEmail) return true;
-        if (p.visibilidade === 'grupo_especifico' && partnerEmails.includes(propEmail)) return true;
-        return false;
+        const isMine = cleanUserEmail && propEmail === cleanUserEmail;
+        if (isMine) return true;
+        const isShared = p.compartilhar === 'SIM' || p.compartilhar === true || p.compartilhar === undefined || (p.compartilhar as any) === 'true';
+        return isShared;
       });
 
       return filtered.map(p => {
@@ -473,7 +466,8 @@ export class ServerDb {
         return {
           ...p,
           corretorId: p.corretorId || `broker-${(p.corretorEmail || '').toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
-          compartilhar: p.compartilhar !== false,
+          website: p.website === 'NAO' ? 'NAO' : 'SIM',
+          compartilhar: (p.compartilhar === 'NAO' || p.compartilhar === false) ? 'NAO' : 'SIM',
           dadosProprietario: isOwner ? p.dadosProprietario : undefined,
           nomeProprietario: isOwner ? p.nomeProprietario : 'Confidencial',
           telefoneProprietario: isOwner ? p.telefoneProprietario : 'Confidencial'
@@ -523,11 +517,16 @@ export class ServerDb {
       broker = await this.saveCorretor({ email: cleanEmail, nome: cleanEmail.split('@')[0] });
     }
 
+    const websiteDb: 'SIM' | 'NAO' = imovel.website === 'NAO' ? 'NAO' : 'SIM';
+    const compartilharDb: 'SIM' | 'NAO' = (imovel.compartilhar === 'NAO' || imovel.compartilhar === false) ? 'NAO' : 'SIM';
+
     const finalImovel: Imovel = {
       ...imovel,
       corretorEmail: cleanEmail,
       corretorNome: broker.nome || cleanEmail.split('@')[0],
       corretorId: broker.id,
+      website: websiteDb,
+      compartilhar: compartilharDb,
       origem: imovel.origem || 'Imobishare',
       construtora: imovel.construtora || '',
       fotos: Array.isArray(imovel.fotos) ? imovel.fotos.slice(0, 15) : [],
@@ -545,13 +544,15 @@ export class ServerDb {
           valor_venda, status_imovel, valor_locacao, quartos, bwc, vagas,
           area_privativa, nome_edificio, titulo, palavra_destacada, descricao,
           visibilidade, dados_proprietario, imagens, data_cadastro,
-          valor_anterior, valor_locacao_anterior, informacoes, origem, construtora
+          valor_anterior, valor_locacao_anterior, informacoes, origem, construtora,
+          website, compartilhar
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8,
           $9, $10, $11, $12, $13, $14,
           $15, $16, $17, $18, $19,
           $20, $21, $22, $23,
-          $24, $25, $26, $27, $28
+          $24, $25, $26, $27, $28,
+          $29, $30
         ) ON CONFLICT (id) DO UPDATE SET
           cep = EXCLUDED.cep,
           endereco = EXCLUDED.endereco,
@@ -577,7 +578,9 @@ export class ServerDb {
           valor_locacao_anterior = EXCLUDED.valor_locacao_anterior,
           informacoes = EXCLUDED.informacoes,
           origem = EXCLUDED.origem,
-          construtora = EXCLUDED.construtora;
+          construtora = EXCLUDED.construtora,
+          website = EXCLUDED.website,
+          compartilhar = EXCLUDED.compartilhar;
       `, [
         finalImovel.id,
         cleanEmail,
@@ -606,7 +609,9 @@ export class ServerDb {
         finalImovel.valorLocacaoAnterior || null,
         finalImovel.informacoes || null,
         finalImovel.origem || 'Imobishare',
-        finalImovel.construtora || ''
+        finalImovel.construtora || '',
+        websiteDb,
+        compartilharDb
       ]);
 
       return finalImovel;
@@ -646,7 +651,16 @@ export class ServerDb {
   private static mapPostgresRowToImovel(r: any, cleanUserEmail: string, forceIncludeOwnerData = false): Imovel {
     const isOwner = forceIncludeOwnerData || (cleanUserEmail && r.corretor_email && r.corretor_email.toLowerCase().trim() === cleanUserEmail);
     const emailClean = (r.corretor_email || '').toLowerCase().trim();
-    const isShared = r.visibilidade !== 'exclusivo' && r.visibilidade !== 'privado';
+    
+    const websiteVal: 'SIM' | 'NAO' = r.website === 'NAO' ? 'NAO' : 'SIM';
+    let compartilharVal: 'SIM' | 'NAO' = 'SIM';
+    if (r.compartilhar === 'NAO' || r.compartilhar === 'false' || r.compartilhar === false) {
+      compartilharVal = 'NAO';
+    } else if (r.compartilhar === 'SIM' || r.compartilhar === 'true' || r.compartilhar === true) {
+      compartilharVal = 'SIM';
+    } else if (r.visibilidade === 'exclusivo' || r.visibilidade === 'privado') {
+      compartilharVal = 'NAO';
+    }
 
     let fotosArr: string[] = [];
     try {
@@ -665,7 +679,8 @@ export class ServerDb {
       corretorId: r.corretor_id || `broker-${emailClean.replace(/[^a-z0-9]/g, '_')}`,
       corretorEmail: r.corretor_email,
       corretorNome: r.corretor_nome_db || (emailClean ? emailClean.split('@')[0] : 'Corretor'),
-      compartilhar: isShared,
+      website: websiteVal,
+      compartilhar: compartilharVal,
       cep: r.cep || '',
       endereco: r.endereco || '',
       localizacao: r.endereco || `${r.bairro}, ${r.cidade}`,

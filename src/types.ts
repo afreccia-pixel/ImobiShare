@@ -72,9 +72,10 @@ export interface Imovel {
   descricao: string;
   informacoes?: string; // Máximo 200 caracteres (chaves, horários, senha da porta - visível para corretores)
   
-  // Visibilidade
-  visibilidade: 'todos' | 'grupo_especifico'; // Compartilhar com todos ou com grupo específico
-  compartilhar?: boolean;
+  // Visibilidade e Compartilhamento
+  website?: 'SIM' | 'NAO'; // Visível no website ('SIM' ou 'NAO')
+  compartilhar?: 'SIM' | 'NAO' | boolean; // Compartilhar com rede de corretores ('SIM' ou 'NAO')
+  visibilidade?: 'todos' | 'grupo_especifico'; // Mantido para compatibilidade
   
   // Dados confidenciais do proprietário (Apenas retornado pelo backend se o token for do dono)
   dadosProprietario?: string;
