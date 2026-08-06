@@ -69,12 +69,12 @@ export function CompactPropertyRow({
     <motion.div
       whileHover={{ scale: 0.999 }}
       onClick={handleRowClick}
-      className={`bg-white border rounded-[8px] px-2 py-1.5 sm:px-2.5 sm:py-1.5 cursor-pointer hover:border-slate-300 hover:shadow-xs transition-all w-full ${
+      className={`bg-white border rounded-lg p-1.5 sm:p-2 cursor-pointer hover:border-slate-300 hover:shadow-xs transition-all w-full ${
         isSelected ? 'border-[#003366] ring-1 ring-[#003366]/20 bg-blue-50/20' : 'border-slate-200'
       }`}
       id={`compact-row-${imovel.id}`}
     >
-      <div className="flex items-center gap-2.5 w-full">
+      <div className="flex items-center gap-2 w-full">
         {onSelectToggle && (
           <div
             onClick={(e) => {
@@ -84,40 +84,39 @@ export function CompactPropertyRow({
             className="checkbox-container cursor-pointer flex-shrink-0"
           >
             {isSelected ? (
-              <CheckCircle2 size={16} className="text-[#003366] fill-[#003366]/10" />
+              <CheckCircle2 size={14} className="text-[#003366] fill-[#003366]/10" />
             ) : (
-              <div className="w-4 h-4 border border-slate-300 rounded bg-white hover:border-[#003366] transition-colors" />
+              <div className="w-3.5 h-3.5 border border-slate-300 rounded bg-white hover:border-[#003366] transition-colors" />
             )}
           </div>
         )}
 
         <div className="min-w-0 flex-1 overflow-hidden">
-          {/* Linha 1: Nome do edifício + Selo de Status + Palavra destacada + Valor + Ações na mesma linha */}
-          <div className="flex items-center justify-between gap-2 min-w-0">
-            <div className="flex items-center gap-1.5 min-w-0 truncate">
-              <span className="text-xs font-semibold text-slate-900 truncate min-w-0 leading-tight">
+          {/* Linha 1: Nome do edifício + Valor + Ações na mesma linha */}
+          <div className="flex items-center justify-between gap-1.5 min-w-0">
+            <div className="flex items-center gap-1 min-w-0 truncate">
+              <span className="text-[11px] sm:text-xs font-bold text-slate-900 truncate min-w-0 leading-tight">
                 {imovel.nomeEdificio?.trim() ? imovel.nomeEdificio.trim() : imovel.titulo}
               </span>
             </div>
 
             {/* Valor padronizado e Botões de ação na mesma linha das informações */}
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <div className="text-right font-extrabold text-[#003366] leading-tight text-xs sm:text-sm">
-                {imovel.tipo === 'ambos' ? (
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <div className="text-right font-extrabold text-[#003366] leading-tight text-[11px] sm:text-xs">
+                {(((imovel.valor && imovel.valor > 0) || (imovel.valorVenda && imovel.valorVenda > 0)) && imovel.valorLocacao && imovel.valorLocacao > 0) || imovel.tipo === 'ambos' ? (
                   <div className="flex flex-col text-right leading-tight">
                     <span>
-                      {formatPrice(imovel.valor)}{' '}
-                      <span className="text-[10px] font-normal text-slate-500">(Venda)</span>
+                      {formatPrice(imovel.valor || imovel.valorVenda || 0)}
                     </span>
-                    <span>
+                    <span className="text-emerald-800 font-bold text-[10px]">
                       {formatPrice(imovel.valorLocacao || 0)}
-                      <span className="text-[10px] font-normal text-slate-500">/mês (Locação)</span>
+                      <span className="text-[8px] font-normal text-slate-500">/mês</span>
                     </span>
                   </div>
                 ) : imovel.tipo === 'locação' ? (
                   <span>
                     {formatPrice(imovel.valorLocacao || imovel.valor)}
-                    <span className="text-[10px] font-normal text-slate-500"> /mês</span>
+                    <span className="text-[9px] font-normal text-slate-500"> /mês</span>
                   </span>
                 ) : (
                   <span>{formatPrice(imovel.valor)}</span>
@@ -126,17 +125,17 @@ export function CompactPropertyRow({
 
               {/* Botões de Ação na mesma linha das informações */}
               {hasActions && (
-                <div className="flex items-center gap-1 border-l border-slate-200 pl-2 interactive-action">
+                <div className="flex items-center gap-0.5 border-l border-slate-200 pl-1.5 interactive-action">
                   {onEdit && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         onEdit();
                       }}
-                      className="p-1 text-slate-400 hover:text-[#003366] transition-colors cursor-pointer"
+                      className="p-0.5 text-slate-400 hover:text-[#003366] transition-colors cursor-pointer"
                       title="Editar Imóvel"
                     >
-                      <Edit2 size={13} />
+                      <Edit2 size={12} />
                     </button>
                   )}
                   {onShareToggle && (
@@ -145,7 +144,7 @@ export function CompactPropertyRow({
                         e.stopPropagation();
                         onShareToggle();
                       }}
-                      className={`p-1 transition-colors cursor-pointer ${
+                      className={`p-0.5 transition-colors cursor-pointer ${
                         imovel.compartilhar !== false
                           ? 'text-emerald-600 hover:text-emerald-700'
                           : 'text-slate-400 hover:text-[#003366]'
@@ -153,9 +152,9 @@ export function CompactPropertyRow({
                       title={imovel.compartilhar !== false ? 'Imóvel disponível para corretores parceiros e para o site (Clique para alterar)' : 'Imóvel privado (Clique para disponibilizar)'}
                     >
                       {imovel.compartilhar !== false ? (
-                        <Globe size={13} />
+                        <Globe size={12} />
                       ) : (
-                        <EyeOff size={13} />
+                        <EyeOff size={12} />
                       )}
                     </button>
                   )}
@@ -165,10 +164,10 @@ export function CompactPropertyRow({
                         e.stopPropagation();
                         onDelete();
                       }}
-                      className="p-1 text-slate-400 hover:text-red-600 transition-colors cursor-pointer"
+                      className="p-0.5 text-slate-400 hover:text-red-600 transition-colors cursor-pointer"
                       title="Excluir"
                     >
-                      <Trash2 size={13} />
+                      <Trash2 size={12} />
                     </button>
                   )}
                 </div>
@@ -177,7 +176,7 @@ export function CompactPropertyRow({
           </div>
 
           {/* Linha 2: Especificações */}
-          <div className="text-[11px] text-slate-500 truncate leading-tight mt-0.5">
+          <div className="text-[10px] text-slate-500 truncate leading-tight mt-0.5">
             {specsText || 'Sem especificações'}
           </div>
         </div>

@@ -32,57 +32,51 @@ let cachedImoveis: Imovel[] = [];
 let cachedFavorites: string[] = [];
 const subscribers: Array<() => void> = [];
 
+let notifyTimer: any = null;
 function notifySubscribers() {
-  subscribers.forEach(cb => {
-    try {
-      cb();
-    } catch (e) {
-      console.warn('Error in DbService subscriber callback:', e);
-    }
-  });
+  if (notifyTimer) return;
+  notifyTimer = setTimeout(() => {
+    notifyTimer = null;
+    subscribers.forEach(cb => {
+      try {
+        cb();
+      } catch (e) {
+        console.warn('Error in DbService subscriber callback:', e);
+      }
+    });
+  }, 16);
 }
 
 function safeSetLocalStorage(key: string, value: string): void {
-  try {
-    localStorage.setItem(key, value);
-  } catch (err) {
-    console.warn(`[DbService] localStorage quota exceeded for key "${key}". Optimizing cached data...`, err);
-    if (key === 'imobishare_imoveis') {
-      try {
-        // Optimization fallback: Prune base64 photos for local cache storage to stay within ~5MB browser quota
-        const items: Imovel[] = JSON.parse(value);
-        const pruned = items.map(imovel => {
-          if (!imovel.fotos || imovel.fotos.length === 0) return imovel;
-          const prunedFotos = imovel.fotos.slice(0, 2).map((f, idx) => {
-            if (idx > 0 && f.startsWith('data:image') && f.length > 5000) {
-              return imovel.fotos[0] || f;
-            }
-            return f;
-          });
-          return {
-            ...imovel,
-            fotos: prunedFotos
-          };
-        });
-        localStorage.setItem(key, JSON.stringify(pruned));
-        return;
-      } catch (e2) {
+  // Execute storage writes asynchronously so main thread rendering stays ultra-fast
+  setTimeout(() => {
+    try {
+      if (key === 'imobishare_imoveis') {
+        // Lightweight cache pruning for localStorage to prevent quota crashes & freeze
         try {
           const items: Imovel[] = JSON.parse(value);
-          const ultraPruned = items.map(imovel => ({
-            ...imovel,
-            fotos: (imovel.fotos || []).slice(0, 1)
-          }));
-          localStorage.setItem(key, JSON.stringify(ultraPruned));
+          const pruned = items.map(imovel => {
+            if (!imovel.fotos || imovel.fotos.length === 0) return imovel;
+            // Keep first photo and prune subsequent huge base64 strings for localStorage
+            const prunedFotos = imovel.fotos.slice(0, 3).map((f) => {
+              if (f.startsWith('data:image') && f.length > 50000) {
+                return f.substring(0, 20000); // lightweight thumbnail
+              }
+              return f;
+            });
+            return { ...imovel, fotos: prunedFotos };
+          });
+          localStorage.setItem(key, JSON.stringify(pruned));
           return;
-        } catch (e3) {
-          console.warn(`[DbService] Local storage write for ${key} bypassed gracefully due to strict storage quota:`, e3);
+        } catch {
+          // Fallback if parsing fails
         }
       }
-    } else {
-      console.warn(`[DbService] Storage write for key "${key}" skipped due to quota:`, err);
+      localStorage.setItem(key, value);
+    } catch (err) {
+      console.warn(`[DbService] localStorage write bypassed for "${key}" due to browser quota limit:`, err);
     }
-  }
+  }, 0);
 }
 
 function loadInitialFromLocalStorage() {
@@ -491,13 +485,33 @@ export class DbService {
     return this.saveImovel(cloneData);
   }
 
-  // Sync background data
+  private static syncPromise: Promise<void> | null = null;
+
+  // Sync background data concurrently without duplicate requests
   static async syncWithServer(): Promise<void> {
-    await this.fetchBrokers();
-    if (this.getActiveCorretor()) {
-      await this.verifyAndFetchProfile();
+    if (this.syncPromise) {
+      return this.syncPromise;
     }
-    await this.getImoveis();
+
+    this.syncPromise = (async () => {
+      try {
+        const promises: Promise<any>[] = [
+          this.fetchBrokers(),
+          this.getImoveis()
+        ];
+        if (this.getActiveCorretor()) {
+          promises.push(this.verifyAndFetchProfile());
+        }
+        await Promise.allSettled(promises);
+      } catch (err) {
+        console.warn('Erro na sincronização de dados:', err);
+      } finally {
+        this.syncPromise = null;
+        notifySubscribers();
+      }
+    })();
+
+    return this.syncPromise;
   }
 
   // Fetch confidential owner data for property

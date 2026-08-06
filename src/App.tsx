@@ -223,7 +223,7 @@ export default function App() {
     return null;
   });
 
-  // Filters & Search State
+  // Filters & Search State (Home Tab)
   const [searchWord, setSearchWord] = useState('');
   const [filterCidade, setFilterCidade] = useState(() => DbService.getActiveCorretor()?.cidade || 'Balneário Camboriú');
   const [filterTipo, setFilterTipo] = useState<'comprar' | 'alugar' | 'todos'>('todos');
@@ -241,11 +241,24 @@ export default function App() {
   const [filterMeusImoveis, setFilterMeusImoveis] = useState(true);
   const [filterOutrosCorretores, setFilterOutrosCorretores] = useState(true);
   const [filterIntegracao, setFilterIntegracao] = useState(true);
+  const [filterModalTab, setFilterModalTab] = useState<'home' | 'my-properties'>('home');
   const [isFilterModalOpen, setIsFilterModalOpen] = useState<boolean>(false);
   const [searchViewMode, setSearchViewMode] = useState<'como_esta_hoje' | 'lista' | 'mapa'>('como_esta_hoje');
-  const [myPropertiesSearch, setMyPropertiesSearch] = useState('');
 
-  // Active filter count computation
+  // Filters & Search State (My Properties Tab - strictly independent)
+  const [myPropertiesSearch, setMyPropertiesSearch] = useState('');
+  const [filterMyCidade, setFilterMyCidade] = useState<string>('Todas');
+  const [filterMyTipo, setFilterMyTipo] = useState<'comprar' | 'alugar' | 'todos'>('todos');
+  const [filterMyTipoImovel, setFilterMyTipoImovel] = useState<string>('todos');
+  const [filterMyStatusImovel, setFilterMyStatusImovel] = useState<string>('todos');
+  const [filterMyValorMin, setFilterMyValorMin] = useState<number>(0);
+  const [filterMyValorMax, setFilterMyValorMax] = useState<number>(15000000);
+  const [filterMyDormitorios, setFilterMyDormitorios] = useState<number>(0);
+  const [filterMyBanheiros, setFilterMyBanheiros] = useState<number>(0);
+  const [filterMyVagas, setFilterMyVagas] = useState<number>(0);
+  const [filterMyBairro, setFilterMyBairro] = useState<string>('');
+
+  // Active filter count computation for Home
   const getActiveFilterCount = () => {
     let count = 0;
     if (searchWord.trim()) count++;
@@ -266,24 +279,55 @@ export default function App() {
     return count;
   };
 
+  // Active filter count computation for My Properties Tab
+  const getMyPropertiesActiveFilterCount = () => {
+    let count = 0;
+    if (myPropertiesSearch.trim()) count++;
+    if (filterMyCidade && filterMyCidade !== 'Todas') count++;
+    if (filterMyTipo !== 'todos') count++;
+    if (filterMyTipoImovel !== 'todos') count++;
+    if (filterMyStatusImovel !== 'todos') count++;
+    if (filterMyValorMin > 0) count++;
+    if (filterMyValorMax > 0 && filterMyValorMax < 15000000) count++;
+    if (filterMyDormitorios > 0) count++;
+    if (filterMyBanheiros > 0) count++;
+    if (filterMyVagas > 0) count++;
+    if (filterMyBairro.trim()) count++;
+    return count;
+  };
+
   const handleResetFilters = () => {
-    setSearchWord('');
-    setFilterCidade('Balneário Camboriú');
-    setFilterTipo('todos');
-    setFilterTipoImovel('todos');
-    setFilterStatusImovel('todos');
-    setFilterValorMin(0);
-    setFilterValorMax(15000000);
-    setFilterDormitorios(0);
-    setFilterBanheiros(0);
-    setFilterVagas(0);
-    setFilterMetragemMin(0);
-    setFilterMetragemMax(0);
-    setFilterBairro('');
-    setFilterApenasFavoritos(false);
-    setFilterMeusImoveis(true);
-    setFilterOutrosCorretores(true);
-    setFilterIntegracao(true);
+    if (filterModalTab === 'home') {
+      setSearchWord('');
+      setFilterCidade('Balneário Camboriú');
+      setFilterTipo('todos');
+      setFilterTipoImovel('todos');
+      setFilterStatusImovel('todos');
+      setFilterValorMin(0);
+      setFilterValorMax(15000000);
+      setFilterDormitorios(0);
+      setFilterBanheiros(0);
+      setFilterVagas(0);
+      setFilterMetragemMin(0);
+      setFilterMetragemMax(0);
+      setFilterBairro('');
+      setFilterApenasFavoritos(false);
+      setFilterMeusImoveis(true);
+      setFilterOutrosCorretores(true);
+      setFilterIntegracao(true);
+    } else {
+      setMyPropertiesSearch('');
+      setFilterMyCidade('Todas');
+      setFilterMyTipo('todos');
+      setFilterMyTipoImovel('todos');
+      setFilterMyStatusImovel('todos');
+      setFilterMyValorMin(0);
+      setFilterMyValorMax(15000000);
+      setFilterMyDormitorios(0);
+      setFilterMyBanheiros(0);
+      setFilterMyVagas(0);
+      setFilterMyBairro('');
+    }
   };
 
   // Multiple selection state
@@ -1013,13 +1057,31 @@ useEffect(() => {
     const bairroQuery = filterBairro.toLowerCase().trim();
 
     return allImoveis.filter((imovel) => {
-      // 1. Text keyword search (title, description, neighborhood, building)
+      // 1. Text keyword search (title, description, neighborhood, building, reference code like FRE03)
       if (query) {
+        const propCode = getPropertyCode(imovel, allImoveis).toLowerCase();
+        const rawCode = (imovel.codigo || '').toLowerCase();
+        const rawId = (imovel.id || '').toLowerCase();
+        const title = (imovel.titulo || '').toLowerCase();
+        const desc = (imovel.descricao || '').toLowerCase();
+        const bairro = (imovel.bairro || '').toLowerCase();
+        const cidade = (imovel.cidade || '').toLowerCase();
+        const building = (imovel.nomeEdificio || '').toLowerCase();
+        const palavra = (imovel.palavraDestacada || '').toLowerCase();
+        const info = (imovel.informacoes || '').toLowerCase();
+
         const matchesQuery = 
-          imovel.titulo.toLowerCase().includes(query) ||
-          imovel.descricao.toLowerCase().includes(query) ||
-          imovel.bairro.toLowerCase().includes(query) ||
-          (imovel.nomeEdificio && imovel.nomeEdificio.toLowerCase().includes(query));
+          propCode.includes(query) ||
+          rawCode.includes(query) ||
+          rawId.includes(query) ||
+          title.includes(query) ||
+          desc.includes(query) ||
+          bairro.includes(query) ||
+          cidade.includes(query) ||
+          building.includes(query) ||
+          palavra.includes(query) ||
+          info.includes(query);
+
         if (!matchesQuery) return false;
       }
 
@@ -1030,14 +1092,17 @@ useEffect(() => {
 
       // 3. Neighborhood / Bairro filter
       if (bairroQuery) {
-        if (!imovel.bairro.toLowerCase().includes(bairroQuery)) {
+        if (!imovel.bairro || !imovel.bairro.toLowerCase().includes(bairroQuery)) {
           return false;
         }
       }
 
-      // 4. Purchase/Rent Filter
-      if (filterTipo === 'comprar' && imovel.tipo !== 'venda' && imovel.tipo !== 'ambos') return false;
-      if (filterTipo === 'alugar' && imovel.tipo !== 'locação' && imovel.tipo !== 'ambos') return false;
+      // 4. Purchase/Rent Filter (Item 5: dual sales/rental property appears in both)
+      const hasSales = Boolean((imovel.valor && imovel.valor > 0) || (imovel.valorVenda && imovel.valorVenda > 0) || imovel.tipo === 'venda' || imovel.tipo === 'ambos');
+      const hasRental = Boolean((imovel.valorLocacao && imovel.valorLocacao > 0) || imovel.tipo === 'locação' || imovel.tipo === 'ambos');
+
+      if (filterTipo === 'comprar' && !hasSales) return false;
+      if (filterTipo === 'alugar' && !hasRental) return false;
 
       // 5. Property Type (Tipo de Imóvel)
       if (filterTipoImovel !== 'todos') {
@@ -1058,9 +1123,9 @@ useEffect(() => {
       }
 
       // 6. Value range
-      const priceToCheck = (filterTipo === 'alugar' && imovel.valorLocacao) ? imovel.valorLocacao : imovel.valor;
-      if (priceToCheck < filterValorMin) return false;
-      if (filterValorMax > 0 && priceToCheck > filterValorMax) return false;
+      const priceToCheck = (filterTipo === 'alugar' && imovel.valorLocacao) ? imovel.valorLocacao : (imovel.valor || imovel.valorVenda || 0);
+      if (filterValorMin > 0 && priceToCheck < filterValorMin) return false;
+      if (filterValorMax > 0 && filterValorMax < 15000000 && priceToCheck > filterValorMax) return false;
 
       // 7. Specifications (Dormitórios, Banheiros, Vagas)
       if (filterDormitorios > 0 && (imovel.dormitorios || 0) < filterDormitorios) return false;
@@ -1173,23 +1238,93 @@ useEffect(() => {
   }, [allImoveis, isMyProperty]);
 
   const filteredMyProperties = useMemo(() => {
-    if (!myPropertiesSearch.trim()) return rawMyProperties;
-    const term = myPropertiesSearch.toLowerCase().trim();
-    return rawMyProperties.filter((imovel) => {
-      const title = (imovel.nomeEdificio || imovel.titulo || '').toLowerCase();
-      const neighborhood = (imovel.bairro || '').toLowerCase();
-      const code = getPropertyCode(imovel, allImoveis).toLowerCase();
-      const keyword = (imovel.palavraDestacada || '').toLowerCase();
-      const city = (imovel.cidade || '').toLowerCase();
-      return (
-        title.includes(term) ||
-        neighborhood.includes(term) ||
-        code.includes(term) ||
-        keyword.includes(term) ||
-        city.includes(term)
-      );
-    });
-  }, [rawMyProperties, myPropertiesSearch, allImoveis]);
+    let result = rawMyProperties;
+
+    if (myPropertiesSearch.trim()) {
+      const term = myPropertiesSearch.toLowerCase().trim();
+      result = result.filter((imovel) => {
+        const title = (imovel.nomeEdificio || imovel.titulo || '').toLowerCase();
+        const neighborhood = (imovel.bairro || '').toLowerCase();
+        const code = getPropertyCode(imovel, allImoveis).toLowerCase();
+        const rawCode = (imovel.codigo || '').toLowerCase();
+        const rawId = (imovel.id || '').toLowerCase();
+        const keyword = (imovel.palavraDestacada || '').toLowerCase();
+        const city = (imovel.cidade || '').toLowerCase();
+        return (
+          title.includes(term) ||
+          neighborhood.includes(term) ||
+          code.includes(term) ||
+          rawCode.includes(term) ||
+          rawId.includes(term) ||
+          keyword.includes(term) ||
+          city.includes(term)
+        );
+      });
+    }
+
+    if (filterMyCidade && filterMyCidade !== 'Todas') {
+      result = result.filter(i => i.cidade === filterMyCidade);
+    }
+
+    if (filterMyBairro.trim()) {
+      const bTerm = filterMyBairro.toLowerCase().trim();
+      result = result.filter(i => i.bairro && i.bairro.toLowerCase().includes(bTerm));
+    }
+
+    if (filterMyTipo === 'comprar') {
+      result = result.filter(i => (i.valor && i.valor > 0) || i.tipo === 'venda' || i.tipo === 'ambos');
+    } else if (filterMyTipo === 'alugar') {
+      result = result.filter(i => (i.valorLocacao && i.valorLocacao > 0) || i.tipo === 'locação' || i.tipo === 'ambos');
+    }
+
+    if (filterMyTipoImovel !== 'todos') {
+      const targetTipo = filterMyTipoImovel.toLowerCase();
+      result = result.filter(i => {
+        const impTipo = (i.tipoImovel || 'Apartamento').toLowerCase();
+        if (targetTipo === 'casa') {
+          return impTipo.includes('casa') || impTipo.includes('sobrado');
+        }
+        return impTipo.includes(targetTipo);
+      });
+    }
+
+    if (filterMyStatusImovel !== 'todos') {
+      result = result.filter(i => i.statusImovel === filterMyStatusImovel);
+    }
+
+    if (filterMyValorMin > 0) {
+      result = result.filter(i => (i.valorLocacao || i.valor || 0) >= filterMyValorMin);
+    }
+    if (filterMyValorMax > 0 && filterMyValorMax < 15000000) {
+      result = result.filter(i => (i.valorLocacao || i.valor || 0) <= filterMyValorMax);
+    }
+
+    if (filterMyDormitorios > 0) {
+      result = result.filter(i => (i.dormitorios || 0) >= filterMyDormitorios);
+    }
+    if (filterMyBanheiros > 0) {
+      result = result.filter(i => (i.banheiros || 0) >= filterMyBanheiros);
+    }
+    if (filterMyVagas > 0) {
+      result = result.filter(i => (i.vagas || 0) >= filterMyVagas);
+    }
+
+    return result;
+  }, [
+    rawMyProperties,
+    myPropertiesSearch,
+    filterMyCidade,
+    filterMyBairro,
+    filterMyTipo,
+    filterMyTipoImovel,
+    filterMyStatusImovel,
+    filterMyValorMin,
+    filterMyValorMax,
+    filterMyDormitorios,
+    filterMyBanheiros,
+    filterMyVagas,
+    allImoveis
+  ]);
 
   // Multi-Selection Actions
   const handleSelectToggle = (imovelId: string) => {
@@ -1684,7 +1819,8 @@ Toque abaixo para ver fotos e todos os detalhes:
             /* ADD / EDIT PROPERTY FORM */
             <PropertyForm
               imovelId={editingPropertyId}
-              onSave={(saved) => {
+              onSave={async (saved) => {
+                await DbService.getImoveis();
                 reloadData();
                 setIsAddingProperty(false);
                 setEditingPropertyId(null);
@@ -1747,23 +1883,11 @@ Toque abaixo para ver fotos e todos os detalhes:
 
                   {/* FAVORITES CAROUSEL */}
                   {favoriteImoveis.length > 0 && (
-                    <div className="space-y-1.5 px-4 pt-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                          <Heart size={11} className="text-rose-500 fill-rose-500" />
-                          Seus Favoritos
-                        </span>
-                        <span className="text-[9px] font-semibold text-slate-400">
-                          {favoriteImoveis.length} {favoriteImoveis.length === 1 ? 'imóvel' : 'imóveis'}
-                        </span>
-                      </div>
-                      
+                    <div className="px-4 pt-1">
                       <div className="flex gap-2.5 overflow-x-auto pb-2 pt-0.5 scrollbar-none snap-x">
                         {favoriteImoveis.map((imovel) => {
                           const buildingName = imovel.nomeEdificio?.trim() || imovel.titulo;
-                          const displayPrice = imovel.tipo === 'locação' && imovel.valorLocacao 
-                            ? `${formatPriceBRL(imovel.valorLocacao)}/mês` 
-                            : formatPriceBRL(imovel.valor);
+                          const hasBoth = Boolean(((imovel.valor && imovel.valor > 0) || (imovel.valorVenda && imovel.valorVenda > 0)) && (imovel.valorLocacao && imovel.valorLocacao > 0));
 
                           return (
                             <motion.div
@@ -1771,9 +1895,9 @@ Toque abaixo para ver fotos e todos os detalhes:
                               whileHover={{ y: -2 }}
                               key={imovel.id}
                               onClick={() => setSelectedPropertyId(imovel.id)}
-                              className="bg-white border border-slate-200/80 rounded-lg overflow-hidden shadow-xs flex-shrink-0 w-24 sm:w-28 cursor-pointer hover:border-[#003366] hover:shadow-xs transition-all snap-start flex flex-col"
+                              className="bg-white border border-slate-200/80 rounded-xl overflow-hidden shadow-xs flex-shrink-0 w-28 sm:w-32 cursor-pointer hover:border-[#003366] hover:shadow-xs transition-all snap-start flex flex-col"
                             >
-                              <div className="h-11 w-full bg-slate-100 relative overflow-hidden flex-shrink-0">
+                              <div className="h-20 w-full bg-slate-100 relative overflow-hidden flex-shrink-0">
                                 <img 
                                   src={getValidImage(imovel.fotos?.[0])} 
                                   alt={buildingName} 
@@ -1781,23 +1905,37 @@ Toque abaixo para ver fotos e todos os detalhes:
                                   className="w-full h-full object-cover hover:scale-105 transition-transform duration-300" 
                                   referrerPolicy="no-referrer" 
                                 />
-                                {imovel.bairro && (
-                                  <span className="absolute bottom-0.5 right-0.5 bg-black/60 text-[7px] font-bold text-white px-1 py-0.2 rounded backdrop-blur-xs truncate max-w-[85%] leading-none">
-                                    {imovel.bairro}
-                                  </span>
-                                )}
+                                {/* Coração no canto superior esquerdo da imagem */}
+                                <div className="absolute top-1.5 left-1.5 bg-white/80 backdrop-blur-xs p-1 rounded-full shadow-xs">
+                                  <Heart size={12} className="text-rose-500 fill-rose-500" />
+                                </div>
                               </div>
-                              <div className="p-1 flex flex-col justify-between flex-1 gap-0.5">
+                              <div className="p-1.5 flex flex-col justify-between flex-1 gap-0.5 leading-none">
                                 <h4 
-                                  className="font-bold text-slate-800 text-[8px] leading-tight line-clamp-2 min-h-[1.1rem]" 
+                                  className="font-extrabold text-slate-800 text-[9px] leading-tight line-clamp-2" 
                                   title={buildingName}
                                 >
                                   {buildingName}
                                 </h4>
-                                <div>
-                                  <span className="text-[#003366] font-extrabold text-[9px] block truncate leading-none">
-                                    {displayPrice}
-                                  </span>
+                                <div className="pt-0.5 leading-none">
+                                  {hasBoth ? (
+                                    <div className="flex flex-col gap-0.5 leading-none">
+                                      <span className="text-[#003366] font-extrabold text-[9px] block truncate">
+                                        {formatPriceBRL(imovel.valor || imovel.valorVenda || 0)}
+                                      </span>
+                                      <span className="text-emerald-800 font-extrabold text-[8px] block truncate">
+                                        A: {formatPriceBRL(imovel.valorLocacao!)}/mês
+                                      </span>
+                                    </div>
+                                  ) : imovel.tipo === 'locação' && imovel.valorLocacao ? (
+                                    <span className="text-emerald-800 font-extrabold text-[9px] block truncate leading-none">
+                                      {formatPriceBRL(imovel.valorLocacao)}/mês
+                                    </span>
+                                  ) : (
+                                    <span className="text-[#003366] font-extrabold text-[9px] block truncate leading-none">
+                                      {formatPriceBRL(imovel.valor || imovel.valorVenda || 0)}
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             </motion.div>
@@ -1831,7 +1969,7 @@ Toque abaixo para ver fotos e todos os detalhes:
 
                       <button
                         type="button"
-                        onClick={() => setIsFilterModalOpen(true)}
+                        onClick={() => { setFilterModalTab('home'); setIsFilterModalOpen(true); }}
                         className={`relative flex items-center justify-center p-3 rounded-2xl transition-all cursor-pointer shadow-xs border flex-shrink-0 ${
                           getActiveFilterCount() > 0
                             ? 'bg-[#003366] text-white border-[#003366] hover:bg-[#002244]'
@@ -2011,11 +2149,11 @@ Toque abaixo para ver fotos e todos os detalhes:
               )}
 
               {activeTab === 'my-properties' && (
-                <div className="p-4 space-y-4" id="my-properties-tab-view">
+                <div className="p-3.5 space-y-3" id="my-properties-tab-view">
                     <div className="flex justify-between items-center gap-2">
                       <div className="min-w-0 flex-1">
-                        <h2 className="font-extrabold text-slate-800 text-sm sm:text-base md:text-lg truncate whitespace-nowrap">Meus Imóveis Cadastrados</h2>
-                        <p className="text-[10px] text-slate-400 truncate">Gerencie, edite, exclua e compartilhe seus imóveis</p>
+                        <h2 className="font-extrabold text-slate-800 text-sm sm:text-base truncate whitespace-nowrap">Meus Imóveis Cadastrados</h2>
+                        <p className="text-xs text-slate-400 truncate">Gerencie, edite, exclua e compartilhe seus imóveis</p>
                       </div>
                       
                       <button
@@ -2024,43 +2162,43 @@ Toque abaixo para ver fotos e todos os detalhes:
                           setIsAddingProperty(true);
                         }}
                         title="Cadastrar Novo Imóvel"
-                        className="bg-[#003366] hover:bg-[#002244] text-white p-2.5 rounded-xl flex items-center justify-center shadow-md transition-colors flex-shrink-0 cursor-pointer"
+                        className="bg-[#003366] hover:bg-[#002244] text-white p-2 rounded-lg flex items-center justify-center shadow-xs transition-colors flex-shrink-0 cursor-pointer"
                       >
-                        <PlusCircle size={18} />
+                        <PlusCircle size={16} />
                       </button>
                     </div>
 
                     {/* Search Field + Filter Button */}
                     <div className="flex items-center gap-2 w-full">
                       <div className="relative flex-1 min-w-0">
-                        <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                         <input
                           type="text"
                           value={myPropertiesSearch}
                           onChange={(e) => setMyPropertiesSearch(e.target.value)}
                           placeholder="Buscar nos meus imóveis (título, bairro, código...)"
-                          className="w-full pl-10 pr-9 py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#003366]/20 focus:border-[#003366] transition-all shadow-xs"
+                          className="w-full pl-9 pr-8 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#003366]/20 focus:border-[#003366] transition-all shadow-xs"
                         />
                         {myPropertiesSearch && (
                           <button
                             onClick={() => setMyPropertiesSearch('')}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full cursor-pointer"
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full cursor-pointer"
                             title="Limpar busca"
                           >
-                            <X size={14} />
+                            <X size={13} />
                           </button>
                         )}
                       </div>
 
                       <button
-                        onClick={() => setIsFilterModalOpen(true)}
-                        className="relative bg-white hover:bg-slate-50 border border-slate-200 text-[#003366] p-2.5 rounded-xl font-medium text-xs flex items-center justify-center shadow-xs transition-colors cursor-pointer flex-shrink-0"
+                        onClick={() => { setFilterModalTab('my-properties'); setIsFilterModalOpen(true); }}
+                        className="relative bg-white hover:bg-slate-50 border border-slate-200 text-[#003366] p-2 rounded-lg font-medium text-xs flex items-center justify-center shadow-xs transition-colors cursor-pointer flex-shrink-0"
                         title="Filtros Avançados"
                       >
-                        <SlidersHorizontal size={16} />
-                        {getActiveFilterCount() > 0 && (
+                        <SlidersHorizontal size={15} />
+                        {getMyPropertiesActiveFilterCount() > 0 && (
                           <span className="absolute -top-1.5 -right-1.5 bg-[#003366] text-white text-[9px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center">
-                            {getActiveFilterCount()}
+                            {getMyPropertiesActiveFilterCount()}
                           </span>
                         )}
                       </button>
@@ -2304,12 +2442,16 @@ Toque abaixo para ver fotos e todos os detalhes:
                       <SlidersHorizontal size={18} />
                     </div>
                     <div>
-                      <h3 className="text-sm font-bold text-slate-900">Filtro Completo de Busca</h3>
-                      <p className="text-[11px] text-slate-500">Refine localização, valores, cômodos e tipos</p>
+                      <h3 className="text-sm font-bold text-slate-900">
+                        {filterModalTab === 'home' ? 'Filtro da Tela Início' : 'Filtro dos Meus Imóveis'}
+                      </h3>
+                      <p className="text-[11px] text-slate-500">
+                        {filterModalTab === 'home' ? 'Refine os imóveis exibidos na tela inicial' : 'Refine a busca nos seus imóveis cadastrados'}
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {getActiveFilterCount() > 0 && (
+                    {(filterModalTab === 'home' ? getActiveFilterCount() : getMyPropertiesActiveFilterCount()) > 0 && (
                       <button
                         onClick={handleResetFilters}
                         className="text-xs text-rose-600 font-bold hover:underline cursor-pointer"
@@ -2334,22 +2476,22 @@ Toque abaixo para ver fotos e todos os detalhes:
                     <div className="grid grid-cols-3 gap-2 bg-slate-100 p-1 rounded-xl font-bold">
                       <button
                         type="button"
-                        onClick={() => setFilterTipo('todos')}
-                        className={`py-2 rounded-lg text-xs transition-all ${filterTipo === 'todos' ? 'bg-white text-[#003366] shadow-xs' : 'text-slate-500'}`}
+                        onClick={() => filterModalTab === 'home' ? setFilterTipo('todos') : setFilterMyTipo('todos')}
+                        className={`py-2 rounded-lg text-xs transition-all ${(filterModalTab === 'home' ? filterTipo : filterMyTipo) === 'todos' ? 'bg-white text-[#003366] shadow-xs' : 'text-slate-500'}`}
                       >
                         Todos
                       </button>
                       <button
                         type="button"
-                        onClick={() => setFilterTipo('comprar')}
-                        className={`py-2 rounded-lg text-xs transition-all ${filterTipo === 'comprar' ? 'bg-white text-[#003366] shadow-xs' : 'text-slate-500'}`}
+                        onClick={() => filterModalTab === 'home' ? setFilterTipo('comprar') : setFilterMyTipo('comprar')}
+                        className={`py-2 rounded-lg text-xs transition-all ${(filterModalTab === 'home' ? filterTipo : filterMyTipo) === 'comprar' ? 'bg-white text-[#003366] shadow-xs' : 'text-slate-500'}`}
                       >
                         Venda
                       </button>
                       <button
                         type="button"
-                        onClick={() => setFilterTipo('alugar')}
-                        className={`py-2 rounded-lg text-xs transition-all ${filterTipo === 'alugar' ? 'bg-white text-[#003366] shadow-xs' : 'text-slate-500'}`}
+                        onClick={() => filterModalTab === 'home' ? setFilterTipo('alugar') : setFilterMyTipo('alugar')}
+                        className={`py-2 rounded-lg text-xs transition-all ${(filterModalTab === 'home' ? filterTipo : filterMyTipo) === 'alugar' ? 'bg-white text-[#003366] shadow-xs' : 'text-slate-500'}`}
                       >
                         Alugar (Locação)
                       </button>
@@ -2361,8 +2503,8 @@ Toque abaixo para ver fotos e todos os detalhes:
                     <div className="space-y-1">
                       <label className="font-bold text-slate-700 block uppercase tracking-wider text-[10px]">2. Cidade</label>
                       <select
-                        value={filterCidade}
-                        onChange={(e) => setFilterCidade(e.target.value)}
+                        value={filterModalTab === 'home' ? filterCidade : filterMyCidade}
+                        onChange={(e) => filterModalTab === 'home' ? setFilterCidade(e.target.value) : setFilterMyCidade(e.target.value)}
                         className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 focus:outline-hidden focus:border-[#003366]"
                       >
                         <option value="Balneário Camboriú">Balneário Camboriú</option>
@@ -2379,8 +2521,8 @@ Toque abaixo para ver fotos e todos os detalhes:
                       <input
                         type="text"
                         placeholder="Ex: Centro, Barra Sul, Meia Praia..."
-                        value={filterBairro}
-                        onChange={(e) => setFilterBairro(e.target.value)}
+                        value={filterModalTab === 'home' ? filterBairro : filterMyBairro}
+                        onChange={(e) => filterModalTab === 'home' ? setFilterBairro(e.target.value) : setFilterMyBairro(e.target.value)}
                         className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-hidden focus:border-[#003366]"
                       />
                     </div>
@@ -2397,20 +2539,23 @@ Toque abaixo para ver fotos e todos os detalhes:
                         { id: 'Cobertura', label: 'Cobertura' },
                         { id: 'Terreno', label: 'Terreno / Lote' },
                         { id: 'Comercial', label: 'Comercial' },
-                      ].map((t) => (
-                        <button
-                          key={t.id}
-                          type="button"
-                          onClick={() => setFilterTipoImovel(t.id)}
-                          className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
-                            filterTipoImovel === t.id
-                              ? 'bg-[#003366] text-white border-[#003366]'
-                              : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                          }`}
-                        >
-                          {t.label}
-                        </button>
-                      ))}
+                      ].map((t) => {
+                        const cur = filterModalTab === 'home' ? filterTipoImovel : filterMyTipoImovel;
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => filterModalTab === 'home' ? setFilterTipoImovel(t.id) : setFilterMyTipoImovel(t.id)}
+                            className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                              cur === t.id
+                                ? 'bg-[#003366] text-white border-[#003366]'
+                                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                            {t.label}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -2423,20 +2568,23 @@ Toque abaixo para ver fotos e todos os detalhes:
                         { id: 'Na planta', label: 'Na Planta' },
                         { id: 'Mobiliado', label: 'Mobiliado' },
                         { id: 'Sem mobília', label: 'Sem Mobília' },
-                      ].map((st) => (
-                        <button
-                          key={st.id}
-                          type="button"
-                          onClick={() => setFilterStatusImovel(st.id)}
-                          className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
-                            filterStatusImovel === st.id
-                              ? 'bg-[#003366] text-white border-[#003366]'
-                              : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                          }`}
-                        >
-                          {st.label}
-                        </button>
-                      ))}
+                      ].map((st) => {
+                        const cur = filterModalTab === 'home' ? filterStatusImovel : filterMyStatusImovel;
+                        return (
+                          <button
+                            key={st.id}
+                            type="button"
+                            onClick={() => filterModalTab === 'home' ? setFilterStatusImovel(st.id) : setFilterMyStatusImovel(st.id)}
+                            className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                              cur === st.id
+                                ? 'bg-[#003366] text-white border-[#003366]'
+                                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                            {st.label}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -2444,9 +2592,15 @@ Toque abaixo para ver fotos e todos os detalhes:
                   <div className="space-y-2 border-t border-slate-100 pt-3">
                     <div className="flex items-center justify-between">
                       <label className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">5. Faixa de Valor (R$)</label>
-                      {(filterValorMin > 0 || filterValorMax < 15000000) && (
+                      {((filterModalTab === 'home' ? filterValorMin : filterMyValorMin) > 0 || (filterModalTab === 'home' ? filterValorMax : filterMyValorMax) < 15000000) && (
                         <button
-                          onClick={() => { setFilterValorMin(0); setFilterValorMax(15000000); }}
+                          onClick={() => {
+                            if (filterModalTab === 'home') {
+                              setFilterValorMin(0); setFilterValorMax(15000000);
+                            } else {
+                              setFilterMyValorMin(0); setFilterMyValorMax(15000000);
+                            }
+                          }}
                           className="text-[10px] text-slate-400 hover:text-slate-600 font-semibold cursor-pointer"
                         >
                           Redefinir preço
@@ -2460,8 +2614,12 @@ Toque abaixo para ver fotos e todos os detalhes:
                         <input
                           type="number"
                           placeholder="R$ Mínimo"
-                          value={filterValorMin === 0 ? '' : filterValorMin}
-                          onChange={(e) => setFilterValorMin(e.target.value === '' ? 0 : Number(e.target.value))}
+                          value={(filterModalTab === 'home' ? filterValorMin : filterMyValorMin) === 0 ? '' : (filterModalTab === 'home' ? filterValorMin : filterMyValorMin)}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? 0 : Number(e.target.value);
+                            if (filterModalTab === 'home') setFilterValorMin(val);
+                            else setFilterMyValorMin(val);
+                          }}
                           className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-hidden"
                         />
                       </div>
@@ -2470,8 +2628,12 @@ Toque abaixo para ver fotos e todos os detalhes:
                         <input
                           type="number"
                           placeholder="R$ Máximo"
-                          value={filterValorMax === 15000000 || filterValorMax === 0 ? '' : filterValorMax}
-                          onChange={(e) => setFilterValorMax(e.target.value === '' ? 0 : Number(e.target.value))}
+                          value={((filterModalTab === 'home' ? filterValorMax : filterMyValorMax) === 15000000 || (filterModalTab === 'home' ? filterValorMax : filterMyValorMax) === 0) ? '' : (filterModalTab === 'home' ? filterValorMax : filterMyValorMax)}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? 0 : Number(e.target.value);
+                            if (filterModalTab === 'home') setFilterValorMax(val);
+                            else setFilterMyValorMax(val);
+                          }}
                           className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-hidden"
                         />
                       </div>
@@ -2488,7 +2650,13 @@ Toque abaixo para ver fotos e todos os detalhes:
                         <button
                           key={shortcut.label}
                           type="button"
-                          onClick={() => { setFilterValorMin(shortcut.min); setFilterValorMax(shortcut.max); }}
+                          onClick={() => {
+                            if (filterModalTab === 'home') {
+                              setFilterValorMin(shortcut.min); setFilterValorMax(shortcut.max);
+                            } else {
+                              setFilterMyValorMin(shortcut.min); setFilterMyValorMax(shortcut.max);
+                            }
+                          }}
                           className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg text-[10px] font-semibold text-slate-600 transition-all cursor-pointer"
                         >
                           {shortcut.label}
@@ -2505,20 +2673,23 @@ Toque abaixo para ver fotos e todos os detalhes:
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-slate-700 text-xs">Quartos / Dormitórios</span>
                       <div className="flex gap-1">
-                        {[0, 1, 2, 3, 4].map((num) => (
-                          <button
-                            key={num}
-                            type="button"
-                            onClick={() => setFilterDormitorios(num)}
-                            className={`w-8 h-8 rounded-lg font-bold text-xs transition-all cursor-pointer ${
-                              filterDormitorios === num
-                                ? 'bg-[#003366] text-white'
-                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                            }`}
-                          >
-                            {num === 0 ? 'Qualq.' : `${num}+`}
-                          </button>
-                        ))}
+                        {[0, 1, 2, 3, 4].map((num) => {
+                          const cur = filterModalTab === 'home' ? filterDormitorios : filterMyDormitorios;
+                          return (
+                            <button
+                              key={num}
+                              type="button"
+                              onClick={() => filterModalTab === 'home' ? setFilterDormitorios(num) : setFilterMyDormitorios(num)}
+                              className={`w-8 h-8 rounded-lg font-bold text-xs transition-all cursor-pointer ${
+                                cur === num
+                                  ? 'bg-[#003366] text-white'
+                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                              }`}
+                            >
+                              {num === 0 ? 'Qualq.' : `${num}+`}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -2526,20 +2697,23 @@ Toque abaixo para ver fotos e todos os detalhes:
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-slate-700 text-xs">Banheiros / BWC</span>
                       <div className="flex gap-1">
-                        {[0, 1, 2, 3, 4].map((num) => (
-                          <button
-                            key={num}
-                            type="button"
-                            onClick={() => setFilterBanheiros(num)}
-                            className={`w-8 h-8 rounded-lg font-bold text-xs transition-all cursor-pointer ${
-                              filterBanheiros === num
-                                ? 'bg-[#003366] text-white'
-                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                            }`}
-                          >
-                            {num === 0 ? 'Qualq.' : `${num}+`}
-                          </button>
-                        ))}
+                        {[0, 1, 2, 3, 4].map((num) => {
+                          const cur = filterModalTab === 'home' ? filterBanheiros : filterMyBanheiros;
+                          return (
+                            <button
+                              key={num}
+                              type="button"
+                              onClick={() => filterModalTab === 'home' ? setFilterBanheiros(num) : setFilterMyBanheiros(num)}
+                              className={`w-8 h-8 rounded-lg font-bold text-xs transition-all cursor-pointer ${
+                                cur === num
+                                  ? 'bg-[#003366] text-white'
+                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                              }`}
+                            >
+                              {num === 0 ? 'Qualq.' : `${num}+`}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -2547,96 +2721,103 @@ Toque abaixo para ver fotos e todos os detalhes:
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-slate-700 text-xs">Vagas de Garagem</span>
                       <div className="flex gap-1">
-                        {[0, 1, 2, 3, 4].map((num) => (
-                          <button
-                            key={num}
-                            type="button"
-                            onClick={() => setFilterVagas(num)}
-                            className={`w-8 h-8 rounded-lg font-bold text-xs transition-all cursor-pointer ${
-                              filterVagas === num
-                                ? 'bg-[#003366] text-white'
-                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                            }`}
-                          >
-                            {num === 0 ? 'Qualq.' : `${num}+`}
-                          </button>
-                        ))}
+                        {[0, 1, 2, 3, 4].map((num) => {
+                          const cur = filterModalTab === 'home' ? filterVagas : filterMyVagas;
+                          return (
+                            <button
+                              key={num}
+                              type="button"
+                              onClick={() => filterModalTab === 'home' ? setFilterVagas(num) : setFilterMyVagas(num)}
+                              className={`w-8 h-8 rounded-lg font-bold text-xs transition-all cursor-pointer ${
+                                cur === num
+                                  ? 'bg-[#003366] text-white'
+                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                              }`}
+                            >
+                              {num === 0 ? 'Qualq.' : `${num}+`}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   </div>
 
-                  {/* 6. Metragem Privativa */}
-                  <div className="space-y-1.5 border-t border-slate-100 pt-3">
-                    <label className="font-bold text-slate-700 block uppercase tracking-wider text-[10px]">7. Metragem Privativa (m²)</label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <span className="text-[10px] font-semibold text-slate-500 block mb-0.5">Área Mínima</span>
-                        <input
-                          type="number"
-                          placeholder="Ex: 80 m²"
-                          value={filterMetragemMin === 0 ? '' : filterMetragemMin}
-                          onChange={(e) => setFilterMetragemMin(e.target.value === '' ? 0 : Number(e.target.value))}
-                          className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-hidden"
-                        />
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-semibold text-slate-500 block mb-0.5">Área Máxima</span>
-                        <input
-                          type="number"
-                          placeholder="Ex: 300 m²"
-                          value={filterMetragemMax === 0 ? '' : filterMetragemMax}
-                          onChange={(e) => setFilterMetragemMax(e.target.value === '' ? 0 : Number(e.target.value))}
-                          className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-hidden"
-                        />
+                  {/* 6. Metragem Privativa - only for Home */}
+                  {filterModalTab === 'home' && (
+                    <div className="space-y-1.5 border-t border-slate-100 pt-3">
+                      <label className="font-bold text-slate-700 block uppercase tracking-wider text-[10px]">7. Metragem Privativa (m²)</label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <span className="text-[10px] font-semibold text-slate-500 block mb-0.5">Área Mínima</span>
+                          <input
+                            type="number"
+                            placeholder="Ex: 80 m²"
+                            value={filterMetragemMin === 0 ? '' : filterMetragemMin}
+                            onChange={(e) => setFilterMetragemMin(e.target.value === '' ? 0 : Number(e.target.value))}
+                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-hidden"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-semibold text-slate-500 block mb-0.5">Área Máxima</span>
+                          <input
+                            type="number"
+                            placeholder="Ex: 300 m²"
+                            value={filterMetragemMax === 0 ? '' : filterMetragemMax}
+                            onChange={(e) => setFilterMetragemMax(e.target.value === '' ? 0 : Number(e.target.value))}
+                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-hidden"
+                          />
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
 
-                  {/* 7. Fonte de Imóveis */}
-                  <div className="space-y-2 border-t border-slate-100 pt-3">
-                    <label className="font-bold text-slate-700 block uppercase tracking-wider text-[10px]">8. Origem e Visibilidade</label>
-                    <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={filterMeusImoveis}
-                          onChange={(e) => setFilterMeusImoveis(e.target.checked)}
-                          className="w-4 h-4 text-[#003366] rounded accent-[#003366]"
-                        />
-                        <span className="font-semibold text-slate-800">Meus imóveis cadastrados</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={filterOutrosCorretores}
-                          onChange={(e) => setFilterOutrosCorretores(e.target.checked)}
-                          className="w-4 h-4 text-[#003366] rounded accent-[#003366]"
-                        />
-                        <span className="font-semibold text-slate-800">Rede de Parcerias (Outros Corretores)</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={filterIntegracao}
-                          onChange={(e) => setFilterIntegracao(e.target.checked)}
-                          className="w-4 h-4 text-amber-500 rounded accent-amber-500"
-                        />
-                        <span className="font-semibold text-slate-800">Integração com Portais CRM</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer pt-1 border-t border-slate-200/60">
-                        <input
-                          type="checkbox"
-                          checked={filterApenasFavoritos}
-                          onChange={(e) => setFilterApenasFavoritos(e.target.checked)}
-                          className="w-4 h-4 text-rose-500 rounded accent-rose-500"
-                        />
-                        <span className="font-bold text-rose-700 flex items-center gap-1">
-                          <Heart size={13} className="fill-rose-500 text-rose-500" />
-                          Apenas meus imóveis Favoritos
-                        </span>
-                      </label>
+                  {/* 7. Fonte de Imóveis - only for Home */}
+                  {filterModalTab === 'home' && (
+                    <div className="space-y-2 border-t border-slate-100 pt-3">
+                      <label className="font-bold text-slate-700 block uppercase tracking-wider text-[10px]">8. Origem e Visibilidade</label>
+                      <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={filterMeusImoveis}
+                            onChange={(e) => setFilterMeusImoveis(e.target.checked)}
+                            className="w-4 h-4 text-[#003366] rounded accent-[#003366]"
+                          />
+                          <span className="font-semibold text-slate-800">Meus imóveis cadastrados</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={filterOutrosCorretores}
+                            onChange={(e) => setFilterOutrosCorretores(e.target.checked)}
+                            className="w-4 h-4 text-[#003366] rounded accent-[#003366]"
+                          />
+                          <span className="font-semibold text-slate-800">Rede de Parcerias (Outros Corretores)</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={filterIntegracao}
+                            onChange={(e) => setFilterIntegracao(e.target.checked)}
+                            className="w-4 h-4 text-amber-500 rounded accent-amber-500"
+                          />
+                          <span className="font-semibold text-slate-800">Integração com Portais CRM</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer pt-1 border-t border-slate-200/60">
+                          <input
+                            type="checkbox"
+                            checked={filterApenasFavoritos}
+                            onChange={(e) => setFilterApenasFavoritos(e.target.checked)}
+                            className="w-4 h-4 text-rose-500 rounded accent-rose-500"
+                          />
+                          <span className="font-bold text-rose-700 flex items-center gap-1">
+                            <Heart size={13} className="fill-rose-500 text-rose-500" />
+                            Apenas meus imóveis Favoritos
+                          </span>
+                        </label>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
 
                 {/* Modal Footer */}
@@ -2653,7 +2834,7 @@ Toque abaixo para ver fotos e todos os detalhes:
                     onClick={() => setIsFilterModalOpen(false)}
                     className="flex-1 bg-[#003366] hover:bg-[#002244] text-white py-3 px-4 rounded-xl font-bold text-xs shadow-md transition-all cursor-pointer text-center"
                   >
-                    Ver {filteredImoveis.length} Imóveis Encontrados
+                    Ver {filterModalTab === 'home' ? filteredImoveis.length : filteredMyProperties.length} Imóveis Encontrados
                   </button>
                 </div>
               </motion.div>

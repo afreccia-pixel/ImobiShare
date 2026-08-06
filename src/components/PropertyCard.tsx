@@ -62,16 +62,18 @@ export function PropertyCard({
       whileHover={{ y: -1 }}
       transition={{ duration: 0.2 }}
       onClick={handleCardClick}
-      className={`bg-white border rounded-xl overflow-hidden shadow-xs hover:shadow-sm transition-all flex flex-row p-2.5 gap-2.5 sm:gap-3 items-stretch min-h-[105px] cursor-pointer ${
+      className={`bg-white border rounded-lg overflow-hidden shadow-2xs hover:shadow-xs transition-all flex flex-row p-2 gap-2 items-stretch cursor-pointer ${
         isSelected ? 'border-[#003366] ring-1 ring-[#003366]/20 bg-[#003366]/[0.01]' : 'border-slate-100'
       }`}
       id={`property-card-${imovel.id}`}
     >
       {/* Property Image Container */}
-      <div className="relative w-28 sm:w-32 min-h-[105px] flex-shrink-0 self-stretch rounded-lg overflow-hidden bg-slate-100 border border-slate-100">
+      <div className="relative w-20 sm:w-24 h-20 sm:h-22 flex-shrink-0 self-center rounded-md overflow-hidden bg-slate-100 border border-slate-100">
         <img
           src={getValidImage(imovel.fotos?.[0])}
           alt=""
+          loading="lazy"
+          decoding="async"
           onError={handleImageError}
           referrerPolicy="no-referrer"
           className="absolute inset-0 w-full h-full object-cover"
@@ -79,17 +81,17 @@ export function PropertyCard({
         {/* Private view badge if not shared */}
         {!imovel.compartilhar && (
           <span className="absolute bottom-1 right-1 bg-slate-950/80 backdrop-blur-xs text-white p-0.5 rounded-full shadow-xs z-10" title="Visível apenas para você">
-            <EyeOff size={9} />
+            <EyeOff size={8} />
           </span>
         )}
       </div>
 
       {/* Content Details */}
-      <div className="flex-grow min-w-0 flex flex-col justify-between py-0.5 gap-1.5 min-h-[105px]">
+      <div className="flex-grow min-w-0 flex flex-col justify-between py-0.5 gap-1">
         <div>
           {/* Top Row: Title & Optional Checkbox */}
           <div className="flex items-start justify-between gap-1">
-            <h3 className="font-extrabold text-slate-900 tracking-tight leading-snug line-clamp-2 text-[9px]">
+            <h3 className="font-bold text-slate-900 tracking-tight leading-tight line-clamp-1 text-[11px] sm:text-xs">
               {imovel.nomeEdificio?.trim() ? imovel.nomeEdificio : imovel.titulo}
             </h3>
 
@@ -103,106 +105,94 @@ export function PropertyCard({
                 className="checkbox-container p-0.5 cursor-pointer flex-shrink-0"
               >
                 {isSelected ? (
-                  <CheckCircle2 size={16} className="text-[#003366] fill-[#003366]/10" />
+                  <CheckCircle2 size={14} className="text-[#003366] fill-[#003366]/10" />
                 ) : (
-                  <div className="w-4 h-4 border-2 border-slate-200 rounded-md bg-white hover:border-[#003366] transition-colors" />
+                  <div className="w-3.5 h-3.5 border border-slate-300 rounded bg-white hover:border-[#003366] transition-colors" />
                 )}
               </div>
             )}
           </div>
 
           {/* Location */}
-          <div className={`flex items-center text-slate-400 mt-0.5 font-medium truncate ${
-            isMyProperty ? 'text-[8px]' : 'text-[10px]'
-          }`}>
-            <MapPin size={isMyProperty ? 9 : 10} className="mr-0.5 flex-shrink-0 text-slate-400" />
+          <div className="flex items-center text-slate-400 mt-0.5 font-medium text-[10px] truncate">
+            <MapPin size={10} className="mr-0.5 flex-shrink-0 text-slate-400" />
             <span className="truncate">{imovel.bairro}</span>
           </div>
 
           {/* Essentials row instead of Description */}
-          <div className={`flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-slate-600 mt-1 bg-slate-50 py-0.5 px-2 rounded-lg border border-slate-100/60 w-fit font-bold ${
-            isMyProperty ? 'text-[8px]' : 'text-[9px]'
-          }`}>
+          <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-slate-600 mt-0.5 bg-slate-50 py-0.5 px-1.5 rounded border border-slate-100/60 w-fit font-medium text-[9px]">
             <span className="flex items-center gap-0.5">
-              <Bed size={isMyProperty ? 9 : 10} className="text-slate-400 flex-shrink-0" />
+              <Bed size={9} className="text-slate-400 flex-shrink-0" />
               <span>{imovel.dormitorios ?? 0} {imovel.dormitorios === 1 ? 'dorm' : 'dorms'}</span>
             </span>
             <span className="text-slate-300">•</span>
             <span className="flex items-center gap-0.5">
-              <Bath size={isMyProperty ? 9 : 10} className="text-slate-400 flex-shrink-0" />
+              <Bath size={9} className="text-slate-400 flex-shrink-0" />
               <span>{imovel.banheiros ?? 0} BWC</span>
             </span>
             <span className="text-slate-300">•</span>
             <span className="flex items-center gap-0.5">
-              <Car size={isMyProperty ? 9 : 10} className="text-slate-400 flex-shrink-0" />
+              <Car size={9} className="text-slate-400 flex-shrink-0" />
               <span>{imovel.vagas ?? 0} {imovel.vagas === 1 ? 'vaga' : 'vagas'}</span>
             </span>
             <span className="text-slate-300">•</span>
             <span className="flex items-center gap-0.5">
-              <Maximize size={isMyProperty ? 9 : 10} className="text-slate-400 flex-shrink-0" />
+              <Maximize size={9} className="text-slate-400 flex-shrink-0" />
               <span>{imovel.metragem ?? 0} m²</span>
             </span>
           </div>
         </div>
 
         {/* Bottom Row: Price & Actions */}
-        <div className="flex items-center justify-between border-t border-slate-100/60 pt-1 mt-1">
+        <div className="flex items-center justify-between border-t border-slate-100/60 pt-0.5 mt-0.5">
           <div className="flex flex-col">
-            {imovel.tipo === 'ambos' ? (
-              <div className="flex flex-col">
-                {imovel.valorAnterior && imovel.valorAnterior > imovel.valor ? (
-                  <>
-                    <span className="text-slate-400 line-through font-semibold text-[9px]">
-                      De {formatPrice(imovel.valorAnterior)}
-                    </span>
-                    <div className="flex items-center gap-1">
-                      <span className="font-extrabold text-[#003366] text-xs sm:text-sm">
-                        <span className="text-slate-400 font-normal text-[9px]">Por </span>{formatPrice(imovel.valor)}
-                      </span>
-                    </div>
-                  </>
-                ) : (
-                  <span className="font-extrabold text-[#003366] leading-tight text-xs sm:text-sm">
-                    {formatPrice(imovel.valor)} <span className="font-semibold text-slate-400 text-[9px]">(Venda)</span>
+            {(((imovel.valor && imovel.valor > 0) || (imovel.valorVenda && imovel.valorVenda > 0)) && imovel.valorLocacao && imovel.valorLocacao > 0) || imovel.tipo === 'ambos' ? (
+              <div className="flex flex-col leading-tight">
+                {imovel.valorAnterior && imovel.valorAnterior > (imovel.valor || imovel.valorVenda || 0) ? (
+                  <span className="text-slate-400 line-through font-semibold text-[8px]">
+                    De {formatPrice(imovel.valorAnterior)}
                   </span>
-                )}
-                <span className="font-bold text-slate-700 leading-tight mt-0.5 text-[10px]">
-                  {formatPrice(imovel.valorLocacao || 0)}<span className="font-normal text-slate-400 text-[9px]">/mês (Locação)</span>
+                ) : null}
+                <span className="font-extrabold text-[#003366] text-xs leading-tight">
+                  {formatPrice(imovel.valor || imovel.valorVenda || 0)}
+                </span>
+                <span className="font-extrabold text-emerald-800 text-[10px] leading-tight">
+                  {formatPrice(imovel.valorLocacao || 0)}<span className="font-normal text-slate-400 text-[8px]">/mês</span>
                 </span>
               </div>
             ) : imovel.tipo === 'locação' ? (
               imovel.valorLocacaoAnterior && imovel.valorLocacaoAnterior > (imovel.valorLocacao || imovel.valor) ? (
                 <div className="flex flex-col leading-none">
-                  <span className="text-slate-400 line-through font-semibold text-[9px]">
+                  <span className="text-slate-400 line-through font-semibold text-[8px]">
                     De {formatPrice(imovel.valorLocacaoAnterior)}
                   </span>
                   <div className="flex items-center gap-1">
-                    <span className="font-extrabold text-[#003366] text-xs sm:text-sm">
-                      <span className="text-slate-400 font-normal text-[9px]">Por </span>{formatPrice(imovel.valorLocacao || imovel.valor)}
-                      <span className="font-normal text-slate-400 text-[9px]"> /mês</span>
+                    <span className="font-extrabold text-[#003366] text-xs">
+                      <span className="text-slate-400 font-normal text-[8px]">Por </span>{formatPrice(imovel.valorLocacao || imovel.valor)}
+                      <span className="font-normal text-slate-400 text-[8px]"> /mês</span>
                     </span>
                   </div>
                 </div>
               ) : (
-                <span className="font-extrabold text-[#003366] leading-tight text-xs sm:text-sm">
+                <span className="font-extrabold text-[#003366] leading-tight text-xs">
                   {formatPrice(imovel.valorLocacao || imovel.valor)}
-                  <span className="font-normal text-slate-400 text-[9px]"> /mês</span>
+                  <span className="font-normal text-slate-400 text-[8px]"> /mês</span>
                 </span>
               )
             ) : (
               imovel.valorAnterior && imovel.valorAnterior > imovel.valor ? (
                 <div className="flex flex-col leading-none">
-                  <span className="text-slate-400 line-through font-semibold text-[9px]">
+                  <span className="text-slate-400 line-through font-semibold text-[8px]">
                     De {formatPrice(imovel.valorAnterior)}
                   </span>
                   <div className="flex items-center gap-1">
-                    <span className="font-extrabold text-[#003366] text-xs sm:text-sm">
-                      <span className="text-slate-400 font-normal text-[9px]">Por </span>{formatPrice(imovel.valor)}
+                    <span className="font-extrabold text-[#003366] text-xs">
+                      <span className="text-slate-400 font-normal text-[8px]">Por </span>{formatPrice(imovel.valor)}
                     </span>
                   </div>
                 </div>
               ) : (
-                <span className="font-extrabold text-[#003366] leading-tight text-xs sm:text-sm">
+                <span className="font-extrabold text-[#003366] leading-tight text-xs">
                   {formatPrice(imovel.valor)}
                 </span>
               )
@@ -218,12 +208,12 @@ export function PropertyCard({
                     e.stopPropagation();
                     onShareToggle();
                   }}
-                  className={`p-1.5 rounded-full transition-colors cursor-pointer ${
+                  className={`p-1 rounded-full transition-colors cursor-pointer ${
                     imovel.compartilhar !== false ? 'text-emerald-600 hover:text-emerald-700 bg-emerald-50' : 'text-slate-400 hover:text-[#003366] hover:bg-slate-50'
                   }`}
                   title={imovel.compartilhar !== false ? "Compartilhado (Disponível)" : "Privado (Apenas você)"}
                 >
-                  <Share2 size={14} />
+                  <Share2 size={12} />
                 </button>
               )}
             </div>

@@ -129,8 +129,12 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         setBairro(found.bairro || '');
         setTipoImovel((found.tipoImovel as PropertyTypeOption) || 'Apartamento');
         setStatusImovel((found.statusImovel as any) || '');
-        setTipo(found.tipo === 'ambos' ? 'venda' : (found.tipo || 'venda'));
-        setValor(found.valor || '');
+        const isLocacaoOnly = found.tipo === 'locação' || (found.valorLocacao && !found.valorVenda && (!found.valor || found.valor === found.valorLocacao));
+        const currentTipo = isLocacaoOnly ? 'locação' : 'venda';
+        setTipo(currentTipo);
+
+        const salePrice = found.valorVenda || (!isLocacaoOnly && found.valor && found.valor !== found.valorLocacao ? found.valor : '');
+        setValor(salePrice || '');
         setValorLocacao(found.valorLocacao || '');
         setDormitorios(found.dormitorios ?? '');
         setVagas(found.vagas ?? '');
@@ -464,21 +468,21 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
     }
 
     // Valor validation based on business type
-    let finalTipo: 'venda' | 'locação' | 'ambos' = tipo === 'locação' ? 'locação' : 'venda';
-    const numValor = valor !== '' ? Number(valor) : 0;
-    const numValorLocacao = valorLocacao !== '' ? Number(valorLocacao) : 0;
+    const numValor = valor !== '' && valor !== null && !isNaN(Number(valor)) ? Number(valor) : 0;
+    const numValorLocacao = valorLocacao !== '' && valorLocacao !== null && !isNaN(Number(valorLocacao)) ? Number(valorLocacao) : 0;
 
-    if (tipo === 'venda') {
-      if (numValor <= 0) {
-        setErrorMsg('Valor de venda é obrigatório e deve ser maior que zero.');
-        return;
-      }
+    let finalTipo: 'venda' | 'locação' | 'ambos' = tipo;
+
+    if (numValor <= 0 && numValorLocacao <= 0) {
+      setErrorMsg('É obrigatório preencher o valor de Venda ou o valor de Locação. Se o valor de Venda estiver em branco, o valor de Locação é obrigatório (e vice-versa).');
+      return;
+    }
+
+    if (numValor > 0 && numValorLocacao > 0) {
+      finalTipo = 'ambos';
+    } else if (numValor > 0) {
       finalTipo = 'venda';
-    } else {
-      if (numValorLocacao <= 0) {
-        setErrorMsg('Valor da locação / aluguel é obrigatório e deve ser maior que zero.');
-        return;
-      }
+    } else if (numValorLocacao > 0) {
       finalTipo = 'locação';
     }
 
@@ -578,7 +582,8 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         palavraDestacada: palavraDestacada.trim().slice(0, 20) || undefined,
         descricao: descricao.trim().slice(0, 6000),
         informacoes: informacoes.trim().slice(0, 200) || undefined,
-        valor: numValor > 0 ? numValor : numValorLocacao,
+        valor: numValor > 0 ? numValor : 0,
+        valorVenda: numValor > 0 ? numValor : undefined,
         valorAnterior: valorAnteriorCalculado,
         valorLocacao: numValorLocacao > 0 ? numValorLocacao : undefined,
         valorLocacaoAnterior: valorLocacaoAnteriorCalculado,
@@ -856,15 +861,15 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
               </select>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-2.5 items-end">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-end">
               <div>
-                <span className="text-[10px] text-slate-500 font-medium block mb-1 whitespace-nowrap">Modalidade de Negócio:</span>
-                <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl">
+                <span className="text-[10px] text-slate-500 font-medium block mb-0.5 whitespace-nowrap">Modalidade de Negócio:</span>
+                <div className="inline-flex items-center gap-0.5 bg-slate-100 p-0.5 rounded-lg border border-slate-200/80">
                   <button
                     type="button"
                     onClick={() => setTipo('venda')}
-                    className={`py-1.5 text-xs font-bold rounded-lg transition-all ${
-                      tipo === 'venda' ? 'bg-white text-[#003366] shadow-2xs' : 'text-slate-500 hover:text-slate-700'
+                    className={`py-1.5 px-3 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                      tipo === 'venda' ? 'bg-white text-[#003366] shadow-2xs' : 'text-slate-500 hover:text-slate-800'
                     }`}
                   >
                     Venda
@@ -872,8 +877,8 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
                   <button
                     type="button"
                     onClick={() => setTipo('locação')}
-                    className={`py-1.5 text-xs font-bold rounded-lg transition-all ${
-                      tipo === 'locação' ? 'bg-white text-emerald-800 shadow-2xs' : 'text-slate-500 hover:text-slate-700'
+                    className={`py-1.5 px-3 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                      tipo === 'locação' ? 'bg-white text-emerald-800 shadow-2xs' : 'text-slate-500 hover:text-slate-800'
                     }`}
                   >
                     Locação
@@ -884,7 +889,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
               <div>
                 {tipo === 'venda' ? (
                   <div>
-                    <span className="text-[10px] text-slate-600 font-bold block mb-1 whitespace-nowrap">
+                    <span className="text-[10px] text-slate-600 font-bold block mb-0.5 whitespace-nowrap">
                       Valor de Venda (R$) <span className="text-rose-500">*</span>
                     </span>
                     <input
@@ -894,14 +899,15 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
                       value={formatNumberWithSeparators(valor)}
                       onChange={(e) => {
                         const cleanValue = e.target.value.replace(/\D/g, '');
-                        setValor(cleanValue === '' ? '' : Number(cleanValue));
+                        const newValor = cleanValue === '' ? '' : Number(cleanValue);
+                        setValor(newValor);
                       }}
                       className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] font-bold text-[#003366] bg-white"
                     />
                   </div>
                 ) : (
                   <div>
-                    <span className="text-[10px] text-slate-600 font-bold block mb-1 whitespace-nowrap">
+                    <span className="text-[10px] text-slate-600 font-bold block mb-0.5 whitespace-nowrap">
                       Valor de Locação / Mês (R$) <span className="text-rose-500">*</span>
                     </span>
                     <input
@@ -911,7 +917,8 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
                       value={formatNumberWithSeparators(valorLocacao)}
                       onChange={(e) => {
                         const cleanValue = e.target.value.replace(/\D/g, '');
-                        setValorLocacao(cleanValue === '' ? '' : Number(cleanValue));
+                        const newValorLoc = cleanValue === '' ? '' : Number(cleanValue);
+                        setValorLocacao(newValorLoc);
                       }}
                       className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-emerald-700 font-bold text-emerald-800 bg-white"
                     />
