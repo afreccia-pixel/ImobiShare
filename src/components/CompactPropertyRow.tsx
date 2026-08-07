@@ -6,7 +6,7 @@
 import React from 'react';
 import { Imovel } from '../types';
 import { motion } from 'motion/react';
-import { CheckCircle2, Edit2, Trash2, Share2, EyeOff, Globe } from 'lucide-react';
+import { CheckCircle2, Edit2, Trash2, Share2, EyeOff, Globe, Handshake, Star } from 'lucide-react';
 import { getValidImage, handleImageError } from '../utils/imageUtils';
 
 interface CompactPropertyRowProps {
@@ -18,7 +18,9 @@ interface CompactPropertyRowProps {
   showImage?: boolean;
   onSelectToggle?: () => void;
   onFavoriteToggle?: () => void;
+  onWebsiteToggle?: () => void;
   onShareToggle?: () => void;
+  onShareSingle?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
   onClick: () => void;
@@ -32,11 +34,17 @@ export function CompactPropertyRow({
   showImage = false,
   onSelectToggle,
   onFavoriteToggle,
+  onWebsiteToggle,
   onShareToggle,
+  onShareSingle,
   onEdit,
   onDelete,
   onClick,
 }: CompactPropertyRowProps) {
+  const isParceriaActive = imovel.compartilhar !== false && imovel.compartilhar !== 'NAO';
+  const isWebsiteActive = imovel.website !== 'NAO';
+  const isFav = Boolean(isFavorite || imovel.favorito);
+
   const formatPrice = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
@@ -63,7 +71,7 @@ export function CompactPropertyRow({
 
   const specsText = specsParts.join(' · ');
 
-  const hasActions = isMyProperty && Boolean(onEdit || onShareToggle || onDelete);
+  const hasActions = Boolean(onEdit || onShareToggle || onWebsiteToggle || onFavoriteToggle || onShareSingle || onDelete);
 
   return (
     <motion.div
@@ -125,46 +133,85 @@ export function CompactPropertyRow({
 
               {/* Botões de Ação na mesma linha das informações */}
               {hasActions && (
-                <div className="flex items-center gap-0.5 border-l border-slate-200 pl-1.5 interactive-action">
+                <div className="flex items-center gap-1 border-l border-slate-200 pl-1.5 interactive-action">
+                  {onFavoriteToggle && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onFavoriteToggle();
+                      }}
+                      className={`p-0.5 transition-colors cursor-pointer rounded-xs ${
+                        isFav ? 'text-amber-500 bg-amber-50' : 'text-slate-300 hover:text-amber-500'
+                      }`}
+                      title={isFav ? '⭐ Favorito (Clique para remover)' : '⭐ Favorito (Clique para adicionar)'}
+                    >
+                      <Star size={12} className={isFav ? 'fill-amber-400' : ''} />
+                    </button>
+                  )}
+
+                  {onShareSingle && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onShareSingle();
+                      }}
+                      className="p-0.5 text-emerald-600 bg-emerald-50 hover:bg-emerald-100 hover:text-emerald-700 transition-colors cursor-pointer rounded-xs"
+                      title="Compartilhar Link do Imóvel"
+                    >
+                      <Share2 size={12} />
+                    </button>
+                  )}
+
                   {onEdit && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         onEdit();
                       }}
-                      className="p-0.5 text-slate-400 hover:text-[#003366] transition-colors cursor-pointer"
-                      title="Editar Imóvel"
+                      className="p-0.5 text-slate-500 hover:text-[#003366] transition-colors cursor-pointer"
+                      title="Alterar Imóvel"
                     >
                       <Edit2 size={12} />
                     </button>
                   )}
+
+                  {onWebsiteToggle && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onWebsiteToggle();
+                      }}
+                      className={`p-0.5 transition-colors cursor-pointer rounded-xs ${
+                        isWebsiteActive ? 'text-blue-600 bg-blue-50' : 'text-slate-300 hover:text-blue-600'
+                      }`}
+                      title={isWebsiteActive ? '🌐 Publicado no Website (Clique para alterar)' : '🌐 Oculto do Website (Clique para alterar)'}
+                    >
+                      <Globe size={12} />
+                    </button>
+                  )}
+
                   {onShareToggle && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         onShareToggle();
                       }}
-                      className={`p-0.5 transition-colors cursor-pointer ${
-                        imovel.compartilhar !== false
-                          ? 'text-emerald-600 hover:text-emerald-700'
-                          : 'text-slate-400 hover:text-[#003366]'
+                      className={`p-0.5 transition-colors cursor-pointer rounded-xs ${
+                        isParceriaActive ? 'text-emerald-600 bg-emerald-50' : 'text-slate-300 hover:text-emerald-600'
                       }`}
-                      title={imovel.compartilhar !== false ? 'Imóvel disponível para corretores parceiros e para o site (Clique para alterar)' : 'Imóvel privado (Clique para disponibilizar)'}
+                      title={isParceriaActive ? '🤝 Parceria Ativa (Clique para alterar)' : '🤝 Parceria Inativa (Clique para alterar)'}
                     >
-                      {imovel.compartilhar !== false ? (
-                        <Globe size={12} />
-                      ) : (
-                        <EyeOff size={12} />
-                      )}
+                      <Handshake size={12} />
                     </button>
                   )}
+
                   {onDelete && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         onDelete();
                       }}
-                      className="p-0.5 text-slate-400 hover:text-red-600 transition-colors cursor-pointer"
+                      className="p-0.5 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
                       title="Excluir"
                     >
                       <Trash2 size={12} />

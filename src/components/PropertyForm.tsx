@@ -149,8 +149,61 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         setFavorito(found.favorito || false);
         setWebsite(found.website === 'NAO' ? 'NAO' : 'SIM');
         setCompartilhar(found.compartilhar === 'NAO' || (found.compartilhar as any) === false ? 'NAO' : 'SIM');
-        setNomeProprietario(found.nomeProprietario || '');
-        setTelefoneProprietario(found.telefoneProprietario || '');
+        const rawN = found.nomeProprietario?.trim() || '';
+        const rawP = found.telefoneProprietario?.trim() || '';
+        const rawD = found.dadosProprietario?.trim() || '';
+
+        const combined = [rawN, rawP, rawD].filter(Boolean).join(' ');
+        const phoneRegex = /(?:\+?55\s*)?(?:\(?\d{2,3}\)?[\s.-]?)?\d{4,5}[\s.-]?\d{4}/g;
+        const matches = Array.from(combined.matchAll(phoneRegex));
+
+        let cleanP = '';
+        if (matches.length > 0) {
+          const bestMatch = matches.reduce((best, cur) => {
+            const curDigits = cur[0].replace(/\D/g, '');
+            const bestDigits = best.replace(/\D/g, '');
+            return curDigits.length >= bestDigits.length ? cur[0] : best;
+          }, matches[0][0]);
+
+          if (bestMatch.replace(/\D/g, '').length >= 8) {
+            cleanP = bestMatch.trim();
+          }
+        }
+
+        if (!cleanP && rawP) {
+          if (rawP.replace(/\D/g, '').length >= 8) {
+            cleanP = rawP.trim();
+          }
+        }
+
+        let nameSource = rawN;
+        if (!nameSource || (cleanP && nameSource.replace(/\D/g, '') === cleanP.replace(/\D/g, ''))) {
+          nameSource = rawD;
+        }
+        if (!nameSource || (cleanP && nameSource.replace(/\D/g, '') === cleanP.replace(/\D/g, ''))) {
+          nameSource = rawP;
+        }
+
+        let cleanN = nameSource;
+        if (cleanP) {
+          cleanN = cleanN.replace(cleanP, '');
+        }
+        cleanN = cleanN.replace(/(?:\+?55\s*)?(?:\(?\d{2,3}\)?[\s.-]?)?\d{4,5}[\s.-]?\d{4}/g, '');
+        cleanN = cleanN.replace(/^[\s\-:/|.,;]+|[\s\-:/|.,;]+$/g, '').trim();
+
+        if (cleanN) {
+          const chunks = cleanN.split(/[\-/|,]|\s+-\s+/).map(c => c.trim()).filter(Boolean);
+          const uniqueChunks: string[] = [];
+          for (const chunk of chunks) {
+            if (!uniqueChunks.some(u => u.toLowerCase() === chunk.toLowerCase())) {
+              uniqueChunks.push(chunk);
+            }
+          }
+          cleanN = uniqueChunks.join(' - ');
+        }
+
+        setNomeProprietario(cleanN);
+        setTelefoneProprietario(cleanP);
       }
     }
   }, [imovelId]);
@@ -1168,54 +1221,57 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
           
           <div className="grid grid-cols-3 gap-1.5 pt-0.5">
             {/* Favorito */}
-            <div className="flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-100">
-              <span className="text-[11px] font-bold text-slate-800 truncate">⭐ Favorito</span>
+            <div className="flex flex-col items-center justify-between text-center bg-slate-50 p-2 rounded-lg border border-slate-100 gap-1.5 min-w-0">
+              <div className="flex flex-col items-center min-w-0 w-full">
+                <span className="text-[11px] font-bold text-slate-800 leading-tight">⭐ Favorito</span>
+                <span className="text-[8px] text-slate-500 font-medium">Destaque</span>
+              </div>
               <button
                 type="button"
                 onClick={() => setFavorito(!favorito)}
-                className={`w-8 h-4 rounded-full p-0.5 transition-colors focus:outline-hidden cursor-pointer flex-shrink-0 ${
+                className={`w-9 h-5 rounded-full p-0.5 transition-colors focus:outline-hidden cursor-pointer flex-shrink-0 ${
                   favorito ? 'bg-[#003366]' : 'bg-slate-300'
                 }`}
               >
-                <div className={`w-3 h-3 rounded-full bg-white shadow-xs transform transition-transform ${
+                <div className={`w-4 h-4 rounded-full bg-white shadow-xs transform transition-transform ${
                   favorito ? 'translate-x-4' : 'translate-x-0'
                 }`} />
               </button>
             </div>
 
             {/* Site (visível no website) */}
-            <div className="flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-100">
-              <div className="flex flex-col min-w-0 pr-1">
-                <span className="text-[11px] font-bold text-slate-800 truncate">🌐 Site</span>
-                <span className="text-[8px] text-slate-500 font-medium truncate">No website</span>
+            <div className="flex flex-col items-center justify-between text-center bg-slate-50 p-2 rounded-lg border border-slate-100 gap-1.5 min-w-0">
+              <div className="flex flex-col items-center min-w-0 w-full">
+                <span className="text-[11px] font-bold text-slate-800 leading-tight">🌐 Site</span>
+                <span className="text-[8px] text-slate-500 font-medium">No website</span>
               </div>
               <button
                 type="button"
                 onClick={() => setWebsite(website === 'SIM' ? 'NAO' : 'SIM')}
-                className={`w-8 h-4 rounded-full p-0.5 transition-colors focus:outline-hidden cursor-pointer flex-shrink-0 ${
+                className={`w-9 h-5 rounded-full p-0.5 transition-colors focus:outline-hidden cursor-pointer flex-shrink-0 ${
                   website === 'SIM' ? 'bg-[#003366]' : 'bg-slate-300'
                 }`}
               >
-                <div className={`w-3 h-3 rounded-full bg-white shadow-xs transform transition-transform ${
+                <div className={`w-4 h-4 rounded-full bg-white shadow-xs transform transition-transform ${
                   website === 'SIM' ? 'translate-x-4' : 'translate-x-0'
                 }`} />
               </button>
             </div>
 
-            {/* Compartilhar */}
-            <div className="flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-100">
-              <div className="flex flex-col min-w-0 pr-1">
-                <span className="text-[11px] font-bold text-slate-800 truncate">🤝 Parceria</span>
-                <span className="text-[8px] text-slate-500 font-medium truncate">Rede parceira</span>
+            {/* Compartilhar / Parceria */}
+            <div className="flex flex-col items-center justify-between text-center bg-slate-50 p-2 rounded-lg border border-slate-100 gap-1.5 min-w-0">
+              <div className="flex flex-col items-center min-w-0 w-full">
+                <span className="text-[11px] font-bold text-slate-800 leading-tight">🤝 Parceria</span>
+                <span className="text-[8px] text-slate-500 font-medium">Rede parceira</span>
               </div>
               <button
                 type="button"
                 onClick={() => setCompartilhar(compartilhar === 'SIM' ? 'NAO' : 'SIM')}
-                className={`w-8 h-4 rounded-full p-0.5 transition-colors focus:outline-hidden cursor-pointer flex-shrink-0 ${
+                className={`w-9 h-5 rounded-full p-0.5 transition-colors focus:outline-hidden cursor-pointer flex-shrink-0 ${
                   compartilhar === 'SIM' ? 'bg-[#003366]' : 'bg-slate-300'
                 }`}
               >
-                <div className={`w-3 h-3 rounded-full bg-white shadow-xs transform transition-transform ${
+                <div className={`w-4 h-4 rounded-full bg-white shadow-xs transform transition-transform ${
                   compartilhar === 'SIM' ? 'translate-x-4' : 'translate-x-0'
                 }`} />
               </button>

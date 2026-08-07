@@ -50,12 +50,12 @@ export function PublicView({ imovel, activeCorretor, onExit }: PublicViewProps) 
   return (
     <div className="bg-slate-50 min-h-screen pb-16 font-sans select-none" id={`public-view-imovel-${imovel.id}`}>
       
-      {/* Simulation Banner at top */}
-      <div className="bg-amber-50 border-b border-amber-200 text-amber-800 px-4 py-2 text-xs flex justify-between items-center text-center">
-        <span>🌐 Você está visualizando o <b>Link Público do Cliente</b> (Simulado)</span>
+      {/* Public Banner at top */}
+      <div className="bg-emerald-50 border-b border-emerald-200 text-emerald-900 px-4 py-2 text-xs flex justify-between items-center text-center">
+        <span>🌐 Você está visualizando o <b>Link Público do Imóvel</b></span>
         <button 
           onClick={onExit}
-          className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-2 py-0.5 rounded text-[10px] transition-colors cursor-pointer"
+          className="bg-[#003366] hover:bg-[#002244] text-white font-bold px-2.5 py-1 rounded text-[10px] transition-colors cursor-pointer shadow-2xs"
         >
           Voltar ao App
         </button>

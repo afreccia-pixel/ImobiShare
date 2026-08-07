@@ -25,7 +25,8 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
   const activeEmailClean = (activeCorretor?.email || '').toLowerCase().trim();
   const imovelEmailClean = (imovel.corretorEmail || '').toLowerCase().trim();
   const isOwner = (imovel.corretorId && imovel.corretorId === activeCorretor?.id) || 
-                  (imovelEmailClean && activeEmailClean && imovelEmailClean === activeEmailClean);
+                  (imovelEmailClean && activeEmailClean && imovelEmailClean === activeEmailClean) ||
+                  (!imovel.corretorEmail && !imovel.corretorId);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchStartX(e.touches[0].clientX);
@@ -373,22 +374,83 @@ Toque abaixo para ver fotos e todos os detalhes:
               <span className="text-[9px] bg-amber-400/20 text-amber-300 font-bold px-1.5 py-0.5 rounded-sm">Somente Você</span>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 text-xs pt-1">
-              <div>
-                <span className="text-slate-400 block text-[10px] uppercase">Nome Proprietário:</span>
-                <span className="font-semibold text-slate-200">{imovel.nomeProprietario?.trim() || 'Não informado'}</span>
-              </div>
-              <div>
-                <span className="text-slate-400 block text-[10px] uppercase">Telefone Proprietário:</span>
-                {imovel.telefoneProprietario?.trim() ? (
-                  <a href={`tel:${imovel.telefoneProprietario}`} className="font-semibold text-amber-400 hover:underline flex items-center mt-0.5">
-                    <Phone size={12} className="mr-1" /> {imovel.telefoneProprietario}
-                  </a>
-                ) : (
-                  <span className="font-semibold text-slate-400 block mt-0.5">Não informado</span>
-                )}
-              </div>
-            </div>
+            {(() => {
+              const rawN = imovel.nomeProprietario?.trim() || '';
+              const rawP = imovel.telefoneProprietario?.trim() || '';
+              const rawD = imovel.dadosProprietario?.trim() || '';
+
+              // Find phone number across fields
+              const combined = [rawN, rawP, rawD].filter(Boolean).join(' ');
+              const phoneRegex = /(?:\+?55\s*)?(?:\(?\d{2,3}\)?[\s.-]?)?\d{4,5}[\s.-]?\d{4}/g;
+              const matches = Array.from(combined.matchAll(phoneRegex));
+
+              let cleanPhone = '';
+              if (matches.length > 0) {
+                const bestMatch = matches.reduce((best, cur) => {
+                  const curDigits = cur[0].replace(/\D/g, '');
+                  const bestDigits = best.replace(/\D/g, '');
+                  return curDigits.length >= bestDigits.length ? cur[0] : best;
+                }, matches[0][0]);
+
+                if (bestMatch.replace(/\D/g, '').length >= 8) {
+                  cleanPhone = bestMatch.trim();
+                }
+              }
+
+              if (!cleanPhone && rawP) {
+                if (rawP.replace(/\D/g, '').length >= 8) {
+                  cleanPhone = rawP.trim();
+                }
+              }
+
+              // Determine source text for owner name
+              let nameSource = rawN;
+              if (!nameSource || (cleanPhone && nameSource.replace(/\D/g, '') === cleanPhone.replace(/\D/g, ''))) {
+                nameSource = rawD;
+              }
+              if (!nameSource || (cleanPhone && nameSource.replace(/\D/g, '') === cleanPhone.replace(/\D/g, ''))) {
+                nameSource = rawP;
+              }
+
+              // Strip phone from name
+              let cleanName = nameSource;
+              if (cleanPhone) {
+                cleanName = cleanName.replace(cleanPhone, '');
+              }
+              cleanName = cleanName.replace(/(?:\+?55\s*)?(?:\(?\d{2,3}\)?[\s.-]?)?\d{4,5}[\s.-]?\d{4}/g, '');
+              cleanName = cleanName.replace(/^[\s\-:/|.,;]+|[\s\-:/|.,;]+$/g, '').trim();
+
+              // Deduplicate repeated name chunks (e.g. "Alessandro - Alessandro - Alessandro")
+              if (cleanName) {
+                const chunks = cleanName.split(/[\-/|,]|\s+-\s+/).map(c => c.trim()).filter(Boolean);
+                const uniqueChunks: string[] = [];
+                for (const chunk of chunks) {
+                  if (!uniqueChunks.some(u => u.toLowerCase() === chunk.toLowerCase())) {
+                    uniqueChunks.push(chunk);
+                  }
+                }
+                cleanName = uniqueChunks.join(' - ');
+              }
+
+              return (
+                <div className="grid grid-cols-2 gap-4 text-xs pt-1">
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-semibold">Nome Proprietário:</span>
+                    <span className="font-semibold text-slate-200 block mt-0.5">{cleanName || 'Não informado'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-semibold">Telefone Proprietário:</span>
+                    {cleanPhone ? (
+                      <a href={`tel:${cleanPhone}`} className="font-semibold text-amber-400 hover:underline flex items-center mt-0.5">
+                        <Phone size={12} className="mr-1 flex-shrink-0" /> {cleanPhone}
+                      </a>
+                    ) : (
+                      <span className="font-semibold text-slate-400 block mt-0.5">Não informado</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             {imovel.informacoes?.trim() && (
               <div className="pt-2.5 border-t border-slate-800 space-y-1">

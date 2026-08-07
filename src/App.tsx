@@ -56,7 +56,8 @@ import {
   Maximize,
   LogOut,
   Activity,
-  Eye
+  Eye,
+  WifiOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -359,9 +360,24 @@ export default function App() {
     }
   };
 
+  const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine);
+
   useEffect(() => {
-    // Perform background data synchronization on startup
-    DbService.syncWithServer();
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    // Perform background data synchronization on startup safely
+    DbService.syncWithServer().catch(err => {
+      console.warn('Silent network error on startup:', err);
+    });
 
     // Subscribe to database background synchronization completes
     const unsubscribe = DbService.subscribe(() => {
@@ -450,22 +466,74 @@ export default function App() {
     triggerToast(isFavNow ? 'Imóvel adicionado aos favoritos!' : 'Imóvel removido dos favoritos.');
   };
 
-  // Toggle Property Share status
-  const handleShareToggle = async (imovelId: string) => {
+  // Toggle Property Website status ('SIM' / 'NAO')
+  const handleWebsiteToggle = async (imovelId: string) => {
     const imoveis = DbService.getImoveisSync();
-    const found = imoveis.find(i => i.id === imovelId);
+    const found = imoveis.find(i => i.id === imovelId) || allImoveis.find(i => i.id === imovelId);
     if (found) {
+      const isCurrentlyWebsite = found.website !== 'NAO';
+      const newWebsiteState = isCurrentlyWebsite ? 'NAO' : 'SIM';
+
+      setAllImoveis((prev) =>
+        prev.map((i) => (i.id === imovelId ? { ...i, website: newWebsiteState } : i))
+      );
+
       const updated = await DbService.saveImovel({
         ...found,
-        compartilhar: !found.compartilhar
+        website: newWebsiteState
       });
       reloadData();
       triggerToast(
-        updated?.compartilhar 
-          ? 'Imóvel compartilhado com a rede de corretores!' 
-          : 'Imóvel privado. Apenas você pode visualizar.'
+        updated?.website !== 'NAO'
+          ? 'Imóvel publicado no website!'
+          : 'Imóvel ocultado do website.'
       );
     }
+  };
+
+  // Toggle Property Share / Parceria status
+  const handleShareToggle = async (imovelId: string) => {
+    const imoveis = DbService.getImoveisSync();
+    const found = imoveis.find(i => i.id === imovelId) || allImoveis.find(i => i.id === imovelId);
+    if (found) {
+      const isCurrentlyShared = found.compartilhar !== false && found.compartilhar !== 'NAO';
+      const newShareState = !isCurrentlyShared;
+
+      setAllImoveis((prev) =>
+        prev.map((i) => (i.id === imovelId ? { ...i, compartilhar: newShareState } : i))
+      );
+
+      const updated = await DbService.saveImovel({
+        ...found,
+        compartilhar: newShareState
+      });
+      reloadData();
+      triggerToast(
+        (updated?.compartilhar !== false && updated?.compartilhar !== 'NAO')
+          ? 'Imóvel ativado para parcerias na rede de corretores!'
+          : 'Parceria desativada. Imóvel mantido como privado.'
+      );
+    }
+  };
+
+  // Share single property link via WhatsApp & copy link
+  const handleShareSingleProperty = (imovel: Imovel) => {
+    const code = imovel.id.replace('imovel-', '');
+    const publicLink = `${window.location.origin}/?imovel=${code}`;
+    const priceText = imovel.valor
+      ? `R$ ${imovel.valor.toLocaleString('pt-BR')}`
+      : imovel.valorLocacao
+      ? `R$ ${imovel.valorLocacao.toLocaleString('pt-BR')}/mês`
+      : 'Consulte';
+    const message = `🏠 *${imovel.titulo || 'Imóvel'}*\n📍 ${imovel.bairro || 'Centro'} - ${imovel.cidade || ''}\n💰 ${priceText}\n\nConfira todos os detalhes e fotos no link:\n👉 ${publicLink}`;
+
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(publicLink);
+    }
+
+    const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+    window.open(waUrl, '_blank');
+    triggerToast('Link do imóvel copiado! Abrindo WhatsApp...');
   };
 
   // Delete property
@@ -1053,7 +1121,7 @@ useEffect(() => {
   // Filter properties based on current filters and search word
   const filteredImoveis = useMemo(() => {
     const activeEmail = (activeCorretor?.email || '').toLowerCase().trim();
-    const query = searchWord.toLowerCase().trim();
+    const query = searchWord.toLowerCase().replace('#', '').trim();
     const bairroQuery = filterBairro.toLowerCase().trim();
 
     return allImoveis.filter((imovel) => {
@@ -1241,7 +1309,7 @@ useEffect(() => {
     let result = rawMyProperties;
 
     if (myPropertiesSearch.trim()) {
-      const term = myPropertiesSearch.toLowerCase().trim();
+      const term = myPropertiesSearch.toLowerCase().replace('#', '').trim();
       result = result.filter((imovel) => {
         const title = (imovel.nomeEdificio || imovel.titulo || '').toLowerCase();
         const neighborhood = (imovel.bairro || '').toLowerCase();
@@ -1808,6 +1876,14 @@ Toque abaixo para ver fotos e todos os detalhes:
           )}
         </AnimatePresence>
 
+        {/* Offline indicator bar if internet connection is lost */}
+        {isOffline && (
+          <div className="bg-amber-500 text-slate-900 text-[11px] font-bold px-4 py-1.5 flex items-center justify-center gap-1.5 border-b border-amber-600 shadow-xs select-none">
+            <WifiOff size={13} className="text-slate-900 flex-shrink-0" />
+            <span>Modo Offline: exibindo dados salvos no dispositivo</span>
+          </div>
+        )}
+
         {/* Dynamic Inner screens navigation */}
         <div className={`flex-grow overflow-y-auto ${
           activeTab === 'home' && !isAddingProperty && !selectedPropertyId 
@@ -2115,7 +2191,7 @@ Toque abaixo para ver fotos e todos os detalhes:
                                 isFavorite={isFav}
                                 isSelected={isSel}
                                 onSelectToggle={() => handleSelectToggle(imovel.id)}
-                                onFavoriteToggle={() => handleFavoriteToggle(imovel.id)}
+                                onShareSingle={() => handleShareSingleProperty(imovel)}
                                 onClick={() => setSelectedPropertyId(imovel.id)}
                               />
                             );
@@ -2130,8 +2206,7 @@ Toque abaixo para ver fotos e todos os detalhes:
                               isSelected={isSel}
                               showCheckbox={true}
                               onSelectToggle={() => handleSelectToggle(imovel.id)}
-                              onFavoriteToggle={() => handleFavoriteToggle(imovel.id)}
-                              onShareToggle={() => handleShareToggle(imovel.id)}
+                              onShareSingle={() => handleShareSingleProperty(imovel)}
                               onClick={() => setSelectedPropertyId(imovel.id)}
                             />
                           );
@@ -2207,20 +2282,17 @@ Toque abaixo para ver fotos e todos os detalhes:
                     {/* My properties list in list format */}
                     <div className="bg-slate-100/70 p-1 sm:p-1.5 rounded-xl border border-slate-200/50 space-y-1.5">
                       {filteredMyProperties.map((imovel) => {
-                        const isFav = favoritos.includes(imovel.id) || imovel.favorito === true;
-
                         return (
                           <CompactPropertyRow
                             key={imovel.id}
                             imovel={imovel}
                             isMyProperty={true}
-                            isFavorite={isFav}
-                            onFavoriteToggle={() => handleFavoriteToggle(imovel.id)}
-                            onShareToggle={() => handleShareToggle(imovel.id)}
                             onEdit={() => {
                               setEditingPropertyId(imovel.id);
                               setIsAddingProperty(true);
                             }}
+                            onWebsiteToggle={() => handleWebsiteToggle(imovel.id)}
+                            onShareToggle={() => handleShareToggle(imovel.id)}
                             onDelete={() => handleDeleteProperty(imovel.id)}
                             onClick={() => setSelectedPropertyId(imovel.id)}
                           />

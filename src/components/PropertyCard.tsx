@@ -6,7 +6,7 @@
 import React from 'react';
 import { Imovel, Corretor } from '../types';
 import { motion } from 'motion/react';
-import { Heart, Share2, Edit2, Copy, Trash2, MapPin, EyeOff, Eye, CheckCircle2, Bed, Car, Maximize, Bath } from 'lucide-react';
+import { Star, Edit2, Copy, Trash2, MapPin, EyeOff, Eye, CheckCircle2, Bed, Car, Maximize, Bath, Globe, Handshake, Share2 } from 'lucide-react';
 import { getValidImage, handleImageError } from '../utils/imageUtils';
 
 interface PropertyCardProps {
@@ -17,7 +17,9 @@ interface PropertyCardProps {
   isFavorite?: boolean;
   onSelectToggle?: () => void;
   onFavoriteToggle?: () => void;
+  onWebsiteToggle?: () => void;
   onShareToggle?: () => void;
+  onShareSingle?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
   onDuplicate?: () => void;
@@ -32,13 +34,19 @@ export function PropertyCard({
   isFavorite = false,
   onSelectToggle,
   onFavoriteToggle,
+  onWebsiteToggle,
   onShareToggle,
+  onShareSingle,
   onEdit,
   onDelete,
   onDuplicate,
   onClick,
   showCheckbox = false,
 }: PropertyCardProps) {
+  // Helpers
+  const isParceriaActive = imovel.compartilhar !== false && imovel.compartilhar !== 'NAO';
+  const isWebsiteActive = imovel.website !== 'NAO';
+  const isFav = Boolean(isFavorite || imovel.favorito);
   // Format price helper
   const formatPrice = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -68,7 +76,7 @@ export function PropertyCard({
       id={`property-card-${imovel.id}`}
     >
       {/* Property Image Container */}
-      <div className="relative w-20 sm:w-24 h-20 sm:h-22 flex-shrink-0 self-center rounded-md overflow-hidden bg-slate-100 border border-slate-100">
+      <div className="relative w-24 sm:w-28 h-20 sm:h-24 flex-shrink-0 self-center rounded-md overflow-hidden bg-slate-100 border border-slate-100">
         <img
           src={getValidImage(imovel.fotos?.[0])}
           alt=""
@@ -200,8 +208,64 @@ export function PropertyCard({
           </div>
 
           {/* Action Row */}
-          <div className="flex items-center gap-0.5">
-            <div className="flex items-center gap-0.5 interactive-action">
+          <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 interactive-action">
+              {onFavoriteToggle && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onFavoriteToggle();
+                  }}
+                  className={`p-1 rounded-full transition-colors cursor-pointer ${
+                    isFav ? 'text-amber-500 bg-amber-50' : 'text-slate-300 hover:text-amber-500 hover:bg-slate-50'
+                  }`}
+                  title={isFav ? '⭐ Favorito (Clique para remover)' : '⭐ Adicionar aos Favoritos'}
+                >
+                  <Star size={13} className={isFav ? 'fill-amber-400' : ''} />
+                </button>
+              )}
+
+              {onShareSingle && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onShareSingle();
+                  }}
+                  className="p-1 rounded-full text-emerald-600 bg-emerald-50 hover:bg-emerald-100 hover:text-emerald-700 transition-colors cursor-pointer"
+                  title="Compartilhar Link do Imóvel"
+                >
+                  <Share2 size={13} />
+                </button>
+              )}
+
+              {onEdit && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEdit();
+                  }}
+                  className="p-1 text-slate-500 hover:text-[#003366] transition-colors cursor-pointer"
+                  title="Alterar Imóvel"
+                >
+                  <Edit2 size={13} />
+                </button>
+              )}
+
+              {onWebsiteToggle && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onWebsiteToggle();
+                  }}
+                  className={`p-1 rounded-full transition-colors cursor-pointer ${
+                    isWebsiteActive ? 'text-blue-600 bg-blue-50 border border-blue-200/60' : 'text-slate-300 hover:text-blue-600 hover:bg-slate-50'
+                  }`}
+                  title={isWebsiteActive ? '🌐 Publicado no Website (Clique para ocultar)' : '🌐 Oculto do Website (Clique para publicar)'}
+                >
+                  <Globe size={13} />
+                </button>
+              )}
+
               {onShareToggle && (
                 <button
                   onClick={(e) => {
@@ -209,11 +273,24 @@ export function PropertyCard({
                     onShareToggle();
                   }}
                   className={`p-1 rounded-full transition-colors cursor-pointer ${
-                    imovel.compartilhar !== false ? 'text-emerald-600 hover:text-emerald-700 bg-emerald-50' : 'text-slate-400 hover:text-[#003366] hover:bg-slate-50'
+                    isParceriaActive ? 'text-emerald-600 bg-emerald-50 border border-emerald-200/60' : 'text-slate-300 hover:text-emerald-600 hover:bg-slate-50'
                   }`}
-                  title={imovel.compartilhar !== false ? "Compartilhado (Disponível)" : "Privado (Apenas você)"}
+                  title={isParceriaActive ? '🤝 Parceria Ativa - Compartilhado na Rede (Clique para ocultar)' : '🤝 Parceria Inativa (Clique para disponibilizar parcerias)'}
                 >
-                  <Share2 size={12} />
+                  <Handshake size={13} />
+                </button>
+              )}
+
+              {onDelete && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete();
+                  }}
+                  className="p-1 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                  title="Excluir"
+                >
+                  <Trash2 size={13} />
                 </button>
               )}
             </div>
