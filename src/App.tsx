@@ -526,11 +526,12 @@ export default function App() {
       ? `R$ ${imovel.valorLocacao.toLocaleString('pt-BR')}/mês`
       : 'Consulte';
     const mainImg = imovel.fotos?.[0] ? getValidImage(imovel.fotos[0]) : '';
+    const isExternalImg = mainImg.startsWith('http://') || mainImg.startsWith('https://');
     const title = imovel.nomeEdificio?.trim() || imovel.titulo || 'Imóvel';
     const location = `${imovel.bairro || 'Centro'} - ${imovel.cidade || ''}`;
 
     let message = `🏠 ${title}\n📍 ${location}\n💰 ${priceText}`;
-    if (mainImg) {
+    if (isExternalImg) {
       message += `\n🖼️ Foto: ${mainImg}`;
     }
     message += `\n\nConfira todos os detalhes e fotos no link:\n👉 ${publicLink}`;
@@ -1430,7 +1431,8 @@ useEffect(() => {
         tipo = 'Venda & Aluguel';
       }
       const imgUrl = i.fotos?.[0] ? getValidImage(i.fotos[0]) : '';
-      return `• ${location} - ${preco} (${tipo})${imgUrl ? `\n  Foto: ${imgUrl}` : ''}`;
+      const isExternalImg = imgUrl.startsWith('http://') || imgUrl.startsWith('https://');
+      return `• ${location} - ${preco} (${tipo})${isExternalImg ? `\n  Foto: ${imgUrl}` : ''}`;
     }).join('\n\n');
     
     const idsJoined = selectedPropertyIds.map(id => id.replace('imovel-', '')).join(',');
@@ -2171,7 +2173,7 @@ Toque abaixo para ver a seleção completa:
                       </span>
                       
                       {selectedPropertyIds.length > 0 && (
-                        <span className="text-[11px] font-bold text-blue-900 bg-blue-50 px-2 py-0.5 rounded-md">
+                        <span className="text-[9px] font-bold text-blue-900 bg-blue-50 px-1.5 py-0.5 rounded-md">
                           {selectedPropertyIds.length} selecionados
                         </span>
                       )}
@@ -2375,8 +2377,8 @@ Toque abaixo para ver a seleção completa:
               className="absolute bottom-18 left-4 right-4 bg-[#003366] text-white px-3.5 py-2.5 rounded-2xl shadow-xl flex items-center justify-between z-30"
               id="multi-selection-floating-bar"
             >
-              <div className="flex items-center gap-2.5">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded-md">
+              <div className="flex items-center gap-2">
+                <span className="text-[8.5px] font-semibold uppercase tracking-wider text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded-md">
                   {selectedPropertyIds.length} {selectedPropertyIds.length === 1 ? 'imóvel selecionado' : 'imóveis selecionados'}
                 </span>
                 <button

@@ -20,7 +20,7 @@ interface PropertyDetailsProps {
 export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDetailsProps) {
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
   const [whatsappSent, setWhatsappSent] = useState(false);
-  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const [touchStartPos, setTouchStartPos] = useState<{ x: number; y: number } | null>(null);
 
   const activeEmailClean = (activeCorretor?.email || '').toLowerCase().trim();
   const imovelEmailClean = (imovel.corretorEmail || '').toLowerCase().trim();
@@ -29,24 +29,37 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
                   (!imovel.corretorEmail && !imovel.corretorId);
 
   const handleTouchStart = (e: React.TouchEvent) => {
-    setTouchStartX(e.touches[0].clientX);
+    setTouchStartPos({
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+    });
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
-    if (touchStartX === null || !imovel.fotos || imovel.fotos.length <= 1) return;
-    const touchEndX = e.changedTouches[0].clientX;
-    const diff = touchStartX - touchEndX;
+    if (!touchStartPos) return;
+    const endX = e.changedTouches[0].clientX;
+    const endY = e.changedTouches[0].clientY;
+    const diffX = endX - touchStartPos.x; // positive = swipe right (left to right)
+    const diffY = Math.abs(endY - touchStartPos.y);
 
-    if (Math.abs(diff) > 35) {
-      if (diff > 0) {
+    // If dragged horizontally from left to right (> 65px and dominant horizontal gesture) -> Go back
+    if (diffX > 65 && diffX > diffY * 1.2) {
+      onBack();
+      setTouchStartPos(null);
+      return;
+    }
+
+    // Photo carousel swipe logic
+    if (Math.abs(diffX) > 35 && imovel.fotos && imovel.fotos.length > 1) {
+      if (diffX < 0) {
         // Swiped left -> Next photo
         setActivePhotoIndex((prev) => (prev + 1) % imovel.fotos.length);
-      } else {
+      } else if (activePhotoIndex > 0) {
         // Swiped right -> Previous photo
-        setActivePhotoIndex((prev) => (prev - 1 + imovel.fotos.length) % imovel.fotos.length);
+        setActivePhotoIndex((prev) => prev - 1);
       }
     }
-    setTouchStartX(null);
+    setTouchStartPos(null);
   };
 
   // Format price helper
@@ -74,9 +87,10 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
     }
     const caracteristicas = `${imovel.dormitorios ?? 0} dorms • ${imovel.banheiros ?? 0} BWC • ${imovel.vagas ?? 0} vagas • ${imovel.metragem ?? 0}m²`;
     const mainImg = imovel.fotos?.[0] ? getValidImage(imovel.fotos[0]) : '';
+    const isExternalImg = mainImg.startsWith('http://') || mainImg.startsWith('https://');
 
     let messageText = `🏠 ${location}\n💰 ${preco} (${tipoLabel})\n✨ ${caracteristicas}`;
-    if (mainImg) {
+    if (isExternalImg) {
       messageText += `\n🖼️ Foto: ${mainImg}`;
     }
     messageText += `\n\nToque abaixo para ver fotos e todos os detalhes:\n👉 ${publicLink}`;
@@ -93,7 +107,7 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
   };
 
   return (
-    <div className="bg-slate-50 min-h-screen pb-16" id={`property-details-${imovel.id}`}>
+    <div className="bg-slate-50 min-h-screen pb-16 touch-pan-y" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd} id={`property-details-${imovel.id}`}>
       {/* Header */}
       <div className="bg-white border-b border-slate-100 px-4 py-3.5 flex items-center justify-between">
         <button onClick={onBack} className="p-1 text-slate-500 hover:bg-slate-100 rounded-full transition-colors flex items-center">

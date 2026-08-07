@@ -20,6 +20,39 @@ interface PublicViewProps {
 
 export function PublicView({ imovel, activeCorretor, onExit }: PublicViewProps) {
   const [activePhotoIdx, setActivePhotoIdx] = useState(0);
+  const [touchStartPos, setTouchStartPos] = useState<{ x: number; y: number } | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartPos({
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+    });
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!touchStartPos) return;
+    const endX = e.changedTouches[0].clientX;
+    const endY = e.changedTouches[0].clientY;
+    const diffX = endX - touchStartPos.x; // positive = swipe right (left to right)
+    const diffY = Math.abs(endY - touchStartPos.y);
+
+    // Dragged left-to-right (> 65px and dominant horizontal gesture) -> exit view
+    if (diffX > 65 && diffX > diffY * 1.2) {
+      onExit();
+      setTouchStartPos(null);
+      return;
+    }
+
+    // Carousel photo swipe
+    if (Math.abs(diffX) > 35 && imovel.fotos && imovel.fotos.length > 1) {
+      if (diffX < 0) {
+        setActivePhotoIdx((prev) => (prev + 1) % imovel.fotos.length);
+      } else if (activePhotoIdx > 0) {
+        setActivePhotoIdx((prev) => prev - 1);
+      }
+    }
+    setTouchStartPos(null);
+  };
 
   // Format price helper
   const formatPrice = (value: number) => {
@@ -48,7 +81,7 @@ export function PublicView({ imovel, activeCorretor, onExit }: PublicViewProps) 
   };
 
   return (
-    <div className="bg-slate-50 min-h-screen pb-16 font-sans select-none" id={`public-view-imovel-${imovel.id}`}>
+    <div className="bg-slate-50 min-h-screen pb-16 font-sans select-none touch-pan-y" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd} id={`public-view-imovel-${imovel.id}`}>
       {/* Brand logo bar */}
       <div className="bg-white border-b border-slate-100 px-4 py-3 flex justify-between items-center shadow-xs">
         <div className="flex items-center gap-2 text-[#003366] font-bold text-sm">
