@@ -525,7 +525,15 @@ export default function App() {
       : imovel.valorLocacao
       ? `R$ ${imovel.valorLocacao.toLocaleString('pt-BR')}/mês`
       : 'Consulte';
-    const message = `🏠 *${imovel.titulo || 'Imóvel'}*\n📍 ${imovel.bairro || 'Centro'} - ${imovel.cidade || ''}\n💰 ${priceText}\n\nConfira todos os detalhes e fotos no link:\n👉 ${publicLink}`;
+    const mainImg = imovel.fotos?.[0] ? getValidImage(imovel.fotos[0]) : '';
+    const title = imovel.nomeEdificio?.trim() || imovel.titulo || 'Imóvel';
+    const location = `${imovel.bairro || 'Centro'} - ${imovel.cidade || ''}`;
+
+    let message = `🏠 ${title}\n📍 ${location}\n💰 ${priceText}`;
+    if (mainImg) {
+      message += `\n🖼️ Foto: ${mainImg}`;
+    }
+    message += `\n\nConfira todos os detalhes e fotos no link:\n👉 ${publicLink}`;
 
     if (navigator.clipboard) {
       navigator.clipboard.writeText(publicLink);
@@ -1410,7 +1418,8 @@ useEffect(() => {
     
     const selectedList = allImoveis.filter(i => selectedPropertyIds.includes(i.id));
     const listItems = selectedList.map(i => {
-      const location = i.nomeEdificio?.trim() ? `${i.nomeEdificio} (${i.bairro})` : i.bairro;
+      const title = i.nomeEdificio?.trim() || i.titulo || 'Imóvel';
+      const location = i.bairro ? `${title} (${i.bairro})` : title;
       let preco = `R$ ${i.valor.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}`;
       let tipo = 'Venda';
       if (i.tipo === 'locação') {
@@ -1420,25 +1429,24 @@ useEffect(() => {
         preco = `Venda: R$ ${i.valor.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} | Aluguel: R$ ${(i.valorLocacao || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}/mês`;
         tipo = 'Venda & Aluguel';
       }
-      return `• \`\`\`${location} - ${preco} (${tipo})\`\`\``;
+      const imgUrl = i.fotos?.[0] ? getValidImage(i.fotos[0]) : '';
+      return `• ${location} - ${preco} (${tipo})${imgUrl ? `\n  Foto: ${imgUrl}` : ''}`;
     }).join('\n\n');
     
     const idsJoined = selectedPropertyIds.map(id => id.replace('imovel-', '')).join(',');
-    
-    // Create shared multi-link simulated address using query parameters for 100% compatibility
     const multiLink = `${window.location.origin}/?selecao=${idsJoined}`;
 
-    const textMessage = `💼 *Seleção de Imóveis para Você*
+    const textMessage = `💼 Seleção de Imóveis para Você
 
 Selecionei estes imóveis especiais que combinam com seu perfil:
 
 ${listItems}
 
-Toque abaixo para ver fotos e todos os detalhes:
+Toque abaixo para ver a seleção completa:
 👉 ${multiLink}`;
 
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(textMessage)}`, '_blank', 'noopener,noreferrer');
-    triggerToast('Compartilhando seleção múltipla via WhatsApp!');
+    triggerToast('Compartilhando seleção via WhatsApp!');
     setSelectedPropertyIds([]); // Clear selection after share
   };
 
@@ -1469,17 +1477,19 @@ Toque abaixo para ver fotos e todos os detalhes:
     return (
       <div className="bg-slate-50 min-h-screen pb-16 font-sans">
         {/* Brand logo bar */}
-        <div className="bg-white border-b border-slate-100 px-4 py-4 flex justify-between items-center shadow-xs">
-          <div className="flex items-center gap-1.5 text-[#003366] font-bold text-sm">
-            <HomeIcon size={18} />
-            <span>ImobiPortal</span>
+        <div className="bg-white border-b border-slate-100 px-4 py-3 flex justify-between items-center shadow-xs">
+          <div className="flex items-center gap-2 text-[#003366] font-bold text-sm">
+            <img
+              src={logoImg}
+              alt="ImobiShare Logo"
+              className="w-5 h-5 object-contain rounded-md"
+              referrerPolicy="no-referrer"
+            />
+            <span className="font-extrabold text-[#003366] tracking-tight text-base">ImobiShare</span>
           </div>
-          <button 
-            onClick={() => setPublicSelectionImoveis(null)}
-            className="text-xs text-slate-400 hover:text-slate-600 font-semibold"
-          >
-            Entrar no App
-          </button>
+          <div className="text-[10px] bg-emerald-50 text-emerald-800 font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">
+            Seleção
+          </div>
         </div>
 
         <div className="max-w-md mx-auto p-4 space-y-4">
@@ -2355,35 +2365,35 @@ Toque abaixo para ver fotos e todos os detalhes:
 
         </div>
 
-        {/* MULTIPLE SHARE ACTION FLOATING BAR - styled according to ConnectImobi header */}
+        {/* MULTIPLE SHARE ACTION FLOATING BAR */}
         <AnimatePresence>
           {selectedPropertyIds.length > 0 && !isAddingProperty && !selectedPropertyId && (
             <motion.div
               initial={{ y: 80, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 80, opacity: 0 }}
-              className="absolute bottom-18 left-4 right-4 bg-[#003366] text-white p-4 rounded-2xl shadow-xl flex items-center justify-between z-30"
+              className="absolute bottom-18 left-4 right-4 bg-[#003366] text-white px-3.5 py-2.5 rounded-2xl shadow-xl flex items-center justify-between z-30"
               id="multi-selection-floating-bar"
             >
-              <div className="flex flex-col">
-                <span className="text-xs font-black uppercase tracking-widest text-amber-400">{selectedPropertyIds.length} Selecionados</span>
-                <span className="text-[10px] text-slate-200">Prontos para envio</span>
-              </div>
-              
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2.5">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded-md">
+                  {selectedPropertyIds.length} {selectedPropertyIds.length === 1 ? 'imóvel selecionado' : 'imóveis selecionados'}
+                </span>
                 <button
                   onClick={() => setSelectedPropertyIds([])}
-                  className="p-1 text-slate-300 hover:text-white rounded-lg text-xs font-bold uppercase tracking-wider text-[10px]"
+                  className="text-slate-300 hover:text-white text-[9px] font-bold uppercase tracking-wider underline cursor-pointer"
                 >
                   Limpar
                 </button>
-                <button
-                  onClick={handleShareMultiple}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 transition-all shadow-md uppercase tracking-wider"
-                >
-                  <Share2 size={12} /> Compartilhar
-                </button>
               </div>
+              
+              <button
+                onClick={handleShareMultiple}
+                title="Compartilhar selecionados"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white p-2.5 rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer"
+              >
+                <Share2 size={16} />
+              </button>
             </motion.div>
           )}
         </AnimatePresence>

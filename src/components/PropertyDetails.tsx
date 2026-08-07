@@ -62,8 +62,9 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
   const publicLink = `${window.location.origin}/?imovel=${imovel.id.replace('imovel-', '')}`;
 
   const handleSendWhatsApp = () => {
-    // Build extremely clean and light WhatsApp text for maximum readability
-    const location = imovel.nomeEdificio?.trim() ? `${imovel.nomeEdificio} (${imovel.bairro})` : imovel.bairro;
+    // Build clean WhatsApp text with standard font and main image
+    const title = imovel.nomeEdificio?.trim() || imovel.titulo || 'Imóvel';
+    const location = imovel.bairro ? `${title} (${imovel.bairro})` : title;
     const tipoLabel = imovel.tipo === 'venda' ? 'Venda' : imovel.tipo === 'locação' ? 'Aluguel' : 'Venda & Aluguel';
     let preco = formatPrice(imovel.valor);
     if (imovel.tipo === 'locação') {
@@ -72,13 +73,13 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
       preco = `Venda: ${formatPrice(imovel.valor)} | Locação: ${formatPrice(imovel.valorLocacao || 0)}/mês`;
     }
     const caracteristicas = `${imovel.dormitorios ?? 0} dorms • ${imovel.banheiros ?? 0} BWC • ${imovel.vagas ?? 0} vagas • ${imovel.metragem ?? 0}m²`;
+    const mainImg = imovel.fotos?.[0] ? getValidImage(imovel.fotos[0]) : '';
 
-    const messageText = `🏠 \`\`\`${location}\`\`\`
-💰 \`\`\`${preco} (${tipoLabel})\`\`\`
-✨ \`\`\`${caracteristicas}\`\`\`
-
-Toque abaixo para ver fotos e todos os detalhes:
-👉 ${publicLink}`;
+    let messageText = `🏠 ${location}\n💰 ${preco} (${tipoLabel})\n✨ ${caracteristicas}`;
+    if (mainImg) {
+      messageText += `\n🖼️ Foto: ${mainImg}`;
+    }
+    messageText += `\n\nToque abaixo para ver fotos e todos os detalhes:\n👉 ${publicLink}`;
 
     // Generate WhatsApp URL
     const encodedMessage = encodeURIComponent(messageText);
