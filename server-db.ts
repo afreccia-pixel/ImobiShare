@@ -450,25 +450,39 @@ export class ServerDb {
         query += `
           WHERE LOWER(i.corretor_email) = $1
              OR (
-               (i.compartilhar = 'SIM' OR i.compartilhar = 'true' OR (i.compartilhar IS NULL AND (i.visibilidade = 'todos' OR i.visibilidade IS NULL)))
+               (i.compartilhar IS NULL OR i.compartilhar = 'SIM' OR i.compartilhar = 'true')
+               AND COALESCE(i.visibilidade, 'todos') != 'meus'
                AND (
-                 c.parceiros_emails IS NULL 
-                 OR c.parceiros_emails = '' 
-                 OR c.parceiros_emails = '[]'
-                 OR LOWER(c.parceiros_emails) LIKE '%' || $1 || '%'
-                 OR EXISTS (
-                   SELECT 1 FROM parcerias p 
-                   WHERE LOWER(p.corretor_email) = LOWER(i.corretor_email) 
-                     AND LOWER(p.corretor_parceiro_email) = $1
-                 )
+                 CASE 
+                   WHEN i.visibilidade = 'parceiros' THEN (
+                     LOWER(c.parceiros_emails) LIKE '%' || $1 || '%'
+                     OR EXISTS (
+                       SELECT 1 FROM parcerias p 
+                       WHERE LOWER(p.corretor_email) = LOWER(i.corretor_email) 
+                         AND LOWER(p.corretor_parceiro_email) = $1
+                     )
+                   )
+                   ELSE (
+                     (c.parceiros_emails IS NULL OR c.parceiros_emails = '' OR c.parceiros_emails = '[]')
+                     AND (c.restringir_parceiros IS NOT TRUE)
+                     OR LOWER(c.parceiros_emails) LIKE '%' || $1 || '%'
+                     OR EXISTS (
+                       SELECT 1 FROM parcerias p 
+                       WHERE LOWER(p.corretor_email) = LOWER(i.corretor_email) 
+                         AND LOWER(p.corretor_parceiro_email) = $1
+                     )
+                   )
+                 END
                )
              )
         `;
         params.push(cleanUserEmail);
       } else {
         query += ` 
-          WHERE (i.compartilhar = 'SIM' OR i.compartilhar = 'true' OR (i.compartilhar IS NULL AND (i.visibilidade = 'todos' OR i.visibilidade IS NULL)))
+          WHERE (i.compartilhar IS NULL OR i.compartilhar = 'SIM' OR i.compartilhar = 'true')
+            AND (i.visibilidade IS NULL OR i.visibilidade = 'todos')
             AND (c.parceiros_emails IS NULL OR c.parceiros_emails = '' OR c.parceiros_emails = '[]')
+            AND (c.restringir_parceiros IS NOT TRUE)
         `;
       }
 
@@ -487,17 +501,29 @@ export class ServerDb {
         const isShared = p.compartilhar === 'SIM' || p.compartilhar === true || p.compartilhar === undefined || (p.compartilhar as any) === 'true';
         if (!isShared) return false;
 
-        // Check property owner broker's partners list
+        const vis = p.visibilidade || 'todos';
+        if (vis === 'meus') return false;
+
         const ownerBroker = db.brokers.find(b => b.email && b.email.toLowerCase().trim() === propEmail);
         const ownerPartners = (ownerBroker?.parceirosEmails || []).map(e => e.toLowerCase().trim());
+        const explicitPartners = (db.partnerships || [])
+          .filter(pr => pr.corretorEmail.toLowerCase().trim() === propEmail)
+          .map(pr => pr.corretorParceiroEmail.toLowerCase().trim());
+        const allPartners = new Set([...ownerPartners, ...explicitPartners]);
 
-        // If owner has no partner brokers registered, shared with everyone
-        if (ownerPartners.length === 0) return true;
+        const isPartner = Boolean(cleanUserEmail && allPartners.has(cleanUserEmail));
 
-        // If owner has partner brokers registered, only visible if logged-in user is in owner's partner list
-        if (cleanUserEmail && ownerPartners.includes(cleanUserEmail)) return true;
+        // 1. Property explicitly set to 'parceiros'
+        if (vis === 'parceiros') {
+          return isPartner;
+        }
 
-        return false;
+        // 2. Property set to 'todos' but broker has partner restrictions / partner group
+        if (allPartners.size > 0 || ownerBroker?.restringirParceiros) {
+          return isPartner;
+        }
+
+        return true;
       });
 
       return filtered.map(p => {

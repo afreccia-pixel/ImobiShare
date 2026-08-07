@@ -38,6 +38,29 @@ const formatNumberWithSeparators = (val: number | '') => {
 };
 
 export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) {
+  const [touchStartPos, setTouchStartPos] = useState<{ x: number; y: number } | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartPos({
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+    });
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!touchStartPos) return;
+    const endX = e.changedTouches[0].clientX;
+    const endY = e.changedTouches[0].clientY;
+    const diffX = endX - touchStartPos.x; // positive = swipe right (left to right)
+    const diffY = Math.abs(endY - touchStartPos.y);
+
+    // Swipe left-to-right (> 65px and dominant horizontal gesture) -> Go back / cancel
+    if (diffX > 65 && diffX > diffY * 1.2) {
+      onCancel();
+    }
+    setTouchStartPos(null);
+  };
+
   // 1. Fotos
   const [fotos, setFotos] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -681,7 +704,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
   };
 
   return (
-    <div className="bg-slate-50 min-h-screen pb-16" id="property-form-container">
+    <div className="bg-slate-50 min-h-screen pb-16 touch-pan-y" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd} id="property-form-container">
       {/* Header */}
       <div className="bg-white border-b border-slate-100 px-4 py-3.5 flex items-center justify-between">
         <button onClick={onCancel} className="p-1 text-slate-500 hover:bg-slate-100 rounded-full transition-colors">

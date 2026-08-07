@@ -213,12 +213,15 @@ export default function App() {
     }
 
     if (imoveisRaw) {
-      const ids = imoveisRaw.split(',');
+      const ids = imoveisRaw.split(',').map(s => s.trim());
       const imoveis = DbService.getImoveisSync();
-      const foundList = imoveis.filter(i => 
-        ids.includes(i.id) || 
-        ids.includes(i.id.replace('imovel-', ''))
-      );
+      const foundList = imoveis.filter(i => {
+        const cleanId = i.id.replace('imovel-', '');
+        return ids.some(paramId => {
+          const cleanParam = paramId.replace('imovel-', '');
+          return i.id === paramId || cleanId === cleanParam || i.id.endsWith(cleanParam) || cleanParam.endsWith(cleanId);
+        });
+      });
       if (foundList.length > 0) return foundList;
     }
     return null;
@@ -360,6 +363,45 @@ export default function App() {
     }
   };
 
+  // Swipe to refresh Home screen logic
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [homeTouchStartPos, setHomeTouchStartPos] = useState<{ x: number; y: number } | null>(null);
+
+  const handleRefreshHome = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    
+    try {
+      await DbService.syncWithServer();
+      reloadData();
+    } catch (err) {
+      console.error('Erro ao atualizar imóveis:', err);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const handleHomeTouchStart = (e: React.TouchEvent) => {
+    setHomeTouchStartPos({
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+    });
+  };
+
+  const handleHomeTouchEnd = (e: React.TouchEvent) => {
+    if (!homeTouchStartPos) return;
+    const endX = e.changedTouches[0].clientX;
+    const endY = e.changedTouches[0].clientY;
+    const diffY = Math.abs(endY - homeTouchStartPos.y);
+    const diffX = Math.abs(endX - homeTouchStartPos.x);
+
+    // Vertical swipe up or down (> 60px) triggers home refresh
+    if (diffY > 60 && diffY > diffX * 1.2) {
+      handleRefreshHome();
+    }
+    setHomeTouchStartPos(null);
+  };
+
   const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine);
 
   useEffect(() => {
@@ -437,10 +479,13 @@ export default function App() {
 
     if (imoveisRaw) {
       const ids = imoveisRaw.split(',').map(id => id.trim());
-      const selectedList = allImoveis.filter(i => 
-        ids.includes(i.id) || 
-        ids.includes(i.id.replace('imovel-', ''))
-      );
+      const selectedList = allImoveis.filter(i => {
+        const cleanId = i.id.replace('imovel-', '');
+        return ids.some(paramId => {
+          const cleanParam = paramId.replace('imovel-', '');
+          return i.id === paramId || cleanId === cleanParam || i.id.endsWith(cleanParam) || cleanParam.endsWith(cleanId);
+        });
+      });
       if (selectedList.length > 0) {
         setPublicSelectionImoveis(selectedList);
       }
@@ -1229,20 +1274,27 @@ useEffect(() => {
         // If it belongs to someone else, check "Outros corretores" switch
         if (!filterOutrosCorretores) return false;
         // Also must be SHARED to be visible to others
-        const isShared = imovel.compartilhar !== false;
+        const isShared = imovel.compartilhar !== false && (imovel.compartilhar as any) !== 'NAO';
         if (!isShared) return false;
+
+        const vis = imovel.visibilidade || 'todos';
+        if (vis === 'meus') return false;
 
         // --- PARTNER GROUP EXCLUSIVITY RESTRICTION (O(1) Map Lookup) ---
         const owner = (imovel.corretorId && corretoresMap.get(imovel.corretorId)) ||
                       (imovel.corretorEmail && corretoresMap.get(imovel.corretorEmail.toLowerCase().trim()));
-        if (owner && owner.restringirParceiros) {
-          const partners = owner.parceirosEmails || [];
-          if (partners.length > 0) {
-            const hasAccess = partners.some(p => p.toLowerCase().trim() === activeEmail);
-            if (!hasAccess) {
-              return false;
-            }
-          }
+        
+        const partnerEmails = owner?.parceirosEmails || [];
+        const isPartner = Boolean(activeEmail && partnerEmails.some(p => p.toLowerCase().trim() === activeEmail));
+
+        // 1. Property explicitly set to 'parceiros'
+        if (vis === 'parceiros') {
+          if (!isPartner) return false;
+        }
+
+        // 2. Broker has partner group restriction
+        if (partnerEmails.length > 0 || owner?.restringirParceiros) {
+          if (!isPartner) return false;
         }
       }
 
@@ -1438,9 +1490,7 @@ useEffect(() => {
     const idsJoined = selectedPropertyIds.map(id => id.replace('imovel-', '')).join(',');
     const multiLink = `${window.location.origin}/?selecao=${idsJoined}`;
 
-    const textMessage = `💼 Seleção de Imóveis para Você
-
-Selecionei estes imóveis especiais que combinam com seu perfil:
+    const textMessage = `Selecionei estes imóveis especiais que combinam com seu perfil:
 
 ${listItems}
 
@@ -1931,8 +1981,13 @@ Toque abaixo para ver a seleção completa:
             /* CORE TABS ROUTING (HOME, MY PROPERTIES, PROFILE) */
             <>
               {activeTab === 'home' && (
-                <div className="space-y-4" id="home-tab-view">
-                  {/* Instagram-inspired Top Bar with Artistic Flair styles */}
+                <div 
+                  className="space-y-4 touch-pan-y min-h-screen" 
+                  onTouchStart={handleHomeTouchStart} 
+                  onTouchEnd={handleHomeTouchEnd} 
+                  id="home-tab-view"
+                >
+                  {/* Instagram-inspired Top Bar */}
                   <div className="px-5 pt-6 pb-4 bg-white flex justify-between items-center border-b border-gray-100">
                     <div className="flex items-center gap-2">
                       <img

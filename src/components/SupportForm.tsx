@@ -15,6 +15,28 @@ interface SupportFormProps {
 }
 
 export function SupportForm({ activeCorretor, onBack, triggerToast }: SupportFormProps) {
+  const [touchStartPos, setTouchStartPos] = useState<{ x: number; y: number } | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartPos({
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+    });
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!touchStartPos) return;
+    const endX = e.changedTouches[0].clientX;
+    const endY = e.changedTouches[0].clientY;
+    const diffX = endX - touchStartPos.x; // positive = swipe right (left to right)
+    const diffY = Math.abs(endY - touchStartPos.y);
+
+    if (diffX > 65 && diffX > diffY * 1.2 && onBack) {
+      onBack();
+    }
+    setTouchStartPos(null);
+  };
+
   const [nome, setNome] = useState(activeCorretor?.nome || '');
   const [email, setEmail] = useState(activeCorretor?.email || '');
   const [telefone, setTelefone] = useState(activeCorretor?.telefone || activeCorretor?.whatsapp || '');
@@ -67,7 +89,7 @@ export function SupportForm({ activeCorretor, onBack, triggerToast }: SupportFor
   };
 
   return (
-    <div className="bg-slate-50 min-h-full pb-10" id="support-container">
+    <div className="bg-slate-50 min-h-full pb-10 touch-pan-y" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd} id="support-container">
       {/* Top Header */}
       <div className="bg-white border-b border-slate-100 px-5 py-4 flex items-center justify-between shadow-xs">
         <div className="flex items-center gap-2">

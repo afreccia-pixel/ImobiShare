@@ -60,9 +60,13 @@ jobs:
           echo "🎨 Preparando imagem base do splash..."
           if [ -f "assets/splash.png" ]; then
             cp assets/splash.png /tmp/splash.png
+          elif [ -f "public/app_icon.png" ]; then
+            cp public/app_icon.png /tmp/splash.png
+          elif [ -f "public/icon-512.png" ]; then
+            cp public/icon-512.png /tmp/splash.png
           else
-            convert -size 1024x1024 xc:"#2196F3" \
-              -pointsize 120 -fill white -gravity center -annotate +0+0 "iMobi" \
+            convert -size 1024x1024 xc:"#003366" \
+              -pointsize 120 -fill white -gravity center -annotate +0+0 "ImobiShare" \
               /tmp/splash.png
           fi
 
