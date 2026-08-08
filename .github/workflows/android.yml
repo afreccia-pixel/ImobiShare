@@ -32,7 +32,28 @@ jobs:
 
       - name: Sync Capacitor Android
         run: npx cap sync android
+        
+      - name: Corrigir Gradle Wrapper
+        working-directory: android
+        run: |
+          echo "=== Verificando Gradle Wrapper ==="
 
+          GRADLE_VERSION=$(grep -oP '(?<=gradle-)[0-9]+\.[0-9]+(\.[0-9]+)?(?=-)' gradle/wrapper/gradle-wrapper.properties)
+
+          echo "Versão do Gradle: $GRADLE_VERSION"
+
+          curl -fL \
+            -o gradle/wrapper/gradle-wrapper.jar \
+            "https://raw.githubusercontent.com/gradle/gradle/v${GRADLE_VERSION}/gradle/wrapper/gradle-wrapper.jar"
+
+          echo "=== Verificando JAR ==="
+
+          file gradle/wrapper/gradle-wrapper.jar
+
+          jar tf gradle/wrapper/gradle-wrapper.jar > /dev/null
+
+          echo "Gradle Wrapper válido."
+          
       - name: Verificar projeto Android
         run: |
           echo "=== Android ==="
