@@ -43,3 +43,11 @@ jobs:
 
           echo "=== Gradlew ==="
           ls -la android/gradlew
+
+      - name: Dar permissão ao Gradle
+        working-directory: android
+        run: chmod +x gradlew
+
+      - name: Build APK Release
+        working-directory: android
+        run: ./gradlew assembleReleas     
