@@ -31,6 +31,8 @@ jobs:
 
           echo "NPM:"
           npm --version
+      - name: Build Web Application
+        run: npm run build
 
       - name: Instalar dependências
         run: npm install         
