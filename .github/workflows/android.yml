@@ -88,8 +88,8 @@ jobs:
       - name: Gerar ícones e splash
         run: |
           npx capacitor-assets generate
-
-            - name: Garantir splash principal
+          
+      - name: Garantir splash principal
         run: |
           echo "=== Garantindo drawable/splash.png ==="
 
