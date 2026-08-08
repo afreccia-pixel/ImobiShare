@@ -96,9 +96,9 @@ jobs:
           for density in "${!PORT_SIZES[@]}"; do
             mkdir -p "android/app/src/main/res/drawable-port-$density"
             mkdir -p "android/app/src/main/res/drawable-land-$density"
-            convert /tmp/splash.png -resize "${PORT_SIZES[$density]}" \
+            convert /tmp/splash.png -resize "${PORT_SIZES[$density]}!" \
               PNG32:"android/app/src/main/res/drawable-port-$density/splash.png"
-            convert /tmp/splash.png -resize "${LAND_SIZES[$density]}" \
+            convert /tmp/splash.png -resize "${LAND_SIZES[$density]}!" \
               PNG32:"android/app/src/main/res/drawable-land-$density/splash.png"
           done
 
