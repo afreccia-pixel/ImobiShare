@@ -32,7 +32,45 @@ jobs:
 
       - name: Sync Capacitor Android
         run: npx cap sync android
-        
+    
+      - name: Limpar ícones Android antigos
+        run: |
+          echo "🗑️ Removendo ícones antigos..."
+
+          find android/app/src/main/res -type f \
+            \( -name "ic_launcher.png" \
+            -o -name "ic_launcher_round.png" \
+            -o -name "ic_launcher_foreground.png" \) \
+            -delete
+
+          echo "Ícones antigos removidos."
+
+      - name: Instalar Capacitor Assets
+        run: |
+          npm install --save-dev @capacitor/assets
+
+      - name: Validar imagens de origem
+        run: |
+          echo "=== Icon ==="
+          file assets/icon.png
+
+          echo "=== Splash ==="
+          file assets/splash.png
+
+          if [ ! -f "assets/icon.png" ]; then
+            echo "❌ assets/icon.png não encontrado"
+            exit 1
+          fi
+
+          if [ ! -f "assets/splash.png" ]; then
+            echo "❌ assets/splash.png não encontrado"
+            exit 1
+          fi
+
+      - name: Gerar ícones e splash
+        run: |
+          npx capacitor-assets generate
+          
       - name: Corrigir Gradle Wrapper
         working-directory: android
         run: |
