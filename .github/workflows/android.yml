@@ -1,49 +1,47 @@
 name: Build Android App
 
 on:
-push:
-branches:
-- main
-workflow_dispatch:
+  workflow_dispatch:
 
 permissions:
-contents: read
+  contents: read
 
 jobs:
-build:
-name: Build Android
-runs-on: ubuntu-latest
+  build:
+    name: Build Android
+    runs-on: ubuntu-latest
+
 
 steps:
-  - name: Checkout
+    - name: Checkout
     uses: actions/checkout@v4
 
-  - name: Setup Java
+    - name: Setup Java
     uses: actions/setup-java@v5
     with:
       java-version: "21"
       distribution: "zulu"
 
-  - name: Setup Node
+    - name: Setup Node
     uses: actions/setup-node@v5
     with:
       node-version: "24"
 
-  - name: Instalar dependências
+    - name: Instalar dependências
     run: npm install
 
-  - name: Build Web Application
+    - name: Build Web Application
     run: npm run build
 
-  - name: Sync Capacitor Android
+    - name: Sync Capacitor Android
     run: npx cap sync android
 
-  - name: Verificar projeto Android
+    - name: Verificar projeto Android
     run: |
-      echo "=== Android project ==="
+      echo "Android project:"
       ls -la android
-      echo "=== Gradle Wrapper ==="
+      echo "Gradle Wrapper:"
       ls -la android/gradle/wrapper
-      echo "=== Gradlew ==="
+      echo "Gradlew:"
       ls -la android/gradlew
 
