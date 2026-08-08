@@ -21,19 +21,25 @@ jobs:
         with:
           node-version: "24"
 
-      - name: Verificar ambiente
-        run: |
-          echo "Java:"
-          java -version
-
-          echo "Node:"
-          node --version
-
-          echo "NPM:"
-          npm --version
-          
       - name: Instalar dependências
         run: npm install
-          
+
       - name: Build Web Application
         run: npm run build
+
+      - name: Verificar Capacitor
+        run: npx cap --version
+
+      - name: Sync Capacitor Android
+        run: npx cap sync android
+
+      - name: Verificar projeto Android
+        run: |
+          echo "=== Android ==="
+          ls -la android
+
+          echo "=== Gradle Wrapper ==="
+          ls -la android/gradle/wrapper
+
+          echo "=== Gradlew ==="
+          ls -la android/gradlew
