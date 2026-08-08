@@ -28,7 +28,6 @@ import { PropertyDetails } from './components/PropertyDetails';
 import { UserProfile } from './components/UserProfile';
 import { PublicView } from './components/PublicView';
 import { SupportForm } from './components/SupportForm';
-import { ConnectionTests } from './components/ConnectionTests';
 import { getValidImage, isValidImageString, handleImageError } from './utils/imageUtils';
 import {
   Home as HomeIcon,
@@ -55,13 +54,12 @@ import {
   Car,
   Maximize,
   LogOut,
-  Activity,
   Eye,
   WifiOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-type TabType = 'home' | 'my-properties' | 'profile' | 'support' | 'tests';
+type TabType = 'home' | 'my-properties' | 'profile' | 'support';
 
 export default function App() {
   // Authentication state
@@ -2463,12 +2461,6 @@ Toque abaixo para ver a seleção completa:
                   triggerToast={triggerToast}
                 />
               )}
-
-              {activeTab === 'tests' && (activeCorretor?.isAdmin || activeCorretor?.email?.toLowerCase().trim() === 'afreccia@gmail.com') && (
-                <div id="connection-tests-tab-view">
-                  <ConnectionTests />
-                </div>
-              )}
             </>
           )}
 
@@ -2583,17 +2575,6 @@ Toque abaixo para ver a seleção completa:
               <Building size={18} className={activeTab === 'my-properties' ? 'stroke-[2.5px]' : 'stroke-2'} />
               <span className="text-[8px] font-extrabold uppercase tracking-wider">Imóveis</span>
             </button>
-
-            {(activeCorretor?.isAdmin || activeCorretor?.email?.toLowerCase().trim() === 'afreccia@gmail.com') && (
-              <button
-                onClick={() => handleTabChange('tests')}
-                className={`flex flex-col items-center gap-1 p-1 ${activeTab === 'tests' ? 'text-[#003366]' : 'text-slate-400 hover:text-slate-600'}`}
-                id="tab-tests"
-              >
-                <Activity size={18} className={activeTab === 'tests' ? 'stroke-[2.5px]' : 'stroke-2'} />
-                <span className="text-[8px] font-extrabold uppercase tracking-wider">Testes</span>
-              </button>
-            )}
 
             <button
               onClick={() => handleTabChange('support')}

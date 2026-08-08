@@ -16,7 +16,7 @@ export interface Corretor {
   tipoAtuacao?: 'autonomo' | 'imobiliaria'; // Autônomo ou Imobiliária
   foto?: string;
   slugSite?: string; // Slug único para site próprio do corretor
-  isAdmin?: boolean; // Se é administrador com acesso à aba "Testes"
+  isAdmin?: boolean;
   password?: string;
   resetToken?: string;
   resetTokenExpires?: number;
