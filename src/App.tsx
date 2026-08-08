@@ -230,6 +230,46 @@ export default function App() {
   // Filters & Search State (Home Tab)
   const [searchWord, setSearchWord] = useState('');
   const [filterCidade, setFilterCidade] = useState(() => DbService.getActiveCorretor()?.cidade || 'Balneário Camboriú');
+
+  // Keep filterCidade aligned with active broker's registered city by default
+  useEffect(() => {
+    if (activeCorretor?.cidade?.trim()) {
+      setFilterCidade(activeCorretor.cidade.trim());
+    }
+  }, [activeCorretor?.cidade]);
+
+  // Dynamically compute list of unique cities from properties + active broker city
+  const availableCities = useMemo(() => {
+    const citiesSet = new Set<string>();
+    if (activeCorretor?.cidade?.trim()) {
+      citiesSet.add(activeCorretor.cidade.trim());
+    }
+    allImoveis.forEach((i) => {
+      if (i.cidade && i.cidade.trim()) {
+        citiesSet.add(i.cidade.trim());
+      }
+    });
+    if (citiesSet.size === 0) {
+      ['Balneário Camboriú', 'Itapema', 'Itajaí', 'Camboriú', 'Navegantes'].forEach(c => citiesSet.add(c));
+    }
+    return Array.from(citiesSet).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [allImoveis, activeCorretor?.cidade]);
+
+  const availableMyCities = useMemo(() => {
+    const citiesSet = new Set<string>();
+    if (activeCorretor?.cidade?.trim()) {
+      citiesSet.add(activeCorretor.cidade.trim());
+    }
+    allImoveis.filter(isMyProperty).forEach((i) => {
+      if (i.cidade && i.cidade.trim()) {
+        citiesSet.add(i.cidade.trim());
+      }
+    });
+    if (citiesSet.size === 0) {
+      availableCities.forEach(c => citiesSet.add(c));
+    }
+    return Array.from(citiesSet).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [allImoveis, isMyProperty, activeCorretor?.cidade, availableCities]);
   const [filterTipo, setFilterTipo] = useState<'comprar' | 'alugar' | 'todos'>('todos');
   const [filterTipoImovel, setFilterTipoImovel] = useState<string>('todos');
   const [filterStatusImovel, setFilterStatusImovel] = useState<string>('todos');
@@ -1207,9 +1247,13 @@ useEffect(() => {
         if (!matchesQuery) return false;
       }
 
-      // 2. City Filter
-      if (filterCidade && filterCidade !== 'Todas' && imovel.cidade !== filterCidade) {
-        return false;
+      // 2. City Filter (Robust normalized matching)
+      if (filterCidade && filterCidade !== 'Todas') {
+        const targetCity = filterCidade.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const imovelCity = (imovel.cidade || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        if (imovelCity !== targetCity && !imovelCity.includes(targetCity) && !targetCity.includes(imovelCity)) {
+          return false;
+        }
       }
 
       // 3. Neighborhood / Bairro filter
@@ -1392,7 +1436,11 @@ useEffect(() => {
     }
 
     if (filterMyCidade && filterMyCidade !== 'Todas') {
-      result = result.filter(i => i.cidade === filterMyCidade);
+      const targetCity = filterMyCidade.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      result = result.filter(i => {
+        const imovelCity = (i.cidade || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        return imovelCity === targetCity || imovelCity.includes(targetCity) || targetCity.includes(imovelCity);
+      });
     }
 
     if (filterMyBairro.trim()) {
@@ -2140,11 +2188,11 @@ Toque abaixo para ver a seleção completa:
                           onChange={(e) => setFilterCidade(e.target.value)}
                           className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-slate-50 focus:outline-hidden text-xs font-semibold text-slate-700"
                         >
-                          <option value="Balneário Camboriú">Balneário Camboriú</option>
-                          <option value="Itapema">Itapema</option>
-                          <option value="Itajaí">Itajaí</option>
-                          <option value="Camboriú">Camboriú</option>
-                          <option value="Navegantes">Navegantes</option>
+                          {availableCities.map((city) => (
+                            <option key={city} value={city}>
+                              {city}
+                            </option>
+                          ))}
                           <option value="Todas">Todas As Cidades</option>
                         </select>
                       </div>
@@ -2646,11 +2694,11 @@ Toque abaixo para ver a seleção completa:
                         onChange={(e) => filterModalTab === 'home' ? setFilterCidade(e.target.value) : setFilterMyCidade(e.target.value)}
                         className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 focus:outline-hidden focus:border-[#003366]"
                       >
-                        <option value="Balneário Camboriú">Balneário Camboriú</option>
-                        <option value="Itapema">Itapema</option>
-                        <option value="Itajaí">Itajaí</option>
-                        <option value="Camboriú">Camboriú</option>
-                        <option value="Navegantes">Navegantes</option>
+                        {(filterModalTab === 'home' ? availableCities : availableMyCities).map((city) => (
+                          <option key={city} value={city}>
+                            {city}
+                          </option>
+                        ))}
                         <option value="Todas">Todas As Cidades</option>
                       </select>
                     </div>
