@@ -58,16 +58,23 @@ jobs:
           find android/app/src/main/res/drawable-* -name "splash.png" -delete 2>/dev/null || true
 
           echo "🎨 Preparando imagem base do splash..."
+          SRC_IMG=""
           if [ -f "assets/splash.png" ]; then
-            cp assets/splash.png /tmp/splash.png
+            SRC_IMG="assets/splash.png"
+          elif [ -f "src/assets/images/app_icon_1785762115971.jpg" ]; then
+            SRC_IMG="src/assets/images/app_icon_1785762115971.jpg"
           elif [ -f "public/app_icon.png" ]; then
-            cp public/app_icon.png /tmp/splash.png
+            SRC_IMG="public/app_icon.png"
           elif [ -f "public/icon-512.png" ]; then
-            cp public/icon-512.png /tmp/splash.png
+            SRC_IMG="public/icon-512.png"
+          fi
+
+          if [ -n "$SRC_IMG" ]; then
+            convert "$SRC_IMG" -strip PNG32:/tmp/splash.png
           else
             convert -size 1024x1024 xc:"#003366" \
               -pointsize 120 -fill white -gravity center -annotate +0+0 "ImobiShare" \
-              /tmp/splash.png
+              PNG32:/tmp/splash.png
           fi
 
           declare -A PORT_SIZES=(
@@ -90,9 +97,9 @@ jobs:
             mkdir -p "android/app/src/main/res/drawable-port-$density"
             mkdir -p "android/app/src/main/res/drawable-land-$density"
             convert /tmp/splash.png -resize "${PORT_SIZES[$density]}" \
-              "android/app/src/main/res/drawable-port-$density/splash.png"
+              PNG32:"android/app/src/main/res/drawable-port-$density/splash.png"
             convert /tmp/splash.png -resize "${LAND_SIZES[$density]}" \
-              "android/app/src/main/res/drawable-land-$density/splash.png"
+              PNG32:"android/app/src/main/res/drawable-land-$density/splash.png"
           done
 
           mkdir -p android/app/src/main/res/drawable
@@ -103,12 +110,21 @@ jobs:
           find android/app/src/main/res/mipmap-* -name "ic_launcher*.png" -delete 2>/dev/null || true
           mkdir -p android/app/src/main/res/mipmap-{mdpi,hdpi,xhdpi,xxhdpi,xxxhdpi}
 
+          SRC_ICON=""
           if [ -f "assets/icon.png" ]; then
-            cp assets/icon.png /tmp/ic_launcher.png
+            SRC_ICON="assets/icon.png"
+          elif [ -f "src/assets/images/app_icon_1785762115971.jpg" ]; then
+            SRC_ICON="src/assets/images/app_icon_1785762115971.jpg"
+          elif [ -f "public/icon-512.png" ]; then
+            SRC_ICON="public/icon-512.png"
+          fi
+
+          if [ -n "$SRC_ICON" ]; then
+            convert "$SRC_ICON" -strip PNG32:/tmp/ic_launcher.png
           else
-            convert -size 512x512 xc:"#2196F3" \
-              -pointsize 80 -fill white -gravity center -annotate +0+0 "iMobi" \
-              /tmp/ic_launcher.png
+            convert -size 512x512 xc:"#003366" \
+              -pointsize 80 -fill white -gravity center -annotate +0+0 "ImobiShare" \
+              PNG32:/tmp/ic_launcher.png
           fi
 
           declare -A SIZES=(
@@ -125,7 +141,7 @@ jobs:
 
             for icon_name in ic_launcher ic_launcher_round ic_launcher_foreground; do
               convert /tmp/ic_launcher.png -resize "${size}x${size}" \
-                "$dir/$icon_name.png"
+                PNG32:"$dir/$icon_name.png"
             done
           done
 
