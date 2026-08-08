@@ -70,11 +70,11 @@ jobs:
           fi
 
           if [ -n "$SRC_IMG" ]; then
-            convert "$SRC_IMG" -strip PNG32:/tmp/splash.png
+            convert "$SRC_IMG" -strip -alpha off PNG24:/tmp/splash.png
           else
             convert -size 1024x1024 xc:"#003366" \
               -pointsize 120 -fill white -gravity center -annotate +0+0 "ImobiShare" \
-              PNG32:/tmp/splash.png
+              -alpha off PNG24:/tmp/splash.png
           fi
 
           declare -A PORT_SIZES=(
@@ -97,9 +97,9 @@ jobs:
             mkdir -p "android/app/src/main/res/drawable-port-$density"
             mkdir -p "android/app/src/main/res/drawable-land-$density"
             convert /tmp/splash.png -resize "${PORT_SIZES[$density]}!" \
-              PNG32:"android/app/src/main/res/drawable-port-$density/splash.png"
+              -alpha off PNG24:"android/app/src/main/res/drawable-port-$density/splash.png"
             convert /tmp/splash.png -resize "${LAND_SIZES[$density]}!" \
-              PNG32:"android/app/src/main/res/drawable-land-$density/splash.png"
+              -alpha off PNG24:"android/app/src/main/res/drawable-land-$density/splash.png"
           done
 
           mkdir -p android/app/src/main/res/drawable
