@@ -805,6 +805,10 @@ const startServer = async () => {
   const PORT = 3000;
   await ServerDb.init();
 
+  // Serve static folders (public, assets) directly
+  app.use(express.static(path.join(process.cwd(), 'public')));
+  app.use('/assets', express.static(path.join(process.cwd(), 'assets')));
+
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
