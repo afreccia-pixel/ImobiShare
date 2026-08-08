@@ -32,6 +32,24 @@ jobs:
 
       - name: Sync Capacitor Android
         run: npx cap sync android
+
+      - name: Limpar recursos antigos de splash e ícones
+        run: |
+          echo "🗑️ Limpando recursos Android antigos..."
+
+          find android/app/src/main/res -type f \
+            \( -name "splash.png" \
+            -o -name "ic_launcher.png" \
+            -o -name "ic_launcher_round.png" \
+            -o -name "ic_launcher_foreground.png" \) \
+            -delete
+
+          find android/app/src/main/res -type d \
+            \( -name "drawable-port-*" \
+            -o -name "drawable-land-*" \) \
+            -empty -delete
+
+          echo "✅ Recursos antigos removidos."
     
       - name: Limpar ícones Android antigos
         run: |
