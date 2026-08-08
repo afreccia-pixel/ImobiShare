@@ -44,11 +44,23 @@ export function getPropertyCode(imovel: Imovel, allImoveis?: Imovel[]): string {
   if (
     imovel.codigo &&
     imovel.codigo.trim() &&
-    imovel.codigo.length <= 10 &&
-    !imovel.codigo.toLowerCase().startsWith('imovel_') &&
+    imovel.codigo.length <= 12 &&
+    !imovel.codigo.toLowerCase().startsWith('imovel-') &&
+    !imovel.codigo.toLowerCase().startsWith('prop-') &&
     !/^\d{10,}$/.test(imovel.codigo)
   ) {
     return imovel.codigo.toUpperCase().trim();
+  }
+
+  if (
+    imovel.id &&
+    imovel.id.trim() &&
+    imovel.id.length <= 12 &&
+    !imovel.id.toLowerCase().startsWith('imovel-') &&
+    !imovel.id.toLowerCase().startsWith('prop-') &&
+    !/^\d{10,}$/.test(imovel.id)
+  ) {
+    return imovel.id.toUpperCase().trim();
   }
 
   // Identify broker name
@@ -82,6 +94,5 @@ export function getPropertyCode(imovel: Imovel, allImoveis?: Imovel[]): string {
   const index = brokerImoveis.findIndex((item) => item.id === imovel.id);
   const seqNumber = index >= 0 ? index + 1 : 1;
 
-  const seqStr = String(seqNumber).padStart(2, '0');
-  return `${prefix}${seqStr}`;
+  return `${prefix}${seqNumber}`;
 }

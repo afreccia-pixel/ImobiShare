@@ -186,7 +186,9 @@ export default function App() {
     if (imovelId) {
       const imoveis = DbService.getImoveisSync();
       const found = imoveis.find(i => 
-        i.id === imovelId || 
+        i.id.toLowerCase() === imovelId.toLowerCase() || 
+        (i.codigo && i.codigo.toLowerCase() === imovelId.toLowerCase()) ||
+        getPropertyCode(i).toLowerCase() === imovelId.toLowerCase() ||
         i.id === `imovel-${imovelId}` || 
         i.id.replace('imovel-', '') === imovelId
       );
@@ -493,7 +495,9 @@ export default function App() {
 
     if (imovelId) {
       const found = allImoveis.find(i => 
-        i.id === imovelId || 
+        i.id.toLowerCase() === imovelId.toLowerCase() || 
+        (i.codigo && i.codigo.toLowerCase() === imovelId.toLowerCase()) ||
+        getPropertyCode(i).toLowerCase() === imovelId.toLowerCase() ||
         i.id === `imovel-${imovelId}` || 
         i.id.replace('imovel-', '') === imovelId
       );

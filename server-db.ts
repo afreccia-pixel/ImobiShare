@@ -162,6 +162,64 @@ export class ServerDb {
     `);
 
     console.log('✅ Tabelas do PostgreSQL verificadas.');
+
+    // Run migration for legacy IDs (prop-*, imovel-*) to short codes (e.g., FRE1, FRE2)
+    try {
+      if (this.isPostgres && this.pool) {
+        const legacyRes = await this.pool.query(
+          "SELECT id, corretor_email, corretor_nome FROM imoveis WHERE id LIKE 'prop-%' OR id LIKE 'imovel-%' ORDER BY data_cadastro ASC"
+        );
+        if (legacyRes.rows.length > 0) {
+          console.log(`🔄 Migrando ${legacyRes.rows.length} imóveis para códigos curtos sequenciais...`);
+          for (const r of legacyRes.rows) {
+            const newId = await this.generateNextPropertyId(r.corretor_email, r.corretor_nome);
+            await this.pool.query("UPDATE imoveis SET id = $1, codigo = $1 WHERE id = $2", [newId, r.id]);
+            await this.pool.query("UPDATE favoritos SET imovel_id = $1 WHERE imovel_id = $2", [newId, r.id]).catch(() => {});
+          }
+          console.log('✅ Migração para códigos curtos concluída.');
+        }
+      }
+    } catch (migErr) {
+      console.warn('Aviso durante migração de códigos curtos:', migErr);
+    }
+  }
+
+  static async generateNextPropertyId(corretorEmail: string, corretorNome?: string): Promise<string> {
+    const cleanEmail = (corretorEmail || '').toLowerCase().trim();
+    let broker = await this.getCorretorByEmail(cleanEmail);
+    const name = corretorNome || broker?.nome || cleanEmail.split('@')[0] || 'Corretor';
+    
+    // Extract 3 uppercase letters from last name (e.g. Freccia -> FRE)
+    const normalized = name.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z\s]/g, '');
+    const words = normalized.split(/\s+/).filter(Boolean);
+    const lastName = words.length > 1 ? words[words.length - 1] : (words[0] || 'IMO');
+    let clean = lastName.toUpperCase().replace(/[^A-Z]/g, '');
+    if (clean.length < 3) clean = clean.padEnd(3, 'X');
+    const prefix = clean.substring(0, 3);
+
+    let allPropsWithPrefix: { id: string; codigo?: string }[] = [];
+    if (this.isPostgres && this.pool) {
+      const res = await this.pool.query('SELECT id, codigo FROM imoveis WHERE UPPER(id) LIKE $1 OR UPPER(codigo) LIKE $1', [`${prefix}%`]);
+      allPropsWithPrefix = res.rows;
+    } else {
+      const db = await this.readJson();
+      allPropsWithPrefix = db.properties.filter(p => (p.id || '').toUpperCase().startsWith(prefix) || (p.codigo || '').toUpperCase().startsWith(prefix));
+    }
+
+    let maxSeq = 0;
+    for (const p of allPropsWithPrefix) {
+      const valToCheck = (p.codigo || p.id || '').toUpperCase();
+      if (valToCheck.startsWith(prefix)) {
+        const numPart = valToCheck.substring(prefix.length);
+        const parsed = parseInt(numPart, 10);
+        if (!isNaN(parsed) && parsed > maxSeq) {
+          maxSeq = parsed;
+        }
+      }
+    }
+
+    const nextSeq = maxSeq + 1;
+    return `${prefix}${nextSeq}`;
   }
 
   private static async seedInitialAdminIfNeeded(): Promise<void> {
@@ -587,8 +645,24 @@ export class ServerDb {
     const websiteDb: 'SIM' | 'NAO' = imovel.website === 'NAO' ? 'NAO' : 'SIM';
     const compartilharDb: 'SIM' | 'NAO' = (imovel.compartilhar === 'NAO' || imovel.compartilhar === false) ? 'NAO' : 'SIM';
 
+    let propertyId = imovel.id;
+    if (!propertyId || propertyId.startsWith('prop-') || propertyId.startsWith('imovel-')) {
+      if (propertyId && (propertyId.startsWith('prop-') || propertyId.startsWith('imovel-'))) {
+        const existing = await this.getImovelById(propertyId);
+        if (!existing) {
+          propertyId = await this.generateNextPropertyId(cleanEmail, broker.nome);
+        }
+      } else {
+        propertyId = await this.generateNextPropertyId(cleanEmail, broker.nome);
+      }
+    }
+
+    const shortCode = imovel.codigo || propertyId;
+
     const finalImovel: Imovel = {
       ...imovel,
+      id: propertyId,
+      codigo: shortCode,
       corretorEmail: cleanEmail,
       corretorNome: broker.nome || cleanEmail.split('@')[0],
       corretorId: broker.id,

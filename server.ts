@@ -525,7 +525,7 @@ app.post(['/api/properties', '/api/imoveis'], verifyAuthToken, async (req: Authe
     const email = req.userEmail!;
     const propertyData = {
       ...req.body,
-      id: req.body.id || `prop-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`
+      id: (req.body.id && !req.body.id.startsWith('prop-') && !req.body.id.startsWith('imovel-')) ? req.body.id : undefined
     };
 
     const saved = await ServerDb.saveImovel(propertyData, email);
