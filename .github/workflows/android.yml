@@ -88,6 +88,29 @@ jobs:
       - name: Gerar ícones e splash
         run: |
           npx capacitor-assets generate
+
+            - name: Garantir splash principal
+        run: |
+          echo "=== Garantindo drawable/splash.png ==="
+
+          mkdir -p android/app/src/main/res/drawable
+
+          if [ ! -f "assets/splash.png" ]; then
+            echo "❌ assets/splash.png não encontrado."
+            exit 1
+          fi
+
+          cp assets/splash.png android/app/src/main/res/drawable/splash.png
+
+          echo "=== Validando splash ==="
+          file android/app/src/main/res/drawable/splash.png
+
+          if [ ! -s "android/app/src/main/res/drawable/splash.png" ]; then
+            echo "❌ splash.png está vazio."
+            exit 1
+          fi
+
+          echo "✅ drawable/splash.png criado."
           
       - name: Corrigir Gradle Wrapper
         working-directory: android
