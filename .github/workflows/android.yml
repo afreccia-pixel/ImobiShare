@@ -38,7 +38,7 @@ jobs:
           node-version: 24
 
       - name: "[4/16] Instalar dependências Node"
-        run: npm install
+        run: npm ci
 
       - name: "[5/16] Build da Aplicação Web"
         run: npm run build
@@ -57,19 +57,36 @@ jobs:
           SRC_IMG=""
 
           if [ -f "assets/splash.png" ]; then
-            echo "🔍 Verificando assets/splash.png..."
-            file assets/splash.png
+            echo "🔍 Verificando fonte principal: assets/splash.png..."
+            file assets/splash.png || true
             if ! identify assets/splash.png; then
               echo "❌ ERRO: assets/splash.png não é um PNG válido."
               exit 1
             fi
             SRC_IMG="assets/splash.png"
-          elif [ -f "src/assets/images/app_icon_1785762115971.jpg" ]; then
-            SRC_IMG="src/assets/images/app_icon_1785762115971.jpg"
-          elif [ -f "public/app_icon.png" ]; then
-            SRC_IMG="public/app_icon.png"
-          elif [ -f "public/icon-512.png" ]; then
-            SRC_IMG="public/icon-512.png"
+            echo "Usando splash principal: assets/splash.png"
+          else
+            echo "⚠️ assets/splash.png não foi encontrado. Procurando fallback válido..."
+            CANDIDATES=(
+              "public/splash.png"
+              "src/assets/images/splash.png"
+              "public/icon-512.png"
+              "public/app_icon.png"
+              "src/assets/images/app_icon_1785762115971.jpg"
+              "src/assets/images/imobishare_logo_1784239677798.jpg"
+            )
+            for cand in "${CANDIDATES[@]}"; do
+              if [ -f "$cand" ]; then
+                echo "🔍 Verificando candidato: $cand"
+                file "$cand" || true
+                if identify "$cand" >/dev/null 2>&1; then
+                  SRC_IMG="$cand"
+                  break
+                else
+                  echo "⚠️ Candidato $cand não é uma imagem válida. Ignorando..."
+                fi
+              fi
+            done
           fi
 
           if [ -n "$SRC_IMG" ]; then
@@ -77,7 +94,7 @@ jobs:
             echo "Gerando splash a partir de: $SRC_IMG"
             convert "$SRC_IMG" -strip -alpha off PNG24:/tmp/splash.png
           else
-            echo "Nenhuma imagem de origem encontrada. Gerando splash padrão ImobiShare."
+            echo "Nenhuma imagem de origem válida encontrada. Gerando splash padrão ImobiShare."
             convert -size 1024x1024 xc:"#003366" \
               -pointsize 120 -fill white -gravity center -annotate +0+0 "ImobiShare" \
               -alpha off PNG24:/tmp/splash.png
@@ -120,17 +137,35 @@ jobs:
           SRC_ICON=""
 
           if [ -f "assets/icon.png" ]; then
-            echo "🔍 Verificando assets/icon.png..."
-            file assets/icon.png
+            echo "🔍 Verificando fonte principal: assets/icon.png..."
+            file assets/icon.png || true
             if ! identify assets/icon.png; then
               echo "❌ ERRO: assets/icon.png não é um PNG válido."
               exit 1
             fi
             SRC_ICON="assets/icon.png"
-          elif [ -f "src/assets/images/app_icon_1785762115971.jpg" ]; then
-            SRC_ICON="src/assets/images/app_icon_1785762115971.jpg"
-          elif [ -f "public/icon-512.png" ]; then
-            SRC_ICON="public/icon-512.png"
+            echo "Usando ícone principal: assets/icon.png"
+          else
+            echo "⚠️ assets/icon.png não foi encontrado. Procurando fallback válido..."
+            CANDIDATES=(
+              "public/icon.png"
+              "public/icon-512.png"
+              "public/app_icon.png"
+              "src/assets/images/app_icon_1785762115971.jpg"
+              "src/assets/images/imobishare_logo_1784239677798.jpg"
+            )
+            for cand in "${CANDIDATES[@]}"; do
+              if [ -f "$cand" ]; then
+                echo "🔍 Verificando candidato: $cand"
+                file "$cand" || true
+                if identify "$cand" >/dev/null 2>&1; then
+                  SRC_ICON="$cand"
+                  break
+                else
+                  echo "⚠️ Candidato $cand não é uma imagem válida. Ignorando..."
+                fi
+              fi
+            done
           fi
 
           if [ -n "$SRC_ICON" ]; then
