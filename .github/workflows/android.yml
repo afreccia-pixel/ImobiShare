@@ -5,5 +5,29 @@ on: workflow_dispatch
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - run: echo "TESTE OK"
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          java-version: "21"
+          distribution: "zulu"
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+
+      - name: Verificar ambiente
+        run: |
+          echo "Java:"
+          java -version
+
+          echo "Node:"
+          node --version
+
+          echo "NPM:"
+          npm --version
