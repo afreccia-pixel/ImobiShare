@@ -1,38 +1,9 @@
-name: Build Android App
+name: Test Android Workflow
 
-on:
-push:
-branches:
-- main
-workflow_dispatch:
-
-permissions:
-contents: read
+on: workflow_dispatch
 
 jobs:
-build:
-name: Build Android
+test:
 runs-on: ubuntu-latest
-
-```
 steps:
-  - name: Checkout
-    uses: actions/checkout@v4
-
-  - name: Setup Java
-    uses: actions/setup-java@v5
-    with:
-      java-version: "21"
-      distribution: "zulu"
-
-  - name: Setup Node
-    uses: actions/setup-node@v5
-    with:
-      node-version: "24"
-
-  - name: Install dependencies
-    run: npm install
-
-  - name: Build Web
-    run: npm run build
-```
+- run: echo "YAML OK"
