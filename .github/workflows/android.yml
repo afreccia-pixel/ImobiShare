@@ -85,32 +85,55 @@ jobs:
             exit 1
           fi
 
+      - name: Instalar ImageMagick
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y imagemagick
+
       - name: Gerar ícones e splash
         run: |
-          npx capacitor-assets generate
+          npx capacitor-assets generate --android
           
-      - name: Garantir splash principal
+      - name: Preparar splash Android
         run: |
-          echo "=== Garantindo drawable/splash.png ==="
+          echo "=== Preparando splash Android ==="
+
+          if [ ! -f "assets/splash.png" ]; then
+            echo "ERRO: assets/splash.png não encontrado."
+            exit 1
+          fi
+
+          echo "=== Arquivo original ==="
+          file assets/splash.png
+
+          echo "=== Informações da imagem original ==="
+          identify assets/splash.png
+
+          echo "=== Criando PNG Android compatível ==="
 
           mkdir -p android/app/src/main/res/drawable
 
-          if [ ! -f "assets/splash.png" ]; then
-            echo "❌ assets/splash.png não encontrado."
-            exit 1
-          fi
+          convert assets/splash.png \
+            -resize "1024x1024^" \
+            -gravity center \
+            -extent 1024x1024 \
+            -background none \
+            -alpha on \
+            -strip \
+            PNG32:android/app/src/main/res/drawable/splash.png
 
-          cp assets/splash.png android/app/src/main/res/drawable/splash.png
+          echo "=== Verificando splash gerado ==="
 
-          echo "=== Validando splash ==="
           file android/app/src/main/res/drawable/splash.png
 
-          if [ ! -s "android/app/src/main/res/drawable/splash.png" ]; then
-            echo "❌ splash.png está vazio."
-            exit 1
-          fi
+          identify android/app/src/main/res/drawable/splash.png
 
-          echo "✅ drawable/splash.png criado."
+          echo "=== Teste de leitura ==="
+
+          convert android/app/src/main/res/drawable/splash.png \
+            -format "%m %wx%h %[channels]\n" info:
+
+          echo "Splash Android preparado com sucesso."
           
       - name: Corrigir Gradle Wrapper
         working-directory: android
