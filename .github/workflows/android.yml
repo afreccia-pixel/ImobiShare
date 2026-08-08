@@ -38,7 +38,7 @@ jobs:
           node-version: 24
 
       - name: "[4/16] Instalar dependências Node"
-        run: npm ci
+        run: npm install
 
       - name: "[5/16] Build da Aplicação Web"
         run: npm run build
