@@ -226,7 +226,7 @@ return {
    * 
    * CHECKLIST DE AUTENTICAÇÃO NO FIREBASE CONSOLE:
    * 1. Domínios Autorizados (Authorized Domains):
-   *    - Adicione o domínio da web app (ex: imobishare.onrender.com ou seu domínio de hospedagem).
+   *    - Adicione o domínio da web app (ex: www.imobishare.app.br ou seu domínio de hospedagem).
    *    - Para Android com Capacitor, garanta que o schema de redirect / localhost / domínios do app estejam autorizados.
    * 2. Android SHA-1 e SHA-256:
    *    - Cadastre a chave SHA-1 do keystore (ex: 43:88:6C:EB:F4:D4:81:67:5E:21:9D:CD:26:C0:D5:5D:16:BD:CB:B4) no app Android no Firebase Console.

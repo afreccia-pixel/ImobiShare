@@ -3,7 +3,7 @@
  * Works seamlessly across both Web (relative paths) and Capacitor Native (absolute server URL).
  */
 
-const DEFAULT_SERVER_URL = 'https://imobishare.onrender.com';
+const DEFAULT_SERVER_URL = 'https://www.imobishare.app.br';
 
 export function getApiUrl(path: string): string {
   const cleanPath = path.startsWith('/') ? path : `/${path}`;

@@ -561,7 +561,7 @@ export class ServerDb {
         const isShared = p.compartilhar === 'SIM' || p.compartilhar === true || p.compartilhar === undefined || (p.compartilhar as any) === 'true';
         if (!isShared) return false;
 
-        const vis = p.visibilidade || 'todos';
+        const vis = (p.visibilidade || 'todos') as string;
         if (vis === 'meus') return false;
 
         const ownerBroker = db.brokers.find(b => b.email && b.email.toLowerCase().trim() === propEmail);

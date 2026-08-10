@@ -771,23 +771,33 @@ const handleAuthenticatedUser = async (user: FirebaseUser | null) => {
 // Listener para mudanças de autenticação
 useEffect(() => {
   let unsubscribe = () => {};
+  const safetyTimer = setTimeout(() => {
+    setIsInitialLoading(false);
+  }, 1500);
+
   try {
     unsubscribe = onAuthStateChanged(
       auth, 
       (user) => {
+        clearTimeout(safetyTimer);
         handleAuthenticatedUser(user);
       },
       (error) => {
+        clearTimeout(safetyTimer);
         console.warn('Firebase Auth listener encountered error (using server/local auth fallback):', error);
         setIsInitialLoading(false);
       }
     );
   } catch (err) {
+    clearTimeout(safetyTimer);
     console.warn('Failed to bind onAuthStateChanged listener:', err);
     setIsInitialLoading(false);
   }
 
-  return () => unsubscribe();
+  return () => {
+    clearTimeout(safetyTimer);
+    unsubscribe();
+  };
 }, []);
 
   // Email & Password Login
@@ -1323,7 +1333,7 @@ useEffect(() => {
         const isShared = imovel.compartilhar !== false && (imovel.compartilhar as any) !== 'NAO';
         if (!isShared) return false;
 
-        const vis = imovel.visibilidade || 'todos';
+        const vis = (imovel.visibilidade as string) || 'todos';
         if (vis === 'meus') return false;
 
         // --- PARTNER GROUP EXCLUSIVITY RESTRICTION (O(1) Map Lookup) ---
