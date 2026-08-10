@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import logoImg from '../assets/images/app_icon_1785762115971.jpg';
+import logoImg from '../assets/images/logo.png';
 import { Imovel, Corretor } from '../types';
 import { MOCK_CORRETORES } from '../data';
 import { DbService } from '../services/db';
@@ -90,7 +90,7 @@ export function PublicView({ imovel, activeCorretor, onExit }: PublicViewProps) 
             alt="ImobiShare Logo"
             className="w-5 h-5 object-contain rounded-md"
             referrerPolicy="no-referrer"
-            onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = '/app_icon.png'; }}
+            onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = '/icone_imobishare.png'; }}
           />
           <span className="font-extrabold text-[#003366] tracking-tight text-base">ImobiShare</span>
         </div>

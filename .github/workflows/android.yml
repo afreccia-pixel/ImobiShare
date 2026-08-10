@@ -78,13 +78,10 @@ jobs:
 
           # Copiar para web assets
           mkdir -p public assets
+          cp "$MASTER_IMG" public/icone_imobishare.png
           cp "$MASTER_IMG" assets/icon.png
           cp "$MASTER_IMG" assets/splash.png
           cp "$MASTER_IMG" public/icon.png
-          cp "$MASTER_IMG" public/icon-512.png
-          cp "$MASTER_IMG" public/icon-192.png
-          cp "$MASTER_IMG" public/app_icon.png
-          cp "$MASTER_IMG" public/apple-touch-icon.png
           cp "$MASTER_IMG" public/favicon.png
           cp "$MASTER_IMG" public/splash.png
 
