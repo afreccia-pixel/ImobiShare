@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import logoImg from '../assets/images/logo.png';
+import LOGO_IMAGE from '../assets/logo';
 import { Imovel, Corretor } from '../types';
 import { MOCK_CORRETORES } from '../data';
 import { DbService } from '../services/db';
@@ -86,11 +86,11 @@ export function PublicView({ imovel, activeCorretor, onExit }: PublicViewProps) 
       <div className="bg-white border-b border-slate-100 px-4 py-3 flex justify-between items-center shadow-xs">
         <div className="flex items-center gap-2 text-[#003366] font-bold text-sm">
           <img
-            src={logoImg}
+            src={LOGO_IMAGE}
             alt="ImobiShare Logo"
             className="w-5 h-5 object-contain rounded-md"
             referrerPolicy="no-referrer"
-            onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = '/icone_imobishare.png'; }}
+            onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = LOGO_IMAGE; }}
           />
           <span className="font-extrabold text-[#003366] tracking-tight text-base">ImobiShare</span>
         </div>

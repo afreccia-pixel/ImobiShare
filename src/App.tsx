@@ -4,7 +4,8 @@
  */
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import logoImg from './assets/images/logo.png';
+import LOGO_IMAGE from './assets/logo';
+const logoImg = LOGO_IMAGE;
 import { Imovel, Corretor } from './types';
 import { DbService, isProfileComplete } from './services/db';
 import { 
@@ -1596,7 +1597,7 @@ Toque abaixo para ver a seleção completa:
               alt="ImobiShare Logo"
               className="w-5 h-5 object-contain rounded-md"
               referrerPolicy="no-referrer"
-              onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = '/icone_imobishare.png'; }}
+              onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = LOGO_IMAGE; }}
             />
             <span className="font-extrabold text-[#003366] tracking-tight text-base">ImobiShare</span>
           </div>
@@ -1710,7 +1711,7 @@ Toque abaixo para ver a seleção completa:
               alt="ImobiShare Logo"
               className="w-20 h-20 sm:w-24 sm:h-24 object-contain rounded-3xl border-2 border-white/20 shadow-2xl animate-pulse"
               referrerPolicy="no-referrer"
-              onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = '/icone_imobishare.png'; }}
+              onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = LOGO_IMAGE; }}
             />
             <div className="absolute -inset-3 rounded-3xl bg-indigo-500/20 blur-xl -z-10 animate-pulse" />
           </div>
@@ -1736,7 +1737,7 @@ Toque abaixo para ver a seleção completa:
               alt="ImobiShare Logo"
               className="mx-auto w-14 h-14 object-contain rounded-2xl border border-slate-100 shadow-xs"
               referrerPolicy="no-referrer"
-              onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = '/icone_imobishare.png'; }}
+              onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = LOGO_IMAGE; }}
             />
             <h1 className="text-xl font-black text-[#003366] tracking-tight uppercase animate-pulse">ImobiShare</h1>
             <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">
@@ -2058,7 +2059,7 @@ Toque abaixo para ver a seleção completa:
                         alt="ImobiShare Logo"
                         className="w-7 h-7 object-contain rounded-lg border border-slate-100/50 shadow-xs"
                         referrerPolicy="no-referrer"
-                        onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = '/icone_imobishare.png'; }}
+                        onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = LOGO_IMAGE; }}
                       />
                       <h1 className="text-[#003366] text-base font-black tracking-tight uppercase leading-none">ImobiShare</h1>
                     </div>
