@@ -46,166 +46,56 @@ jobs:
       - name: "[6/16] Sincronizar Capacitor Android"
         run: npx cap sync android
 
-      - name: "[7/16] Instalar ImageMagick"
+      - name: "[7/14] Sincronizar Ícones e Splash Screens (icone_imobishare.png)"
         run: |
-          sudo apt-get update
-          sudo apt-get install -y imagemagick
+          echo "🎨 Sincronizando ícones e splash screens a partir de icone_imobishare.png..."
+          MASTER_IMG="icone_imobishare.png"
 
-      - name: "[8/16] Validar e Gerar Splash Screens"
-        run: |
-          echo "🎨 Preparando imagem base do splash..."
-          SRC_IMG=""
-
-          if [ -f "assets/splash.png" ]; then
-            echo "🔍 Verificando fonte principal: assets/splash.png..."
-            file assets/splash.png || true
-            if ! identify assets/splash.png; then
-              echo "❌ ERRO: assets/splash.png não é um PNG válido."
-              exit 1
-            fi
-            SRC_IMG="assets/splash.png"
-            echo "Usando splash principal: assets/splash.png"
-          else
-            echo "⚠️ assets/splash.png não foi encontrado. Procurando fallback válido..."
-            CANDIDATES=(
-              "public/splash.png"
-              "src/assets/images/splash.png"
-              "public/icon-512.png"
-              "public/app_icon.png"
-              "src/assets/images/app_icon_1785762115971.jpg"
-              "src/assets/images/imobishare_logo_1784239677798.jpg"
-            )
-            for cand in "${CANDIDATES[@]}"; do
-              if [ -f "$cand" ]; then
-                echo "🔍 Verificando candidato: $cand"
-                file "$cand" || true
-                if identify "$cand" >/dev/null 2>&1; then
-                  SRC_IMG="$cand"
-                  break
-                else
-                  echo "⚠️ Candidato $cand não é uma imagem válida. Ignorando..."
-                fi
-              fi
-            done
+          if [ ! -f "$MASTER_IMG" ]; then
+            echo "❌ ERRO: Arquivo $MASTER_IMG não foi encontrado na raiz do projeto!"
+            exit 1
           fi
 
-          if [ -n "$SRC_IMG" ]; then
-            echo "Imagem selecionada para splash: $SRC_IMG"
-            echo "Gerando splash a partir de: $SRC_IMG"
-            convert "$SRC_IMG" -strip -alpha off PNG24:/tmp/splash.png
-          else
-            echo "Nenhuma imagem de origem válida encontrada. Gerando splash padrão ImobiShare."
-            convert -size 1024x1024 xc:"#003366" \
-              -pointsize 120 -fill white -gravity center -annotate +0+0 "ImobiShare" \
-              -alpha off PNG24:/tmp/splash.png
-          fi
+          # Copiar para splash screens no Android res
+          mkdir -p android/app/src/main/res/drawable
+          cp "$MASTER_IMG" android/app/src/main/res/drawable/splash.png
 
-          echo "🗑️ Deletando splash antigos..."
-          find android/app/src/main/res/drawable-* -name "splash.png" -delete 2>/dev/null || true
-
-          declare -A PORT_SIZES=(
-            [mdpi]="320x480"
-            [hdpi]="480x800"
-            [xhdpi]="800x1280"
-            [xxhdpi]="1080x1920"
-            [xxxhdpi]="1440x2560"
-          )
-
-          declare -A LAND_SIZES=(
-            [mdpi]="480x320"
-            [hdpi]="800x480"
-            [xhdpi]="1280x800"
-            [xxhdpi]="1920x1080"
-            [xxxhdpi]="2560x1440"
-          )
-
-          for density in "${!PORT_SIZES[@]}"; do
+          for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
             mkdir -p "android/app/src/main/res/drawable-port-$density"
             mkdir -p "android/app/src/main/res/drawable-land-$density"
-            convert /tmp/splash.png -resize "${PORT_SIZES[$density]}!" \
-              -alpha off PNG24:"android/app/src/main/res/drawable-port-$density/splash.png"
-            convert /tmp/splash.png -resize "${LAND_SIZES[$density]}!" \
-              -alpha off PNG24:"android/app/src/main/res/drawable-land-$density/splash.png"
+            cp "$MASTER_IMG" "android/app/src/main/res/drawable-port-$density/splash.png"
+            cp "$MASTER_IMG" "android/app/src/main/res/drawable-land-$density/splash.png"
           done
 
-          mkdir -p android/app/src/main/res/drawable
-          cp /tmp/splash.png android/app/src/main/res/drawable/splash.png
-
-      - name: "[9/16] Validar e Gerar Ícones do App"
-        run: |
-          echo "🎨 Preparando imagem base do ícone..."
-          SRC_ICON=""
-
-          if [ -f "assets/icon.png" ]; then
-            echo "🔍 Verificando fonte principal: assets/icon.png..."
-            file assets/icon.png || true
-            if ! identify assets/icon.png; then
-              echo "❌ ERRO: assets/icon.png não é um PNG válido."
-              exit 1
-            fi
-            SRC_ICON="assets/icon.png"
-            echo "Usando ícone principal: assets/icon.png"
-          else
-            echo "⚠️ assets/icon.png não foi encontrado. Procurando fallback válido..."
-            CANDIDATES=(
-              "public/icon.png"
-              "public/icon-512.png"
-              "public/app_icon.png"
-              "src/assets/images/app_icon_1785762115971.jpg"
-              "src/assets/images/imobishare_logo_1784239677798.jpg"
-            )
-            for cand in "${CANDIDATES[@]}"; do
-              if [ -f "$cand" ]; then
-                echo "🔍 Verificando candidato: $cand"
-                file "$cand" || true
-                if identify "$cand" >/dev/null 2>&1; then
-                  SRC_ICON="$cand"
-                  break
-                else
-                  echo "⚠️ Candidato $cand não é uma imagem válida. Ignorando..."
-                fi
-              fi
-            done
-          fi
-
-          if [ -n "$SRC_ICON" ]; then
-            echo "Imagem selecionada para ícone: $SRC_ICON"
-            echo "Gerando ícone a partir de: $SRC_ICON"
-            convert "$SRC_ICON" -strip PNG32:/tmp/ic_launcher.png
-          else
-            echo "Nenhuma imagem de origem encontrada. Gerando ícone padrão ImobiShare."
-            convert -size 512x512 xc:"#003366" \
-              -pointsize 80 -fill white -gravity center -annotate +0+0 "ImobiShare" \
-              PNG32:/tmp/ic_launcher.png
-          fi
-
-          find android/app/src/main/res/mipmap-* -name "ic_launcher*.png" -delete 2>/dev/null || true
-          mkdir -p android/app/src/main/res/mipmap-{mdpi,hdpi,xhdpi,xxhdpi,xxxhdpi}
-
-          declare -A SIZES=(
-            [mdpi]=48
-            [hdpi]=72
-            [xhdpi]=96
-            [xxhdpi]=144
-            [xxxhdpi]=192
-          )
-
-          for density in "${!SIZES[@]}"; do
-            size=${SIZES[$density]}
+          # Copiar para ícones no Android res
+          for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
             dir="android/app/src/main/res/mipmap-$density"
-
+            mkdir -p "$dir"
             for icon_name in ic_launcher ic_launcher_round ic_launcher_foreground; do
-              convert /tmp/ic_launcher.png -resize "${size}x${size}" \
-                PNG32:"$dir/$icon_name.png"
+              cp "$MASTER_IMG" "$dir/$icon_name.png"
             done
           done
 
-      - name: "[10/16] Configurar Gradle"
+          # Copiar para web assets
+          mkdir -p public assets
+          cp "$MASTER_IMG" assets/icon.png
+          cp "$MASTER_IMG" assets/splash.png
+          cp "$MASTER_IMG" public/icon.png
+          cp "$MASTER_IMG" public/icon-512.png
+          cp "$MASTER_IMG" public/icon-192.png
+          cp "$MASTER_IMG" public/app_icon.png
+          cp "$MASTER_IMG" public/apple-touch-icon.png
+          cp "$MASTER_IMG" public/favicon.png
+          cp "$MASTER_IMG" public/splash.png
+
+          echo "✅ Ícones e splash sincronizados com sucesso a partir de $MASTER_IMG!"
+
+      - name: "[8/14] Configurar Gradle"
         uses: gradle/actions/setup-gradle@v4
         with:
           validate-wrappers: false
 
-      - name: "[11/16] Corrigir Gradle Wrapper"
+      - name: "[9/14] Corrigir Gradle Wrapper"
         working-directory: android
         run: |
           GRADLE_VERSION=$(grep -oP '(?<=gradle-)[0-9]+\.[0-9]+(\.[0-9]+)?(?=-)' gradle/wrapper/gradle-wrapper.properties)
@@ -213,20 +103,20 @@ jobs:
             "https://raw.githubusercontent.com/gradle/gradle/v${GRADLE_VERSION}/gradle/wrapper/gradle-wrapper.jar"
           file gradle/wrapper/gradle-wrapper.jar
 
-      - name: "[12/16] Instalar Android SDK 36 e Build Tools 36"
+      - name: "[10/14] Instalar Android SDK 36 e Build Tools 36"
         run: |
           echo "y" | sdkmanager --install "platforms;android-36" "build-tools;36.0.0" || \
           echo "y" | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" "build-tools;36.0.0"
 
-      - name: "[13/16] Permissão de execução ao gradlew"
+      - name: "[11/14] Permissão de execução ao gradlew"
         working-directory: android
         run: chmod +x gradlew
 
-      - name: "[14/16] Build do APK de release"
+      - name: "[12/14] Build do APK de release"
         working-directory: android
         run: ./gradlew assembleRelease
 
-      - name: "[15/16] Assinar APK de release"
+      - name: "[13/14] Assinar APK de release"
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -259,7 +149,7 @@ jobs:
                android/app/build/outputs/apk/release/imobishare-release.apk
           fi
 
-      - name: "[16/16] Publicar APK Release (Artifact)"
+      - name: "[14/14] Publicar APK Release (Artifact)"
         uses: actions/upload-artifact@v4
         with:
           name: imobishare-release
