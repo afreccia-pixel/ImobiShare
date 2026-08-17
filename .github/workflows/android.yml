@@ -23,17 +23,17 @@ jobs:
 
     steps:
       - name: "[1/16] Checkout do código"
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: "[2/16] Setup Java JDK 21"
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           java-version: "21"
           distribution: zulu
           cache: gradle
 
       - name: "[3/16] Configurar Node.js"
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v4
         with:
           node-version: 24
 
@@ -46,9 +46,9 @@ jobs:
       - name: "[6/16] Sincronizar Capacitor Android"
         run: npx cap sync android
 
-      - name: "[7/14] Sincronizar Ícones e Splash Screens (icone_imobishare.png)"
+      - name: "[7/14] Sincronizar Ícones e Splash Screens Redimensionados (Otimização de Tamanho)"
         run: |
-          echo "🎨 Sincronizando ícones e splash screens a partir de icone_imobishare.png..."
+          echo "🎨 Sincronizando e otimizando ícones e splash screens a partir de icone_imobishare.png..."
           MASTER_IMG="icone_imobishare.png"
 
           if [ ! -f "$MASTER_IMG" ]; then
@@ -56,36 +56,50 @@ jobs:
             exit 1
           fi
 
-          # Copiar para splash screens no Android res
+          # Redimensionar splash screen conforme cada densidade específica para economizar megabytes
           mkdir -p android/app/src/main/res/drawable
-          cp "$MASTER_IMG" android/app/src/main/res/drawable/splash.png
+          convert "$MASTER_IMG" -resize 480x800 PNG32:android/app/src/main/res/drawable/splash.png
 
-          for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
-            mkdir -p "android/app/src/main/res/drawable-port-$density"
-            mkdir -p "android/app/src/main/res/drawable-land-$density"
-            cp "$MASTER_IMG" "android/app/src/main/res/drawable-port-$density/splash.png"
-            cp "$MASTER_IMG" "android/app/src/main/res/drawable-land-$density/splash.png"
-          done
+          # Densidades e resoluções para splash portrait e landscape
+          # mdpi: 320x480, hdpi: 480x800, xhdpi: 720x1280, xxhdpi: 960x1600, xxxhdpi: 1280x1920
+          convert "$MASTER_IMG" -resize 320x480 PNG32:android/app/src/main/res/drawable-port-mdpi/splash.png || cp "$MASTER_IMG" android/app/src/main/res/drawable-port-mdpi/splash.png
+          convert "$MASTER_IMG" -resize 480x320 PNG32:android/app/src/main/res/drawable-land-mdpi/splash.png || cp "$MASTER_IMG" android/app/src/main/res/drawable-land-mdpi/splash.png
 
-          # Copiar para ícones no Android res
+          convert "$MASTER_IMG" -resize 480x800 PNG32:android/app/src/main/res/drawable-port-hdpi/splash.png || cp "$MASTER_IMG" android/app/src/main/res/drawable-port-hdpi/splash.png
+          convert "$MASTER_IMG" -resize 800x480 PNG32:android/app/src/main/res/drawable-land-hdpi/splash.png || cp "$MASTER_IMG" android/app/src/main/res/drawable-land-hdpi/splash.png
+
+          convert "$MASTER_IMG" -resize 720x1280 PNG32:android/app/src/main/res/drawable-port-xhdpi/splash.png || cp "$MASTER_IMG" android/app/src/main/res/drawable-port-xhdpi/splash.png
+          convert "$MASTER_IMG" -resize 1280x720 PNG32:android/app/src/main/res/drawable-land-xhdpi/splash.png || cp "$MASTER_IMG" android/app/src/main/res/drawable-land-xhdpi/splash.png
+
+          convert "$MASTER_IMG" -resize 960x1600 PNG32:android/app/src/main/res/drawable-port-xxhdpi/splash.png || cp "$MASTER_IMG" android/app/src/main/res/drawable-port-xxhdpi/splash.png
+          convert "$MASTER_IMG" -resize 1600x960 PNG32:android/app/src/main/res/drawable-land-xxhdpi/splash.png || cp "$MASTER_IMG" android/app/src/main/res/drawable-land-xxhdpi/splash.png
+
+          convert "$MASTER_IMG" -resize 1080x1920 PNG32:android/app/src/main/res/drawable-port-xxxhdpi/splash.png || cp "$MASTER_IMG" android/app/src/main/res/drawable-port-xxxhdpi/splash.png
+          convert "$MASTER_IMG" -resize 1920x1080 PNG32:android/app/src/main/res/drawable-land-xxxhdpi/splash.png || cp "$MASTER_IMG" android/app/src/main/res/drawable-land-xxxhdpi/splash.png
+
+          # Redimensionar ícones conforme resoluções de mipmap
+          # mdpi: 48px, hdpi: 72px, xhdpi: 96px, xxhdpi: 144px, xxxhdpi: 192px
+          declare -A icon_sizes=( ["mdpi"]="48x48" ["hdpi"]="72x72" ["xhdpi"]="96x96" ["xxhdpi"]="144x144" ["xxxhdpi"]="192x192" )
+
           for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
             dir="android/app/src/main/res/mipmap-$density"
             mkdir -p "$dir"
+            size="${icon_sizes[$density]}"
             for icon_name in ic_launcher ic_launcher_round ic_launcher_foreground; do
-              cp "$MASTER_IMG" "$dir/$icon_name.png"
+              convert "$MASTER_IMG" -resize "$size" "PNG32:$dir/$icon_name.png"
             done
           done
 
-          # Copiar para web assets
+          # Otimizar cópias na web
           mkdir -p public assets
-          cp "$MASTER_IMG" public/icone_imobishare.png
-          cp "$MASTER_IMG" assets/icon.png
-          cp "$MASTER_IMG" assets/splash.png
-          cp "$MASTER_IMG" public/icon.png
-          cp "$MASTER_IMG" public/favicon.png
-          cp "$MASTER_IMG" public/splash.png
+          convert "$MASTER_IMG" -resize 512x512 PNG32:public/icone_imobishare.png
+          convert "$MASTER_IMG" -resize 512x512 PNG32:assets/icon.png
+          convert "$MASTER_IMG" -resize 512x512 PNG32:assets/splash.png
+          convert "$MASTER_IMG" -resize 512x512 PNG32:public/icon.png
+          convert "$MASTER_IMG" -resize 192x192 PNG32:public/favicon.png
+          convert "$MASTER_IMG" -resize 512x512 PNG32:public/splash.png
 
-          echo "✅ Ícones e splash sincronizados com sucesso a partir de $MASTER_IMG!"
+          echo "✅ Ícones e splash otimizados com sucesso!"
 
       - name: "[8/14] Configurar Gradle"
         uses: gradle/actions/setup-gradle@v4
@@ -109,11 +123,11 @@ jobs:
         working-directory: android
         run: chmod +x gradlew
 
-      - name: "[12/14] Build do APK de release"
+      - name: "[12/15] Build do APK e AAB de release"
         working-directory: android
-        run: ./gradlew assembleRelease
+        run: ./gradlew assembleRelease bundleRelease
 
-      - name: "[13/14] Assinar APK de release"
+      - name: "[13/15] Assinar APK e AAB de release"
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -121,34 +135,63 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           if [ "$HAS_SIGNING" = "true" ]; then
-            echo "🔑 Chave de assinatura configurada. Assinando APK de release..."
+            echo "🔑 Chave de assinatura configurada. Assinando APK e AAB de release..."
             echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/imobishare.keystore"
 
-            "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 \
-              android/app/build/outputs/apk/release/app-release-unsigned.apk \
-              "$RUNNER_TEMP/app-release-aligned.apk"
+            # 1. Alinhar e assinar APK
+            APK_UNSIGNED=$(find android/app/build/outputs/apk/release/ -name "*unsigned.apk" | head -n 1)
+            if [ -f "$APK_UNSIGNED" ]; then
+              "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 \
+                "$APK_UNSIGNED" \
+                "$RUNNER_TEMP/app-release-aligned.apk"
 
-            "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
-              --ks "$RUNNER_TEMP/imobishare.keystore" \
-              --ks-key-alias "$ANDROID_KEY_ALIAS" \
-              --ks-pass "pass:$ANDROID_KEYSTORE_PASSWORD" \
-              --key-pass "pass:$ANDROID_KEY_PASSWORD" \
-              --out android/app/build/outputs/apk/release/imobishare-release.apk \
-              "$RUNNER_TEMP/app-release-aligned.apk"
+              "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
+                --ks "$RUNNER_TEMP/imobishare.keystore" \
+                --ks-key-alias "$ANDROID_KEY_ALIAS" \
+                --ks-pass "pass:$ANDROID_KEYSTORE_PASSWORD" \
+                --key-pass "pass:$ANDROID_KEY_PASSWORD" \
+                --out android/app/build/outputs/apk/release/imobishare-release.apk \
+                "$RUNNER_TEMP/app-release-aligned.apk"
 
-            "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose \
-              android/app/build/outputs/apk/release/imobishare-release.apk
-            echo "✅ APK assinado e verificado com sucesso!"
+              "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose \
+                android/app/build/outputs/apk/release/imobishare-release.apk
+              echo "✅ APK assinado com sucesso!"
+            fi
+
+            # 2. Assinar AAB (Android App Bundle para Google Play Store)
+            AAB_FILE=$(find android/app/build/outputs/bundle/release/ -name "*.aab" | head -n 1)
+            if [ -f "$AAB_FILE" ]; then
+              jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
+                -keystore "$RUNNER_TEMP/imobishare.keystore" \
+                -storepass "$ANDROID_KEYSTORE_PASSWORD" \
+                -keypass "$ANDROID_KEY_PASSWORD" \
+                "$AAB_FILE" "$ANDROID_KEY_ALIAS"
+              cp "$AAB_FILE" android/app/build/outputs/bundle/release/imobishare-release.aab
+              echo "✅ AAB assinado com sucesso!"
+            fi
           else
             echo "⚠️ Chave de assinatura não configurada (secrets.ANDROID_KEYSTORE_BASE64 ausente)."
-            echo "O APK gerado não será assinado e será disponibilizado como imobishare-release.apk."
-            cp android/app/build/outputs/apk/release/app-release-unsigned.apk \
-               android/app/build/outputs/apk/release/imobishare-release.apk
+            echo "Os binários gerados serão disponibilizados no formato unsigned."
+            APK_SRC=$(find android/app/build/outputs/apk/release/ -name "*.apk" | head -n 1)
+            if [ -f "$APK_SRC" ]; then
+              cp "$APK_SRC" android/app/build/outputs/apk/release/imobishare-release.apk
+            fi
+            AAB_SRC=$(find android/app/build/outputs/bundle/release/ -name "*.aab" | head -n 1)
+            if [ -f "$AAB_SRC" ]; then
+              cp "$AAB_SRC" android/app/build/outputs/bundle/release/imobishare-release.aab
+            fi
           fi
 
-      - name: "[14/14] Publicar APK Release (Artifact)"
+      - name: "[14/15] Publicar APK Release (Artifact)"
         uses: actions/upload-artifact@v4
         with:
-          name: imobishare-release
+          name: imobishare-apk
           path: android/app/build/outputs/apk/release/imobishare-release.apk
           if-no-files-found: error
+
+      - name: "[15/15] Publicar AAB Release (Google Play Bundle)"
+        uses: actions/upload-artifact@v4
+        with:
+          name: imobishare-aab
+          path: android/app/build/outputs/bundle/release/imobishare-release.aab
+          if-no-files-found: warn
