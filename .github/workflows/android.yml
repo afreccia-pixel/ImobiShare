@@ -46,9 +46,9 @@ jobs:
       - name: "[6/16] Sincronizar Capacitor Android"
         run: npx cap sync android
 
-      - name: "[7/14] Sincronizar Ícones e Splash Screens Redimensionados (Otimização de Tamanho)"
+      - name: "[7/14] Sincronizar Ícones e Splash Screens (icone_imobishare.png)"
         run: |
-          echo "🎨 Sincronizando e otimizando ícones e splash screens a partir de icone_imobishare.png..."
+          echo "📋 Sincronizando ícones e splash screens a partir de icone_imobishare.png..."
           MASTER_IMG="icone_imobishare.png"
 
           if [ ! -f "$MASTER_IMG" ]; then
@@ -56,50 +56,36 @@ jobs:
             exit 1
           fi
 
-          # Redimensionar splash screen conforme cada densidade específica para economizar megabytes
+          # Copiar para splash screens no Android res
           mkdir -p android/app/src/main/res/drawable
-          convert "$MASTER_IMG" -resize 480x800 PNG32:android/app/src/main/res/drawable/splash.png
+          cp "$MASTER_IMG" android/app/src/main/res/drawable/splash.png
 
-          # Densidades e resoluções para splash portrait e landscape
-          # mdpi: 320x480, hdpi: 480x800, xhdpi: 720x1280, xxhdpi: 960x1600, xxxhdpi: 1280x1920
-          convert "$MASTER_IMG" -resize 320x480 PNG32:android/app/src/main/res/drawable-port-mdpi/splash.png || cp "$MASTER_IMG" android/app/src/main/res/drawable-port-mdpi/splash.png
-          convert "$MASTER_IMG" -resize 480x320 PNG32:android/app/src/main/res/drawable-land-mdpi/splash.png || cp "$MASTER_IMG" android/app/src/main/res/drawable-land-mdpi/splash.png
+          for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            mkdir -p "android/app/src/main/res/drawable-port-$density"
+            mkdir -p "android/app/src/main/res/drawable-land-$density"
+            cp "$MASTER_IMG" "android/app/src/main/res/drawable-port-$density/splash.png"
+            cp "$MASTER_IMG" "android/app/src/main/res/drawable-land-$density/splash.png"
+          done
 
-          convert "$MASTER_IMG" -resize 480x800 PNG32:android/app/src/main/res/drawable-port-hdpi/splash.png || cp "$MASTER_IMG" android/app/src/main/res/drawable-port-hdpi/splash.png
-          convert "$MASTER_IMG" -resize 800x480 PNG32:android/app/src/main/res/drawable-land-hdpi/splash.png || cp "$MASTER_IMG" android/app/src/main/res/drawable-land-hdpi/splash.png
-
-          convert "$MASTER_IMG" -resize 720x1280 PNG32:android/app/src/main/res/drawable-port-xhdpi/splash.png || cp "$MASTER_IMG" android/app/src/main/res/drawable-port-xhdpi/splash.png
-          convert "$MASTER_IMG" -resize 1280x720 PNG32:android/app/src/main/res/drawable-land-xhdpi/splash.png || cp "$MASTER_IMG" android/app/src/main/res/drawable-land-xhdpi/splash.png
-
-          convert "$MASTER_IMG" -resize 960x1600 PNG32:android/app/src/main/res/drawable-port-xxhdpi/splash.png || cp "$MASTER_IMG" android/app/src/main/res/drawable-port-xxhdpi/splash.png
-          convert "$MASTER_IMG" -resize 1600x960 PNG32:android/app/src/main/res/drawable-land-xxhdpi/splash.png || cp "$MASTER_IMG" android/app/src/main/res/drawable-land-xxhdpi/splash.png
-
-          convert "$MASTER_IMG" -resize 1080x1920 PNG32:android/app/src/main/res/drawable-port-xxxhdpi/splash.png || cp "$MASTER_IMG" android/app/src/main/res/drawable-port-xxxhdpi/splash.png
-          convert "$MASTER_IMG" -resize 1920x1080 PNG32:android/app/src/main/res/drawable-land-xxxhdpi/splash.png || cp "$MASTER_IMG" android/app/src/main/res/drawable-land-xxxhdpi/splash.png
-
-          # Redimensionar ícones conforme resoluções de mipmap
-          # mdpi: 48px, hdpi: 72px, xhdpi: 96px, xxhdpi: 144px, xxxhdpi: 192px
-          declare -A icon_sizes=( ["mdpi"]="48x48" ["hdpi"]="72x72" ["xhdpi"]="96x96" ["xxhdpi"]="144x144" ["xxxhdpi"]="192x192" )
-
+          # Copiar para ícones mipmap no Android res
           for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
             dir="android/app/src/main/res/mipmap-$density"
             mkdir -p "$dir"
-            size="${icon_sizes[$density]}"
             for icon_name in ic_launcher ic_launcher_round ic_launcher_foreground; do
-              convert "$MASTER_IMG" -resize "$size" "PNG32:$dir/$icon_name.png"
+              cp "$MASTER_IMG" "$dir/$icon_name.png"
             done
           done
 
-          # Otimizar cópias na web
+          # Copiar para web assets
           mkdir -p public assets
-          convert "$MASTER_IMG" -resize 512x512 PNG32:public/icone_imobishare.png
-          convert "$MASTER_IMG" -resize 512x512 PNG32:assets/icon.png
-          convert "$MASTER_IMG" -resize 512x512 PNG32:assets/splash.png
-          convert "$MASTER_IMG" -resize 512x512 PNG32:public/icon.png
-          convert "$MASTER_IMG" -resize 192x192 PNG32:public/favicon.png
-          convert "$MASTER_IMG" -resize 512x512 PNG32:public/splash.png
+          cp "$MASTER_IMG" public/icone_imobishare.png
+          cp "$MASTER_IMG" public/icon.png
+          cp "$MASTER_IMG" public/splash.png
+          cp "$MASTER_IMG" public/favicon.png
+          cp "$MASTER_IMG" assets/icon.png
+          cp "$MASTER_IMG" assets/splash.png
 
-          echo "✅ Ícones e splash otimizados com sucesso!"
+          echo "✅ Ícones e splash screens copiados com sucesso a partir de $MASTER_IMG!"
 
       - name: "[8/14] Configurar Gradle"
         uses: gradle/actions/setup-gradle@v4
