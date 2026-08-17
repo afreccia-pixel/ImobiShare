@@ -14,3 +14,8 @@
 -dontwarn com.google.android.gms.**
 -dontwarn androidx.**
 
+# Suppress warnings for optional Facebook SDK classes referenced by capacitor-firebase-authentication
+-dontwarn com.facebook.**
+-dontwarn com.facebook.login.**
+-dontwarn com.facebook.login.widget.**
+
