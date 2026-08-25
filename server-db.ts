@@ -167,7 +167,11 @@ export class ServerDb {
     try {
       if (this.isPostgres && this.pool) {
         const legacyRes = await this.pool.query(
-          "SELECT id, corretor_email, corretor_nome FROM imoveis WHERE id LIKE 'prop-%' OR id LIKE 'imovel-%' ORDER BY data_cadastro ASC"
+          `SELECT i.id, i.corretor_email, c.nome AS corretor_nome 
+           FROM imoveis i 
+           LEFT JOIN corretores c ON LOWER(i.corretor_email) = LOWER(c.email) 
+           WHERE i.id LIKE 'prop-%' OR i.id LIKE 'imovel-%' 
+           ORDER BY i.data_cadastro ASC`
         );
         if (legacyRes.rows.length > 0) {
           console.log(`🔄 Migrando ${legacyRes.rows.length} imóveis para códigos curtos sequenciais...`);

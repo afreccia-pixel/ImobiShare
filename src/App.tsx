@@ -1239,6 +1239,8 @@ useEffect(() => {
         const rawId = (imovel.id || '').toLowerCase();
         const title = (imovel.titulo || '').toLowerCase();
         const desc = (imovel.descricao || '').toLowerCase();
+        const endereco = (imovel.endereco || imovel.localizacao || '').toLowerCase();
+        const cep = (imovel.cep || '').toLowerCase();
         const bairro = (imovel.bairro || '').toLowerCase();
         const cidade = (imovel.cidade || '').toLowerCase();
         const building = (imovel.nomeEdificio || '').toLowerCase();
@@ -1251,6 +1253,8 @@ useEffect(() => {
           rawId.includes(query) ||
           title.includes(query) ||
           desc.includes(query) ||
+          endereco.includes(query) ||
+          cep.includes(query) ||
           bairro.includes(query) ||
           cidade.includes(query) ||
           building.includes(query) ||
@@ -1431,6 +1435,7 @@ useEffect(() => {
       result = result.filter((imovel) => {
         const title = (imovel.nomeEdificio || imovel.titulo || '').toLowerCase();
         const neighborhood = (imovel.bairro || '').toLowerCase();
+        const address = (imovel.endereco || imovel.localizacao || '').toLowerCase();
         const code = getPropertyCode(imovel, allImoveis).toLowerCase();
         const rawCode = (imovel.codigo || '').toLowerCase();
         const rawId = (imovel.id || '').toLowerCase();
@@ -1439,6 +1444,7 @@ useEffect(() => {
         return (
           title.includes(term) ||
           neighborhood.includes(term) ||
+          address.includes(term) ||
           code.includes(term) ||
           rawCode.includes(term) ||
           rawId.includes(term) ||
@@ -1644,25 +1650,40 @@ Toque abaixo para ver a seleção completa:
                     </h3>
                     <div className="flex items-center text-slate-400 text-[10px] mt-0.5 font-medium truncate">
                       <MapPin size={10} className="mr-0.5 flex-shrink-0 text-slate-400" />
-                      <span className="truncate">{imovel.bairro}, {imovel.cidade}</span>
+                      <span className="truncate">{imovel.endereco ? `${imovel.endereco} · ` : ''}{imovel.bairro}, {imovel.cidade}</span>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-slate-600 text-[9px] mt-1 bg-slate-50 py-0.5 px-2 rounded-lg border border-slate-100/60 w-fit font-bold">
-                      <span className="flex items-center gap-0.5">
-                        <Bed size={10} className="text-slate-400 flex-shrink-0" />
-                        <span>{imovel.dormitorios ?? 0} {imovel.dormitorios === 1 ? 'dorm' : 'dorms'}</span>
-                      </span>
-                      <span className="text-slate-300">•</span>
-                      <span className="flex items-center gap-0.5">
-                        <Car size={10} className="text-slate-400 flex-shrink-0" />
-                        <span>{imovel.vagas ?? 0} {imovel.vagas === 1 ? 'vaga' : 'vagas'}</span>
-                      </span>
-                      <span className="text-slate-300">•</span>
-                      <span className="flex items-center gap-0.5">
-                        <Maximize size={10} className="text-slate-400 flex-shrink-0" />
-                        <span>{imovel.metragem ?? 0} m²</span>
-                      </span>
-                    </div>
+                    {(() => {
+                      const isTerreno = imovel.tipoImovel === 'Terreno';
+                      const isComercial = imovel.tipoImovel === 'Comercial';
+
+                      return (
+                        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-slate-600 text-[9px] mt-1 bg-slate-50 py-0.5 px-2 rounded-lg border border-slate-100/60 w-fit font-bold">
+                          {!isComercial && !isTerreno && (
+                            <>
+                              <span className="flex items-center gap-0.5">
+                                <Bed size={10} className="text-slate-400 flex-shrink-0" />
+                                <span>{imovel.dormitorios ?? 0} {imovel.dormitorios === 1 ? 'dorm' : 'dorms'}</span>
+                              </span>
+                              <span className="text-slate-300">•</span>
+                            </>
+                          )}
+                          {!isTerreno && (
+                            <>
+                              <span className="flex items-center gap-0.5">
+                                <Car size={10} className="text-slate-400 flex-shrink-0" />
+                                <span>{imovel.vagas ?? 0} {imovel.vagas === 1 ? 'vaga' : 'vagas'}</span>
+                              </span>
+                              <span className="text-slate-300">•</span>
+                            </>
+                          )}
+                          <span className="flex items-center gap-0.5">
+                            <Maximize size={10} className="text-slate-400 flex-shrink-0" />
+                            <span>{imovel.metragem ?? 0} m²</span>
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   <div className="flex items-center justify-between border-t border-slate-100/60 pt-1 mt-1">

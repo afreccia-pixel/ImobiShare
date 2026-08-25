@@ -56,6 +56,26 @@ export function PropertyCard({
     }).format(value);
   };
 
+  // Format address/location helper
+  const formatAddress = () => {
+    const addressPart = (imovel.endereco || imovel.localizacao || '').trim();
+    const bairroPart = (imovel.bairro || '').trim();
+    const cidadePart = (imovel.cidade || '').trim();
+
+    if (addressPart) {
+      if (bairroPart && !addressPart.toLowerCase().includes(bairroPart.toLowerCase())) {
+        return `${addressPart} · ${bairroPart}${cidadePart ? ` - ${cidadePart}` : ''}`;
+      }
+      return `${addressPart}${cidadePart && !addressPart.toLowerCase().includes(cidadePart.toLowerCase()) ? ` - ${cidadePart}` : ''}`;
+    }
+
+    if (bairroPart && cidadePart) {
+      return `${bairroPart} - ${cidadePart}`;
+    }
+
+    return bairroPart || cidadePart || 'Localização não informada';
+  };
+
   const handleCardClick = (e: React.MouseEvent) => {
     // If clicking on checkboxes, buttons or icons, don't trigger details
     const target = e.target as HTMLElement;
@@ -121,34 +141,49 @@ export function PropertyCard({
             )}
           </div>
 
-          {/* Location */}
-          <div className="flex items-center text-slate-400 mt-0.5 font-medium text-[10px] truncate">
+          {/* Location / Endereço */}
+          <div className="flex items-center text-slate-400 mt-0.5 font-medium text-[10px] truncate" title={formatAddress()}>
             <MapPin size={10} className="mr-0.5 flex-shrink-0 text-slate-400" />
-            <span className="truncate">{imovel.bairro}</span>
+            <span className="truncate">{formatAddress()}</span>
           </div>
 
           {/* Essentials row instead of Description */}
-          <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-slate-600 mt-0.5 bg-slate-50 py-0.5 px-1.5 rounded border border-slate-100/60 w-fit font-medium text-[9px]">
-            <span className="flex items-center gap-0.5">
-              <Bed size={9} className="text-slate-400 flex-shrink-0" />
-              <span>{imovel.dormitorios ?? 0} {imovel.dormitorios === 1 ? 'dorm' : 'dorms'}</span>
-            </span>
-            <span className="text-slate-300">•</span>
-            <span className="flex items-center gap-0.5">
-              <Bath size={9} className="text-slate-400 flex-shrink-0" />
-              <span>{imovel.banheiros ?? 0} BWC</span>
-            </span>
-            <span className="text-slate-300">•</span>
-            <span className="flex items-center gap-0.5">
-              <Car size={9} className="text-slate-400 flex-shrink-0" />
-              <span>{imovel.vagas ?? 0} {imovel.vagas === 1 ? 'vaga' : 'vagas'}</span>
-            </span>
-            <span className="text-slate-300">•</span>
-            <span className="flex items-center gap-0.5">
-              <Maximize size={9} className="text-slate-400 flex-shrink-0" />
-              <span>{imovel.metragem ?? 0} m²</span>
-            </span>
-          </div>
+          {(() => {
+            const isTerreno = imovel.tipoImovel === 'Terreno';
+            const isComercial = imovel.tipoImovel === 'Comercial';
+
+            return (
+              <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-slate-600 mt-0.5 bg-slate-50 py-0.5 px-1.5 rounded border border-slate-100/60 w-fit font-medium text-[9px]">
+                {!isComercial && !isTerreno && (
+                  <>
+                    <span className="flex items-center gap-0.5">
+                      <Bed size={9} className="text-slate-400 flex-shrink-0" />
+                      <span>{imovel.dormitorios ?? 0} {imovel.dormitorios === 1 ? 'dorm' : 'dorms'}</span>
+                    </span>
+                    <span className="text-slate-300">•</span>
+                  </>
+                )}
+                {!isTerreno && (
+                  <>
+                    <span className="flex items-center gap-0.5">
+                      <Bath size={9} className="text-slate-400 flex-shrink-0" />
+                      <span>{imovel.banheiros ?? 0} BWC</span>
+                    </span>
+                    <span className="text-slate-300">•</span>
+                    <span className="flex items-center gap-0.5">
+                      <Car size={9} className="text-slate-400 flex-shrink-0" />
+                      <span>{imovel.vagas ?? 0} {imovel.vagas === 1 ? 'vaga' : 'vagas'}</span>
+                    </span>
+                    <span className="text-slate-300">•</span>
+                  </>
+                )}
+                <span className="flex items-center gap-0.5">
+                  <Maximize size={9} className="text-slate-400 flex-shrink-0" />
+                  <span>{imovel.metragem ?? 0} m²</span>
+                </span>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Bottom Row: Price & Actions */}

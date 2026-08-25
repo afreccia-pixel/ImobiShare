@@ -61,13 +61,28 @@ export function CompactPropertyRow({
     onClick();
   };
 
-  // Specs text (Linha 2): "Centro · 70m² · 2 dorms · 1 vaga"
+  // Specs text (Linha 2): "Rua 1500, 200 · Centro · 70m² · 2 dorms · 1 vaga"
   const specsParts: string[] = [];
-  if (imovel.bairro?.trim()) specsParts.push(imovel.bairro.trim());
+  const addressPart = (imovel.endereco || imovel.localizacao || '').trim();
+  const bairroPart = (imovel.bairro || '').trim();
+  
+  if (addressPart) {
+    if (bairroPart && !addressPart.toLowerCase().includes(bairroPart.toLowerCase())) {
+      specsParts.push(`${addressPart} · ${bairroPart}`);
+    } else {
+      specsParts.push(addressPart);
+    }
+  } else if (bairroPart) {
+    specsParts.push(bairroPart);
+  }
+
+  const isTerreno = imovel.tipoImovel === 'Terreno';
+  const isComercial = imovel.tipoImovel === 'Comercial';
+
   if (imovel.metragem) specsParts.push(`${imovel.metragem}m²`);
-  if (imovel.dormitorios) specsParts.push(`${imovel.dormitorios} dorm${imovel.dormitorios > 1 ? 's' : ''}`);
-  if (imovel.vagas) specsParts.push(`${imovel.vagas} vaga${imovel.vagas > 1 ? 's' : ''}`);
-  if (imovel.banheiros && !imovel.vagas) specsParts.push(`${imovel.banheiros} BWC`);
+  if (!isComercial && !isTerreno && imovel.dormitorios) specsParts.push(`${imovel.dormitorios} dorm${imovel.dormitorios > 1 ? 's' : ''}`);
+  if (!isTerreno && imovel.vagas) specsParts.push(`${imovel.vagas} vaga${imovel.vagas > 1 ? 's' : ''}`);
+  if (!isTerreno && imovel.banheiros && !imovel.vagas) specsParts.push(`${imovel.banheiros} BWC`);
 
   const specsText = specsParts.join(' · ');
 

@@ -85,7 +85,20 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
     } else if (imovel.tipo === 'ambos') {
       preco = `Venda: ${formatPrice(imovel.valor)} | Locação: ${formatPrice(imovel.valorLocacao || 0)}/mês`;
     }
-    const caracteristicas = `${imovel.dormitorios ?? 0} dorms • ${imovel.banheiros ?? 0} BWC • ${imovel.vagas ?? 0} vagas • ${imovel.metragem ?? 0}m²`;
+    const isTerreno = imovel.tipoImovel === 'Terreno';
+    const isComercial = imovel.tipoImovel === 'Comercial';
+
+    const specsPartsList: string[] = [];
+    if (!isComercial && !isTerreno) {
+      specsPartsList.push(`${imovel.dormitorios ?? 0} dorms`);
+    }
+    if (!isTerreno) {
+      specsPartsList.push(`${imovel.banheiros ?? 0} BWC`);
+      specsPartsList.push(`${imovel.vagas ?? 0} vagas`);
+    }
+    specsPartsList.push(`${imovel.metragem ?? 0}m²`);
+
+    const caracteristicas = specsPartsList.join(' • ');
     const mainImg = imovel.fotos?.[0] ? getValidImage(imovel.fotos[0]) : '';
     const isExternalImg = mainImg.startsWith('http://') || mainImg.startsWith('https://');
 
@@ -203,7 +216,9 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
             <div className="flex items-center text-slate-500 text-xs mt-1.5 flex-wrap gap-x-2">
               <span className="flex items-center">
                 <MapPin size={13} className="mr-1 text-slate-400" />
-                {imovel.localizacao}
+                {imovel.endereco?.trim() 
+                  ? `${imovel.endereco}${imovel.bairro && !imovel.endereco.toLowerCase().includes(imovel.bairro.toLowerCase()) ? ` · ${imovel.bairro}` : ''}${imovel.cidade ? ` - ${imovel.cidade}` : ''}`
+                  : (imovel.localizacao || `${imovel.bairro || ''}${imovel.cidade ? ` - ${imovel.cidade}` : ''}` || 'Localização não informada')}
               </span>
             </div>
           </div>
@@ -283,28 +298,71 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
           </div>
 
           {/* Características Essenciais */}
-          <div className="grid grid-cols-4 gap-2 py-1">
-            <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex flex-col items-center text-center">
-              <Bed size={15} className="text-[#003366] mb-1" />
-              <span className="text-[9px] uppercase text-slate-400 font-bold">Dorm.</span>
-              <span className="text-xs font-extrabold text-slate-800">{imovel.dormitorios ?? 0}</span>
-            </div>
-            <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex flex-col items-center text-center">
-              <Bath size={15} className="text-[#003366] mb-1" />
-              <span className="text-[9px] uppercase text-slate-400 font-bold">BWC</span>
-              <span className="text-xs font-extrabold text-slate-800">{imovel.banheiros ?? 0}</span>
-            </div>
-            <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex flex-col items-center text-center">
-              <Car size={15} className="text-[#003366] mb-1" />
-              <span className="text-[9px] uppercase text-slate-400 font-bold">Vagas</span>
-              <span className="text-xs font-extrabold text-slate-800">{imovel.vagas ?? 0}</span>
-            </div>
-            <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex flex-col items-center text-center">
-              <Maximize size={15} className="text-[#003366] mb-1" />
-              <span className="text-[9px] uppercase text-slate-400 font-bold">Área</span>
-              <span className="text-xs font-extrabold text-slate-800">{imovel.metragem ?? 0} m²</span>
-            </div>
-          </div>
+          {(() => {
+            const isTerreno = imovel.tipoImovel === 'Terreno';
+            const isComercial = imovel.tipoImovel === 'Comercial';
+
+            if (isTerreno) {
+              return (
+                <div className="py-1">
+                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex items-center justify-between px-4">
+                    <div className="flex items-center gap-2">
+                      <Maximize size={18} className="text-[#003366]" />
+                      <span className="text-[11px] uppercase text-slate-500 font-bold">Área do Terreno</span>
+                    </div>
+                    <span className="text-sm font-extrabold text-slate-800">{imovel.metragem ?? 0} m²</span>
+                  </div>
+                </div>
+              );
+            }
+
+            if (isComercial) {
+              return (
+                <div className="grid grid-cols-3 gap-2 py-1">
+                  <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+                    <Bath size={15} className="text-[#003366] mb-1" />
+                    <span className="text-[9px] uppercase text-slate-400 font-bold">BWC</span>
+                    <span className="text-xs font-extrabold text-slate-800">{imovel.banheiros ?? 0}</span>
+                  </div>
+                  <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+                    <Car size={15} className="text-[#003366] mb-1" />
+                    <span className="text-[9px] uppercase text-slate-400 font-bold">Vagas</span>
+                    <span className="text-xs font-extrabold text-slate-800">{imovel.vagas ?? 0}</span>
+                  </div>
+                  <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+                    <Maximize size={15} className="text-[#003366] mb-1" />
+                    <span className="text-[9px] uppercase text-slate-400 font-bold">Área</span>
+                    <span className="text-xs font-extrabold text-slate-800">{imovel.metragem ?? 0} m²</span>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div className="grid grid-cols-4 gap-2 py-1">
+                <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+                  <Bed size={15} className="text-[#003366] mb-1" />
+                  <span className="text-[9px] uppercase text-slate-400 font-bold">Dorm.</span>
+                  <span className="text-xs font-extrabold text-slate-800">{imovel.dormitorios ?? 0}</span>
+                </div>
+                <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+                  <Bath size={15} className="text-[#003366] mb-1" />
+                  <span className="text-[9px] uppercase text-slate-400 font-bold">BWC</span>
+                  <span className="text-xs font-extrabold text-slate-800">{imovel.banheiros ?? 0}</span>
+                </div>
+                <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+                  <Car size={15} className="text-[#003366] mb-1" />
+                  <span className="text-[9px] uppercase text-slate-400 font-bold">Vagas</span>
+                  <span className="text-xs font-extrabold text-slate-800">{imovel.vagas ?? 0}</span>
+                </div>
+                <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+                  <Maximize size={15} className="text-[#003366] mb-1" />
+                  <span className="text-[9px] uppercase text-slate-400 font-bold">Área</span>
+                  <span className="text-xs font-extrabold text-slate-800">{imovel.metragem ?? 0} m²</span>
+                </div>
+              </div>
+            );
+          })()}
 
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Descrição do Imóvel</span>

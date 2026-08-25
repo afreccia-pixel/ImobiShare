@@ -168,7 +168,7 @@ export function MapView({ imoveis, selectedIds, onSelectToggle, onViewDetails }:
                 ? `<span class="text-[7px] font-black bg-amber-100 text-amber-800 px-1 rounded uppercase tracking-wider">${imovel.integracaoOrigem || 'Integração'}</span>` 
                 : `<span class="text-[7px] font-black bg-blue-100 text-[#003366] px-1 rounded uppercase tracking-wider">Rede</span>`
             }
-            <span class="text-[8px] font-bold text-slate-400 uppercase tracking-tight">${imovel.bairro}</span>
+            <span class="text-[8px] font-bold text-slate-400 uppercase tracking-tight">${imovel.endereco ? `${imovel.endereco} · ` : ''}${imovel.bairro}</span>
           </div>
           <h4 class="font-extrabold text-slate-900 text-[11px] truncate leading-tight">${imovel.titulo}</h4>
           <div class="flex items-center justify-between pt-1 border-t border-slate-100">

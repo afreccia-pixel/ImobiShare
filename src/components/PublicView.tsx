@@ -160,7 +160,11 @@ export function PublicView({ imovel, activeCorretor, onExit }: PublicViewProps) 
             </h1>
             <div className="flex items-center text-slate-500 text-xs mt-1 font-medium">
               <MapPin size={13} className="mr-1 text-slate-400 flex-shrink-0" />
-              <span>{imovel.bairro}, {imovel.cidade} - SC</span>
+              <span>
+                {imovel.endereco?.trim()
+                  ? `${imovel.endereco}${imovel.bairro && !imovel.endereco.toLowerCase().includes(imovel.bairro.toLowerCase()) ? ` · ${imovel.bairro}` : ''}${imovel.cidade ? ` - ${imovel.cidade}` : ''}`
+                  : `${imovel.bairro || ''}${imovel.cidade ? `, ${imovel.cidade}` : ''}`}
+              </span>
             </div>
           </div>
 
@@ -197,28 +201,71 @@ export function PublicView({ imovel, activeCorretor, onExit }: PublicViewProps) 
           </div>
 
           {/* Características Essenciais */}
-          <div className="grid grid-cols-4 gap-2 py-1">
-            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex flex-col items-center text-center">
-              <Bed size={16} className="text-[#003366] mb-1" />
-              <span className="text-[9px] uppercase text-slate-400 font-extrabold">Dorm.</span>
-              <span className="text-xs font-black text-slate-800">{imovel.dormitorios ?? 0}</span>
-            </div>
-            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex flex-col items-center text-center">
-              <Bath size={16} className="text-[#003366] mb-1" />
-              <span className="text-[9px] uppercase text-slate-400 font-extrabold">BWC</span>
-              <span className="text-xs font-black text-slate-800">{imovel.banheiros ?? 0}</span>
-            </div>
-            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex flex-col items-center text-center">
-              <Car size={16} className="text-[#003366] mb-1" />
-              <span className="text-[9px] uppercase text-slate-400 font-extrabold">Vagas</span>
-              <span className="text-xs font-black text-slate-800">{imovel.vagas ?? 0}</span>
-            </div>
-            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex flex-col items-center text-center">
-              <Maximize size={16} className="text-[#003366] mb-1" />
-              <span className="text-[9px] uppercase text-slate-400 font-extrabold">Área</span>
-              <span className="text-xs font-black text-slate-800">{imovel.metragem ?? 0} m²</span>
-            </div>
-          </div>
+          {(() => {
+            const isTerreno = imovel.tipoImovel === 'Terreno';
+            const isComercial = imovel.tipoImovel === 'Comercial';
+
+            if (isTerreno) {
+              return (
+                <div className="py-1">
+                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 flex items-center justify-between px-4">
+                    <div className="flex items-center gap-2">
+                      <Maximize size={18} className="text-[#003366]" />
+                      <span className="text-[11px] uppercase text-slate-500 font-extrabold">Área do Terreno</span>
+                    </div>
+                    <span className="text-sm font-black text-slate-800">{imovel.metragem ?? 0} m²</span>
+                  </div>
+                </div>
+              );
+            }
+
+            if (isComercial) {
+              return (
+                <div className="grid grid-cols-3 gap-2 py-1">
+                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+                    <Bath size={16} className="text-[#003366] mb-1" />
+                    <span className="text-[9px] uppercase text-slate-400 font-extrabold">BWC</span>
+                    <span className="text-xs font-black text-slate-800">{imovel.banheiros ?? 0}</span>
+                  </div>
+                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+                    <Car size={16} className="text-[#003366] mb-1" />
+                    <span className="text-[9px] uppercase text-slate-400 font-extrabold">Vagas</span>
+                    <span className="text-xs font-black text-slate-800">{imovel.vagas ?? 0}</span>
+                  </div>
+                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+                    <Maximize size={16} className="text-[#003366] mb-1" />
+                    <span className="text-[9px] uppercase text-slate-400 font-extrabold">Área</span>
+                    <span className="text-xs font-black text-slate-800">{imovel.metragem ?? 0} m²</span>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div className="grid grid-cols-4 gap-2 py-1">
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+                  <Bed size={16} className="text-[#003366] mb-1" />
+                  <span className="text-[9px] uppercase text-slate-400 font-extrabold">Dorm.</span>
+                  <span className="text-xs font-black text-slate-800">{imovel.dormitorios ?? 0}</span>
+                </div>
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+                  <Bath size={16} className="text-[#003366] mb-1" />
+                  <span className="text-[9px] uppercase text-slate-400 font-extrabold">BWC</span>
+                  <span className="text-xs font-black text-slate-800">{imovel.banheiros ?? 0}</span>
+                </div>
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+                  <Car size={16} className="text-[#003366] mb-1" />
+                  <span className="text-[9px] uppercase text-slate-400 font-extrabold">Vagas</span>
+                  <span className="text-xs font-black text-slate-800">{imovel.vagas ?? 0}</span>
+                </div>
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+                  <Maximize size={16} className="text-[#003366] mb-1" />
+                  <span className="text-[9px] uppercase text-slate-400 font-extrabold">Área</span>
+                  <span className="text-xs font-black text-slate-800">{imovel.metragem ?? 0} m²</span>
+                </div>
+              </div>
+            );
+          })()}
 
           {imovel.descricao && (
             <div>

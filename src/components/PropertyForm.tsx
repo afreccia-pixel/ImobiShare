@@ -147,7 +147,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
       if (found) {
         setFotos(found.fotos || []);
         setCep(found.cep || '');
-        setLocalizacao(found.localizacao || '');
+        setLocalizacao(found.endereco || found.localizacao || '');
         setCidade(found.cidade || DbService.getActiveCorretor()?.cidade || 'Balneário Camboriú');
         setBairro(found.bairro || '');
         setTipoImovel((found.tipoImovel as PropertyTypeOption) || 'Apartamento');
@@ -574,8 +574,8 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
       return;
     }
 
-    // 7. Número de banheiros validation
-    if (banheiros === '' || Number(banheiros) < 0) {
+    // 7. Número de banheiros validation (not required for Terreno)
+    if (tipoImovel !== 'Terreno' && (banheiros === '' || Number(banheiros) < 0)) {
       setErrorMsg('Número de banheiros é obrigatório.');
       return;
     }
@@ -668,7 +668,8 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         statusImovel: statusImovel || undefined,
         cidade,
         bairro: bairro || 'Centro',
-        localizacao,
+        endereco: localizacao.trim() || undefined,
+        localizacao: localizacao.trim() || undefined,
         cep: cep.trim() || undefined,
         nomeEdificio: nomeEdificio.trim() || undefined,
         construtora: construtora.trim() || undefined,
@@ -1011,72 +1012,81 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-700">
               4. Especificações do Imóvel <span className="text-rose-500">*</span>
             </label>
-            {isLandOrCommercial && (
+            {tipoImovel === 'Terreno' && (
               <span className="text-[9px] text-amber-700 font-semibold bg-amber-50 px-2 py-0.5 rounded-md">
-                Opcional p/ {tipoImovel}
+                Terreno (Apenas Área)
+              </span>
+            )}
+            {tipoImovel === 'Comercial' && (
+              <span className="text-[9px] text-amber-700 font-semibold bg-amber-50 px-2 py-0.5 rounded-md">
+                Comercial (Sem Quartos)
               </span>
             )}
           </div>
 
           <div className="space-y-2.5">
-            {/* Linha 1: Quartos, BWC, Vagas */}
-            <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
-              <div>
-                <label className="text-[10px] font-semibold text-slate-600 block mb-1 whitespace-nowrap">
-                  Quartos {!isLandOrCommercial && <span className="text-rose-500">*</span>}
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="Qtd"
-                  value={dormitorios}
-                  onChange={(e) => {
-                    const clean = e.target.value.replace(/\D/g, '');
-                    setDormitorios(clean === '' ? '' : Number(clean));
-                  }}
-                  className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold text-center"
-                />
-              </div>
+            {/* Linha 1: Quartos, BWC, Vagas de acordo com o tipo */}
+            {tipoImovel !== 'Terreno' && (
+              <div className={`grid ${tipoImovel === 'Comercial' ? 'grid-cols-2' : 'grid-cols-3'} gap-2 sm:gap-2.5`}>
+                {tipoImovel !== 'Comercial' && (
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-600 block mb-1 whitespace-nowrap">
+                      Quartos <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="Qtd"
+                      value={dormitorios}
+                      onChange={(e) => {
+                        const clean = e.target.value.replace(/\D/g, '');
+                        setDormitorios(clean === '' ? '' : Number(clean));
+                      }}
+                      className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold text-center"
+                    />
+                  </div>
+                )}
 
-              <div>
-                <label className="text-[10px] font-semibold text-slate-600 block mb-1 whitespace-nowrap">
-                  BWC <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="Qtd"
-                  value={banheiros}
-                  onChange={(e) => {
-                    const clean = e.target.value.replace(/\D/g, '');
-                    setBanheiros(clean === '' ? '' : Number(clean));
-                  }}
-                  className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold text-center"
-                />
-              </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-slate-600 block mb-1 whitespace-nowrap">
+                    BWC <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="Qtd"
+                    value={banheiros}
+                    onChange={(e) => {
+                      const clean = e.target.value.replace(/\D/g, '');
+                      setBanheiros(clean === '' ? '' : Number(clean));
+                    }}
+                    className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold text-center"
+                  />
+                </div>
 
-              <div>
-                <label className="text-[10px] font-semibold text-slate-600 block mb-1 whitespace-nowrap">
-                  Vagas {!isLandOrCommercial && <span className="text-rose-500">*</span>}
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="Qtd"
-                  value={vagas}
-                  onChange={(e) => {
-                    const clean = e.target.value.replace(/\D/g, '');
-                    setVagas(clean === '' ? '' : Number(clean));
-                  }}
-                  className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold text-center"
-                />
+                <div>
+                  <label className="text-[10px] font-semibold text-slate-600 block mb-1 whitespace-nowrap">
+                    Vagas {tipoImovel !== 'Comercial' && <span className="text-rose-500">*</span>}
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="Qtd"
+                    value={vagas}
+                    onChange={(e) => {
+                      const clean = e.target.value.replace(/\D/g, '');
+                      setVagas(clean === '' ? '' : Number(clean));
+                    }}
+                    className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold text-center"
+                  />
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Linha 2: Área Privativa */}
+            {/* Linha 2: Área Privativa / Terreno */}
             <div>
               <label className="text-[10px] font-semibold text-slate-600 block mb-1 whitespace-nowrap">
-                Área Privativa (m²) <span className="text-rose-500">*</span>
+                {tipoImovel === 'Terreno' ? 'Área do Terreno (m²)' : 'Área Privativa (m²)'} <span className="text-rose-500">*</span>
               </label>
               <div className="relative">
                 <input
