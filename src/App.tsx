@@ -542,7 +542,7 @@ export default function App() {
 
   // Toggle Favorite
   const handleFavoriteToggle = async (imovelId: string) => {
-    const corretorId = activeCorretor?.id || 'broker-afreccia_gmail_com';
+    const corretorId = activeCorretor?.id || (activeCorretor?.email ? `broker-${activeCorretor.email.replace(/[^a-z0-9]/gi, '_')}` : 'broker-user');
     const updatedFavs = await DbService.toggleFavorite(corretorId, imovelId);
     setFavoritos(updatedFavs);
     
@@ -665,11 +665,7 @@ export default function App() {
     let existing = existingBrokers.find(b => {
       const emailMatch = userEmail && b.email && b.email.toLowerCase().trim() === userEmail;
       const uidMatch = userUid && b.id && b.id === userUid;
-      const phoneMatch = userPhone && (
-        (b.telefone && b.telefone.replace(/\D/g, '') === userPhone.replace(/\D/g, '') && userPhone.replace(/\D/g, '').length > 7) ||
-        (b.whatsapp && b.whatsapp.replace(/\D/g, '') === userPhone.replace(/\D/g, '') && userPhone.replace(/\D/g, '').length > 7)
-      );
-      return Boolean(emailMatch || uidMatch || phoneMatch);
+      return Boolean(emailMatch || uidMatch);
     });
 
     // Also check server directly by email if not found in local cache
@@ -682,11 +678,7 @@ export default function App() {
             existing = list.find((b: Corretor) => {
               const emailMatch = userEmail && b.email && b.email.toLowerCase().trim() === userEmail;
               const uidMatch = userUid && b.id && b.id === userUid;
-              const phoneMatch = userPhone && (
-                (b.telefone && b.telefone.replace(/\D/g, '') === userPhone.replace(/\D/g, '') && userPhone.replace(/\D/g, '').length > 7) ||
-                (b.whatsapp && b.whatsapp.replace(/\D/g, '') === userPhone.replace(/\D/g, '') && userPhone.replace(/\D/g, '').length > 7)
-              );
-              return Boolean(emailMatch || uidMatch || phoneMatch);
+              return Boolean(emailMatch || uidMatch);
             });
           }
         }
@@ -710,13 +702,13 @@ export default function App() {
         id: userUid || `broker-${userEmail.replace(/[^a-z0-9]/g, '_')}`,
         nome: user.displayName || extraData?.nome || userEmail.split('@')[0],
         email: userEmail,
-        creci: 'CRECI Pendente',
-        telefone: userPhone || '(47) 99999-9999',
-        whatsapp: userPhone || '(47) 99999-9999',
+        creci: extraData?.creci || '',
+        telefone: userPhone || extraData?.telefone || '',
+        whatsapp: userPhone || extraData?.telefone || '',
         foto: user.photoURL || extraData?.foto || '',
-        cidade: 'Balneário Camboriú',
-        estado: 'SC',
-        imobiliaria: '',
+        cidade: extraData?.cidade || '',
+        estado: extraData?.estado || '',
+        imobiliaria: extraData?.imobiliaria || '',
         restringirParceiros: false,
         parceirosEmails: []
       };
@@ -933,7 +925,7 @@ useEffect(() => {
       cidade: cleanCidade,
       estado: cleanEstado,
       imobiliaria: regImobiliaria.trim(),
-      foto: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=250',
+      foto: regFoto.trim() || '',
     };
 
     try {
@@ -1193,8 +1185,10 @@ useEffect(() => {
     } catch (err) {
       console.error('Error logging out of Firebase:', err);
     }
+    DbService.setActiveCorretor(null);
     localStorage.removeItem('imobishare_logged_in');
     localStorage.removeItem('imobishare_active_corretor');
+    setActiveCorretor(null);
     setIsAuthenticated(false);
     setAuthMode('login');
     setAuthError('');
@@ -1215,7 +1209,7 @@ useEffect(() => {
       cidade: 'Balneário Camboriú',
       estado: 'SC',
       imobiliaria: 'Visitante ImobiShare',
-      foto: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=250'
+      foto: ''
     };
     DbService.setActiveCorretor(guestCorretor);
     localStorage.setItem('imobishare_logged_in', 'true');
@@ -1246,6 +1240,9 @@ useEffect(() => {
         const building = (imovel.nomeEdificio || '').toLowerCase();
         const palavra = (imovel.palavraDestacada || '').toLowerCase();
         const info = (imovel.informacoes || '').toLowerCase();
+        const origem = (imovel.origem || '').toLowerCase();
+        const integracaoOrigem = (imovel.integracaoOrigem || '').toLowerCase();
+        const construtora = (imovel.construtora || '').toLowerCase();
 
         const matchesQuery = 
           propCode.includes(query) ||
@@ -1259,7 +1256,10 @@ useEffect(() => {
           cidade.includes(query) ||
           building.includes(query) ||
           palavra.includes(query) ||
-          info.includes(query);
+          info.includes(query) ||
+          origem.includes(query) ||
+          integracaoOrigem.includes(query) ||
+          construtora.includes(query);
 
         if (!matchesQuery) return false;
       }
@@ -1322,17 +1322,23 @@ useEffect(() => {
       // 9. Apenas Favoritos
       if (filterApenasFavoritos && !favoritos.includes(imovel.id) && !imovel.favorito) return false;
 
-      // 10. Broker Ownership / Integration Filter
+      // 10. Broker Ownership / Integration (Portais & DWV) Filter
       const isMine = isMyProperty(imovel);
-      const isIntegrated = imovel.integrado === true;
+      const isDWVOrPortal = Boolean(
+        imovel.integrado === true ||
+        (imovel.integracaoOrigem && imovel.integracaoOrigem.trim().length > 0) ||
+        (imovel.origem && imovel.origem.trim().toLowerCase() !== 'imobishare' && imovel.origem.trim().length > 0) ||
+        (imovel.origem && imovel.origem.trim().toLowerCase().includes('dwv')) ||
+        (imovel.origem && imovel.origem.trim().toLowerCase().includes('portal'))
+      );
 
-      if (isIntegrated) {
+      if (isDWVOrPortal) {
         if (!filterIntegracao) return false;
       } else if (isMine) {
         // If it's mine, check "Meus imóveis" switch
         if (!filterMeusImoveis) return false;
       } else {
-        // If it belongs to someone else, check "Outros corretores" switch
+        // If it belongs to someone else (Rede de Parcerias), check "Outros corretores" switch
         if (!filterOutrosCorretores) return false;
         // Also must be SHARED to be visible to others
         const isShared = imovel.compartilhar !== false && (imovel.compartilhar as any) !== 'NAO';

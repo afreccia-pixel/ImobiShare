@@ -125,12 +125,18 @@ export function MapView({ imoveis, selectedIds, onSelectToggle, onViewDetails }:
     imoveis.forEach((imovel, index) => {
       const coords = getCoordinates(imovel, index);
       const isSelected = selectedIds.includes(imovel.id);
+      const isPortal = Boolean(
+        imovel.integrado ||
+        (imovel.integracaoOrigem && imovel.integracaoOrigem.trim()) ||
+        (imovel.origem && imovel.origem.toLowerCase() !== 'imobishare' && imovel.origem.trim() !== '') ||
+        (imovel.origem && (imovel.origem.toLowerCase().includes('dwv') || imovel.origem.toLowerCase().includes('portal')))
+      );
 
       // Custom HTML Marker matching ImobiShare theme
       const markerHtml = `
         <div class="relative flex items-center justify-center">
           <div class="flex items-center justify-center w-8 h-8 rounded-full border-2 shadow-md transition-all duration-200 ${
-            imovel.integrado 
+            isPortal 
               ? 'bg-amber-500 border-white' 
               : 'bg-[#003366] border-white'
           }">
@@ -164,8 +170,8 @@ export function MapView({ imoveis, selectedIds, onSelectToggle, onViewDetails }:
         <div class="space-y-1">
           <div class="flex items-center gap-1">
             ${
-              imovel.integrado 
-                ? `<span class="text-[7px] font-black bg-amber-100 text-amber-800 px-1 rounded uppercase tracking-wider">${imovel.integracaoOrigem || 'Integração'}</span>` 
+              isPortal 
+                ? `<span class="text-[7px] font-black bg-amber-100 text-amber-800 px-1 rounded uppercase tracking-wider">${imovel.integracaoOrigem || imovel.origem || 'DWV'}</span>` 
                 : `<span class="text-[7px] font-black bg-blue-100 text-[#003366] px-1 rounded uppercase tracking-wider">Rede</span>`
             }
             <span class="text-[8px] font-bold text-slate-400 uppercase tracking-tight">${imovel.endereco ? `${imovel.endereco} · ` : ''}${imovel.bairro}</span>

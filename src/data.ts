@@ -5,18 +5,7 @@
 
 import { Corretor, Imovel } from './types';
 
-export const MOCK_CORRETORES: Corretor[] = [
-  {
-    id: 'corretor-alexandre',
-    nome: 'Alexandre Freccia',
-    creci: 'CRECI 28901-F',
-    telefone: '(47) 99888-7766',
-    whatsapp: '47998887766',
-    email: 'afreccia@gmail.com',
-    foto: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=150&auto=format&fit=crop&q=80',
-    cidade: 'Balneário Camboriú'
-  }
-];
+export const MOCK_CORRETORES: Corretor[] = [];
 
 export const INITIAL_IMOVEIS: Imovel[] = [];
 

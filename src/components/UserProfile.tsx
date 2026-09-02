@@ -84,6 +84,20 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
       DbService.saveCorretor(updatedCorretor);
       onProfileSwitched(updatedCorretor);
       
+      try {
+        await fetch(getApiUrl('/api/auth/profile'), {
+          method: 'PUT',
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-corretor-email': updatedCorretor.email
+          },
+          body: JSON.stringify(updatedCorretor)
+        });
+        await DbService.fetchBrokers();
+      } catch (err) {
+        console.warn('Could not sync updated photo to backend:', err);
+      }
+
       setSuccessMsg('Sua foto de perfil foi atualizada com sucesso!');
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err) {
@@ -93,6 +107,30 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
     } finally {
       if (e.target) e.target.value = '';
     }
+  };
+
+  const handleRemovePhoto = async () => {
+    const updatedCorretor = {
+      ...corretor,
+      foto: ''
+    };
+    DbService.saveCorretor(updatedCorretor);
+    onProfileSwitched(updatedCorretor);
+    try {
+      await fetch(getApiUrl('/api/auth/profile'), {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-corretor-email': updatedCorretor.email
+        },
+        body: JSON.stringify(updatedCorretor)
+      });
+      await DbService.fetchBrokers();
+    } catch (err) {
+      console.warn('Could not sync photo removal to backend:', err);
+    }
+    setSuccessMsg('Foto de perfil removida.');
+    setTimeout(() => setSuccessMsg(''), 3000);
   };
 
   // Profile editing state
@@ -307,7 +345,30 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
             />
           </div>
 
-          <h2 className="font-bold text-slate-800 text-base mt-3">{corretor.nome}</h2>
+          <div className="flex items-center gap-2 mt-2">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="text-[11px] font-bold text-[#003366] hover:underline flex items-center gap-1"
+            >
+              <Camera size={12} />
+              {isValidImageString(corretor.foto) ? 'Alterar foto' : 'Adicionar foto'}
+            </button>
+            {isValidImageString(corretor.foto) && (
+              <>
+                <span className="text-slate-300 text-xs">•</span>
+                <button
+                  type="button"
+                  onClick={handleRemovePhoto}
+                  className="text-[11px] font-semibold text-rose-500 hover:text-rose-700"
+                >
+                  Remover foto
+                </button>
+              </>
+            )}
+          </div>
+
+          <h2 className="font-bold text-slate-800 text-base mt-2">{corretor.nome}</h2>
           
           <div className="flex items-center text-xs text-slate-400 font-medium mt-1 gap-1.5">
             <Award size={13} className="text-[#003366]" />

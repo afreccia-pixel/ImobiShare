@@ -229,12 +229,10 @@ export class ServerDb {
   private static async seedInitialAdminIfNeeded(): Promise<void> {
     if (!this.pool) return;
     try {
-      // Ensure default admin account exists or is_admin flag is set for afreccia@gmail.com
+      // Ensure admin flag is set for afreccia@gmail.com without overwriting user's real name/creci
       const adminEmail = 'afreccia@gmail.com';
       await this.pool.query(`
-        INSERT INTO corretores (email, id, nome, creci, telefone, cidade, estado, is_admin)
-        VALUES ($1, 'broker-afreccia', 'Alexandre Freccia', '12345-F', '(47) 99999-9999', 'Balneário Camboriú', 'SC', true)
-        ON CONFLICT (email) DO UPDATE SET is_admin = true;
+        UPDATE corretores SET is_admin = true WHERE LOWER(email) = $1;
       `, [adminEmail]);
     } catch (e) {
       // ignore
@@ -246,22 +244,7 @@ export class ServerDb {
       await fs.access(this.jsonPath);
     } catch {
       const defaultDb: DbSchema = {
-        brokers: [
-          {
-            id: 'broker-afreccia',
-            nome: 'Alexandre Freccia',
-            email: 'afreccia@gmail.com',
-            creci: '12345-F',
-            telefone: '(47) 99999-9999',
-            whatsapp: '(47) 99999-9999',
-            cidade: 'Balneário Camboriú',
-            estado: 'SC',
-            imobiliaria: 'ImobiShare',
-            foto: '',
-            isAdmin: true,
-            slugSite: 'alexandre-freccia'
-          }
-        ],
+        brokers: [],
         properties: [],
         partnerships: [],
         favorites: []
@@ -418,12 +401,12 @@ export class ServerDb {
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         ON CONFLICT (email) DO UPDATE SET
           nome = EXCLUDED.nome,
-          creci = COALESCE(NULLIF(EXCLUDED.creci, ''), corretores.creci),
-          telefone = COALESCE(NULLIF(EXCLUDED.telefone, ''), corretores.telefone),
-          cidade = COALESCE(NULLIF(EXCLUDED.cidade, ''), corretores.cidade),
-          estado = COALESCE(NULLIF(EXCLUDED.estado, ''), corretores.estado),
-          imobiliaria_ou_autonomo = COALESCE(NULLIF(EXCLUDED.imobiliaria_ou_autonomo, ''), corretores.imobiliaria_ou_autonomo),
-          foto_url = COALESCE(NULLIF(EXCLUDED.foto_url, ''), corretores.foto_url),
+          creci = EXCLUDED.creci,
+          telefone = EXCLUDED.telefone,
+          cidade = EXCLUDED.cidade,
+          estado = EXCLUDED.estado,
+          imobiliaria_ou_autonomo = EXCLUDED.imobiliaria_ou_autonomo,
+          foto_url = EXCLUDED.foto_url,
           slug_site = COALESCE(NULLIF(EXCLUDED.slug_site, ''), corretores.slug_site),
           is_admin = COALESCE(EXCLUDED.is_admin, corretores.is_admin),
           restringir_parceiros = EXCLUDED.restringir_parceiros,
@@ -471,13 +454,13 @@ export class ServerDb {
         id: corretor.id || (idx >= 0 ? db.brokers[idx].id : `broker-${cleanEmail.replace(/[^a-z0-9]/gi, '_')}`),
         email: cleanEmail,
         nome: cleanNome,
-        creci: corretor.creci || (idx >= 0 ? db.brokers[idx].creci : ''),
-        telefone: corretor.whatsapp || corretor.telefone || (idx >= 0 ? db.brokers[idx].telefone : ''),
-        whatsapp: corretor.whatsapp || corretor.telefone || (idx >= 0 ? db.brokers[idx].whatsapp : ''),
-        cidade: corretor.cidade || (idx >= 0 ? db.brokers[idx].cidade : ''),
-        estado: corretor.estado || (idx >= 0 ? db.brokers[idx].estado : ''),
-        imobiliaria: corretor.imobiliaria || (idx >= 0 ? db.brokers[idx].imobiliaria : ''),
-        foto: corretor.foto || (idx >= 0 ? db.brokers[idx].foto : ''),
+        creci: corretor.creci !== undefined ? corretor.creci : (idx >= 0 ? db.brokers[idx].creci : ''),
+        telefone: (corretor.whatsapp || corretor.telefone) !== undefined ? (corretor.whatsapp || corretor.telefone) : (idx >= 0 ? db.brokers[idx].telefone : ''),
+        whatsapp: (corretor.whatsapp || corretor.telefone) !== undefined ? (corretor.whatsapp || corretor.telefone) : (idx >= 0 ? db.brokers[idx].whatsapp : ''),
+        cidade: corretor.cidade !== undefined ? corretor.cidade : (idx >= 0 ? db.brokers[idx].cidade : ''),
+        estado: corretor.estado !== undefined ? corretor.estado : (idx >= 0 ? db.brokers[idx].estado : ''),
+        imobiliaria: corretor.imobiliaria !== undefined ? corretor.imobiliaria : (idx >= 0 ? db.brokers[idx].imobiliaria : ''),
+        foto: corretor.foto !== undefined ? corretor.foto : (idx >= 0 ? db.brokers[idx].foto : ''),
         slugSite: corretor.slugSite || (idx >= 0 ? db.brokers[idx].slugSite : ''),
         isAdmin: corretor.isAdmin !== undefined ? corretor.isAdmin : (idx >= 0 ? db.brokers[idx].isAdmin : cleanEmail === 'afreccia@gmail.com'),
         password: passwordHash || (idx >= 0 ? db.brokers[idx].password : ''),
@@ -852,6 +835,8 @@ export class ServerDb {
       descricao: r.descricao,
       informacoes: r.informacoes || undefined,
       origem: r.origem || 'Imobishare',
+      integrado: Boolean((r.origem && r.origem.toLowerCase() !== 'imobishare' && r.origem.trim() !== '') || (r.origem && (r.origem.toLowerCase().includes('dwv') || r.origem.toLowerCase().includes('portal')))),
+      integracaoOrigem: (r.origem && r.origem.toLowerCase() !== 'imobishare') ? r.origem : undefined,
       construtora: r.construtora || '',
       codigo: r.codigo || undefined,
       visibilidade: r.visibilidade || 'todos',
