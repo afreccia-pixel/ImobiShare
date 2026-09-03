@@ -4,63 +4,63 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { Imovel } from '../types';
-import { MapPin, Eye, CheckCircle2, Bed, Car, Maximize } from 'lucide-react';
+import { MapPin } from 'lucide-react';
 import { getValidImage } from '../utils/imageUtils';
+import { getCoordinatesForImovel } from '../utils/geoUtils';
 
 interface MapViewProps {
   imoveis: Imovel[];
   selectedIds: string[];
   onSelectToggle: (id: string) => void;
   onViewDetails: (id: string) => void;
+  isFullScreen?: boolean;
 }
 
-export function MapView({ imoveis, selectedIds, onSelectToggle, onViewDetails }: MapViewProps) {
+// Safely patch Leaflet's L.DomUtil.getPosition to prevent Uncaught TypeError: Cannot read properties of undefined (reading '_leaflet_pos')
+function safePatchLeaflet(leafletInstance: any) {
+  if (!leafletInstance || !leafletInstance.DomUtil) return;
+  if ((leafletInstance.DomUtil as any).__safeLeafletPosPatched) return;
+  (leafletInstance.DomUtil as any).__safeLeafletPosPatched = true;
+
+  const originalGetPosition = leafletInstance.DomUtil.getPosition;
+  leafletInstance.DomUtil.getPosition = function (el: any) {
+    if (!el) {
+      return { x: 0, y: 0 };
+    }
+    try {
+      if (originalGetPosition) {
+        const pos = originalGetPosition.call(leafletInstance.DomUtil, el);
+        return pos || { x: 0, y: 0 };
+      }
+      return el._leaflet_pos || { x: 0, y: 0 };
+    } catch {
+      return (el && el._leaflet_pos) || { x: 0, y: 0 };
+    }
+  };
+
+  const originalSetPosition = leafletInstance.DomUtil.setPosition;
+  leafletInstance.DomUtil.setPosition = function (el: any, point: any) {
+    if (!el) return;
+    try {
+      if (originalSetPosition) {
+        originalSetPosition.call(leafletInstance.DomUtil, el, point);
+      } else {
+        el._leaflet_pos = point;
+      }
+    } catch {
+      // ignore
+    }
+  };
+}
+
+export function MapView({ imoveis, selectedIds, onSelectToggle, onViewDetails, isFullScreen = false }: MapViewProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<any>(null);
-  const markersRef = useRef<any[]>([]);
-  const [leafletLoaded, setLeafletLoaded] = useState(false);
-  const [loadingError, setLoadingError] = useState(false);
-
-  // Load Leaflet resources dynamically from CDN
-  useEffect(() => {
-    if ((window as any).L) {
-      setLeafletLoaded(true);
-      return;
-    }
-
-    // Load CSS
-    const linkId = 'leaflet-css';
-    if (!document.getElementById(linkId)) {
-      const link = document.createElement('link');
-      link.id = linkId;
-      link.rel = 'stylesheet';
-      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-      link.crossOrigin = '';
-      document.head.appendChild(link);
-    }
-
-    // Load JS
-    const scriptId = 'leaflet-js';
-    if (!document.getElementById(scriptId)) {
-      const script = document.createElement('script');
-      script.id = scriptId;
-      script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-      script.crossOrigin = '';
-      script.onload = () => setLeafletLoaded(true);
-      script.onerror = () => setLoadingError(true);
-      document.body.appendChild(script);
-    } else {
-      // Script is already in DOM but might be loading
-      const interval = setInterval(() => {
-        if ((window as any).L) {
-          setLeafletLoaded(true);
-          clearInterval(interval);
-        }
-      }, 100);
-      return () => clearInterval(interval);
-    }
-  }, []);
+  const mapInstanceRef = useRef<L.Map | null>(null);
+  const layerGroupRef = useRef<L.LayerGroup | null>(null);
+  const [mapReady, setMapReady] = useState(false);
 
   // Format price helper
   const formatPrice = (value: number) => {
@@ -71,55 +71,88 @@ export function MapView({ imoveis, selectedIds, onSelectToggle, onViewDetails }:
     }).format(value);
   };
 
-  // Assign or get coords helper with offsets
-  const getCoordinates = (imovel: Imovel, index: number): [number, number] => {
-    if (imovel.latitude && imovel.longitude) {
-      return [imovel.latitude, imovel.longitude];
-    }
-    
-    // Fallbacks with systematic offset to avoid overlap
-    const angle = (index * 2 * Math.PI) / 8;
-    const radius = 0.006; // roughly 600m
-    const dx = radius * Math.cos(angle);
-    const dy = radius * Math.sin(angle);
-
-    if (imovel.cidade.toLowerCase().includes('itapema')) {
-      return [-27.1351 + dy, -48.6082 + dx];
-    }
-    return [-26.9924 + dy, -48.6341 + dx];
-  };
-
-  // Initialize and update the map
+  // ResizeObserver to ensure Leaflet renders full tiles when resizing or going full screen
   useEffect(() => {
-    if (!leafletLoaded || !mapContainerRef.current) return;
-
-    const L = (window as any).L;
-    if (!L) return;
-
-    // Create Map if it doesn't exist
-    if (!mapInstanceRef.current) {
-      // Center roughly between Balneário Camboriú and Itapema, or on the first item
-      let center: [number, number] = [-26.9924, -48.6341];
-      if (imoveis.length > 0) {
-        center = getCoordinates(imoveis[0], 0);
+    if (!mapContainerRef.current) return;
+    const observer = new ResizeObserver(() => {
+      if (mapInstanceRef.current) {
+        try {
+          mapInstanceRef.current.invalidateSize();
+        } catch {}
       }
+    });
+    observer.observe(mapContainerRef.current);
+    return () => observer.disconnect();
+  }, [mapReady]);
 
-      mapInstanceRef.current = L.map(mapContainerRef.current, {
+  // Initialize Map Instance on Container Mount
+  useEffect(() => {
+    if (!mapContainerRef.current) return;
+    if (mapInstanceRef.current) return;
+
+    safePatchLeaflet(L);
+
+    // Clean up previous container footprint if any
+    if ((mapContainerRef.current as any)._leaflet_id) {
+      delete (mapContainerRef.current as any)._leaflet_id;
+    }
+
+    let initialCenter: [number, number] = [-26.9924, -48.6341];
+    if (imoveis.length > 0) {
+      initialCenter = getCoordinatesForImovel(imoveis[0], 0);
+    }
+
+    try {
+      const map = L.map(mapContainerRef.current, {
         zoomControl: true,
-        attributionControl: false
-      }).setView(center, 13);
+        attributionControl: false,
+        fadeAnimation: false,
+      }).setView(initialCenter, 13);
 
-      // Add Tile Layer (OpenStreetMap)
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
-      }).addTo(mapInstanceRef.current);
+      }).addTo(map);
+
+      const layerGroup = L.layerGroup().addTo(map);
+      mapInstanceRef.current = map;
+      layerGroupRef.current = layerGroup;
+      setMapReady(true);
+    } catch (err) {
+      console.warn('Error initializing map:', err);
     }
 
-    const map = mapInstanceRef.current;
+    return () => {
+      if (mapInstanceRef.current) {
+        try {
+          mapInstanceRef.current.remove();
+        } catch (e) {
+          console.warn('Error during map cleanup:', e);
+        }
+        mapInstanceRef.current = null;
+        layerGroupRef.current = null;
+        setMapReady(false);
+      }
+    };
+  }, []);
 
-    // Clear old markers
-    markersRef.current.forEach(marker => marker.remove());
-    markersRef.current = [];
+  // Update Markers when imoveis or selectedIds change, and auto-fit bounds
+  useEffect(() => {
+    if (!mapReady || !mapInstanceRef.current || !layerGroupRef.current) return;
+
+    const map = mapInstanceRef.current;
+    const layerGroup = layerGroupRef.current;
+
+    // Safely close open popup before changing layers
+    try {
+      map.closePopup();
+    } catch {}
+
+    // Clear existing markers from layer group
+    try {
+      layerGroup.clearLayers();
+    } catch {}
+
+    const newMarkers: L.Marker[] = [];
 
     // Add new markers
     imoveis.forEach((imovel, index) => {
@@ -134,19 +167,19 @@ export function MapView({ imoveis, selectedIds, onSelectToggle, onViewDetails }:
 
       // Custom HTML Marker matching ImobiShare theme
       const markerHtml = `
-        <div class="relative flex items-center justify-center">
-          <div class="flex items-center justify-center w-8 h-8 rounded-full border-2 shadow-md transition-all duration-200 ${
+        <div class="relative flex items-center justify-center cursor-pointer transform hover:scale-110 transition-transform">
+          <div class="flex items-center justify-center w-8 h-8 rounded-full border-2 shadow-lg ${
             isPortal 
               ? 'bg-amber-500 border-white' 
               : 'bg-[#003366] border-white'
           }">
-            <span class="text-[9px] font-black text-white uppercase">
-              ${imovel.tipo === 'venda' ? 'V' : 'A'}
+            <span class="text-[10px] font-black text-white uppercase tracking-tight">
+              ${imovel.tipo === 'locação' || (imovel.tipo as string) === 'alugar' ? 'A' : 'V'}
             </span>
           </div>
           ${
             isSelected 
-              ? '<div class="absolute -top-1.5 -right-1.5 bg-emerald-500 w-4.5 h-4.5 rounded-full border border-white flex items-center justify-center shadow-xs"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="w-2.5 h-2.5 text-white"><polyline points="20 6 9 17 4 12"></polyline></svg></div>' 
+              ? '<div class="absolute -top-1.5 -right-1.5 bg-emerald-500 w-5 h-5 rounded-full border-2 border-white flex items-center justify-center shadow-md"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="w-2.5 h-2.5 text-white"><polyline points="20 6 9 17 4 12"></polyline></svg></div>' 
               : ''
           }
         </div>
@@ -156,118 +189,125 @@ export function MapView({ imoveis, selectedIds, onSelectToggle, onViewDetails }:
         html: markerHtml,
         className: 'custom-leaflet-marker',
         iconSize: [32, 32],
-        iconAnchor: [16, 32],
-        popupAnchor: [0, -32]
+        iconAnchor: [16, 16],
+        popupAnchor: [0, -18],
       });
 
       // Create Popup Content
       const popupDiv = document.createElement('div');
-      popupDiv.className = 'p-1.5 max-w-[190px] font-sans';
+      popupDiv.className = 'p-2 max-w-[210px] font-sans select-none';
       popupDiv.innerHTML = `
-        <div class="rounded-lg overflow-hidden mb-1.5">
-          <img src="${getValidImage(imovel.fotos?.[0])}" class="w-full h-20 object-cover rounded-md" referrerPolicy="no-referrer" />
+        <div class="rounded-lg overflow-hidden mb-2 relative bg-slate-100 h-24">
+          <img src="${getValidImage(imovel.fotos?.[0])}" class="w-full h-full object-cover" />
+          <span class="absolute top-1.5 left-1.5 text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider ${
+            isPortal ? 'bg-amber-500 text-white shadow-xs' : 'bg-[#003366] text-white shadow-xs'
+          }">
+            ${isPortal ? (imovel.integracaoOrigem || imovel.origem || 'DWV') : 'Rede'}
+          </span>
         </div>
         <div class="space-y-1">
-          <div class="flex items-center gap-1">
-            ${
-              isPortal 
-                ? `<span class="text-[7px] font-black bg-amber-100 text-amber-800 px-1 rounded uppercase tracking-wider">${imovel.integracaoOrigem || imovel.origem || 'DWV'}</span>` 
-                : `<span class="text-[7px] font-black bg-blue-100 text-[#003366] px-1 rounded uppercase tracking-wider">Rede</span>`
-            }
-            <span class="text-[8px] font-bold text-slate-400 uppercase tracking-tight">${imovel.endereco ? `${imovel.endereco} · ` : ''}${imovel.bairro}</span>
+          <div class="text-[9px] font-bold text-slate-400 uppercase tracking-tight truncate">
+            ${imovel.endereco ? `${imovel.endereco} · ` : ''}${imovel.bairro || imovel.cidade || ''}
           </div>
-          <h4 class="font-extrabold text-slate-900 text-[11px] truncate leading-tight">${imovel.titulo}</h4>
-          <div class="flex items-center justify-between pt-1 border-t border-slate-100">
-            <span class="text-[11px] font-black text-[#003366]">${formatPrice(imovel.valor)}</span>
+          <h4 class="font-extrabold text-slate-900 text-xs truncate leading-tight">
+            ${imovel.nomeEdificio?.trim() || imovel.titulo}
+          </h4>
+          <div class="pt-1 flex items-center justify-between border-t border-slate-100">
+            <span class="text-xs font-black text-[#003366]">
+              ${formatPrice(imovel.valor || imovel.valorVenda || imovel.valorLocacao || 0)}
+            </span>
           </div>
-          <div class="flex gap-1 mt-2 pt-1 border-t border-slate-100/60">
-            <button id="pop-view-${imovel.id}" class="flex-grow bg-slate-100 hover:bg-slate-200 text-[9px] font-bold text-slate-700 py-1 px-1.5 rounded transition-all flex items-center justify-center gap-0.5">
-              👁️ Detalhes
+          <div class="flex gap-1.5 mt-2 pt-1 border-t border-slate-100">
+            <button id="pop-view-${imovel.id}" class="flex-1 bg-slate-100 hover:bg-slate-200 text-[10px] font-bold text-slate-700 py-1.5 px-2 rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer">
+              Ver
             </button>
-            <button id="pop-select-${imovel.id}" class="flex-grow ${isSelected ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-[#003366] hover:bg-[#002244] text-white'} text-[9px] font-bold py-1 px-1.5 rounded transition-all flex items-center justify-center gap-0.5">
-              ${isSelected ? '✓ Selecionado' : '➕ Selecionar'}
+            <button id="pop-select-${imovel.id}" class="flex-1 ${
+              isSelected ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-[#003366] hover:bg-[#002244]'
+            } text-white text-[10px] font-bold py-1.5 px-2 rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer">
+              ${isSelected ? '✓ Selecionado' : 'Selecionar'}
             </button>
           </div>
         </div>
       `;
 
-      // Set up click handlers inside popup once it opens
-      const marker = L.marker(coords, { icon: customIcon })
-        .addTo(map)
-        .bindPopup(popupDiv, { closeButton: false, minWidth: 190 });
+      const marker = L.marker(coords, { icon: customIcon });
+      marker.bindPopup(popupDiv, { closeButton: false, minWidth: 210, autoPan: false });
 
       marker.on('popupopen', () => {
         const viewBtn = document.getElementById(`pop-view-${imovel.id}`);
         const selectBtn = document.getElementById(`pop-select-${imovel.id}`);
 
         if (viewBtn) {
-          viewBtn.addEventListener('click', (e) => {
+          viewBtn.onclick = (e: MouseEvent) => {
+            e.preventDefault();
             e.stopPropagation();
+            try {
+              marker.closePopup();
+            } catch {}
             onViewDetails(imovel.id);
-          });
+          };
         }
         if (selectBtn) {
-          selectBtn.addEventListener('click', (e) => {
+          selectBtn.onclick = (e: MouseEvent) => {
+            e.preventDefault();
             e.stopPropagation();
+            try {
+              marker.closePopup();
+            } catch {}
             onSelectToggle(imovel.id);
-            marker.closePopup();
-          });
+          };
         }
       });
 
-      markersRef.current.push(marker);
+      layerGroup.addLayer(marker);
+      newMarkers.push(marker);
     });
 
-    // Auto-fit bounds if we have markers
-    if (imoveis.length > 0 && mapInstanceRef.current) {
-      const group = L.featureGroup(markersRef.current);
-      mapInstanceRef.current.fitBounds(group.getBounds().pad(0.15));
+    // Invalidate map size to adapt to container dimensions
+    map.invalidateSize();
+    const t1 = setTimeout(() => {
+      try {
+        map.invalidateSize();
+      } catch {}
+    }, 100);
+    const t2 = setTimeout(() => {
+      try {
+        map.invalidateSize();
+      } catch {}
+    }, 350);
+
+    // Auto-fit bounds to all markers
+    if (newMarkers.length > 0) {
+      try {
+        const group = L.featureGroup(newMarkers);
+        const bounds = group.getBounds();
+        if (bounds && bounds.isValid()) {
+          map.fitBounds(bounds.pad(0.12), { maxZoom: 15, animate: false });
+        }
+      } catch (err) {
+        console.warn('fitBounds warning:', err);
+      }
     }
 
-  }, [imoveis, leafletLoaded, selectedIds]);
-
-  // Handle cleanup on unmount
-  useEffect(() => {
     return () => {
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      }
+      clearTimeout(t1);
+      clearTimeout(t2);
     };
-  }, []);
-
-  if (loadingError) {
-    return (
-      <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center space-y-3">
-        <MapPin className="mx-auto text-rose-500" size={32} />
-        <h3 className="font-bold text-slate-800 text-sm">Erro ao carregar o mapa</h3>
-        <p className="text-xs text-slate-500 max-w-xs mx-auto">
-          Não foi possível conectar com os servidores de mapas da internet. Verifique sua conexão.
-        </p>
-      </div>
-    );
-  }
-
-  if (!leafletLoaded) {
-    return (
-      <div className="bg-slate-50 rounded-2xl border border-dashed border-slate-200 h-[380px] flex flex-col items-center justify-center space-y-2">
-        <div className="w-8 h-8 border-4 border-[#003366] border-t-transparent rounded-full animate-spin" />
-        <span className="text-xs text-slate-500 font-bold">Iniciando mapa interativo...</span>
-      </div>
-    );
-  }
+  }, [mapReady, imoveis, selectedIds, onSelectToggle, onViewDetails]);
 
   return (
-    <div className="relative rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
+    <div className={isFullScreen ? "relative w-full h-full overflow-hidden" : "relative rounded-2xl border border-slate-100 overflow-hidden shadow-sm"}>
       <div 
         ref={mapContainerRef} 
-        className="w-full h-[380px] z-0" 
+        className={isFullScreen ? "w-full h-full min-h-[400px] z-0" : "w-full h-[380px] z-0"} 
         id="interactive-leaflet-map"
       />
-      {/* Mini Helper Overlay */}
-      <div className="absolute bottom-2 left-2 bg-slate-900/90 backdrop-blur-xs text-white text-[9px] font-bold px-2 py-1 rounded-md z-10 shadow-xs flex items-center gap-2">
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#003366]" /> Rede</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> Integração</span>
+      {/* Property count and legend overlay */}
+      <div className={`absolute ${isFullScreen ? 'bottom-20 left-3' : 'bottom-2 left-2'} bg-slate-900/90 backdrop-blur-xs text-white text-[9px] font-bold px-2.5 py-1 rounded-md z-10 shadow-md flex items-center gap-2.5 select-none pointer-events-none`}>
+        <span className="text-white/80">{imoveis.length} no mapa</span>
+        <div className="w-px h-2.5 bg-white/30" />
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#003366] border border-white" /> Rede</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500 border border-white" /> Integração</span>
       </div>
     </div>
   );

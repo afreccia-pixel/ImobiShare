@@ -142,6 +142,8 @@ export class ServerDb {
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS website VARCHAR(10) DEFAULT 'SIM';`);
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS compartilhar VARCHAR(10) DEFAULT 'SIM';`);
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS codigo VARCHAR(50);`);
+    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS latitude NUMERIC;`);
+    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS longitude NUMERIC;`);
 
     // 3. Tabela parcerias
     await this.pool.query(`
@@ -673,14 +675,14 @@ export class ServerDb {
           area_privativa, nome_edificio, titulo, palavra_destacada, descricao,
           visibilidade, dados_proprietario, imagens, data_cadastro,
           valor_anterior, valor_locacao_anterior, informacoes, origem, construtora,
-          website, compartilhar, codigo
+          website, compartilhar, codigo, latitude, longitude
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8,
           $9, $10, $11, $12, $13, $14,
           $15, $16, $17, $18, $19,
           $20, $21, $22, $23,
           $24, $25, $26, $27, $28,
-          $29, $30, $31
+          $29, $30, $31, $32, $33
         ) ON CONFLICT (id) DO UPDATE SET
           cep = EXCLUDED.cep,
           endereco = EXCLUDED.endereco,
@@ -709,7 +711,9 @@ export class ServerDb {
           construtora = EXCLUDED.construtora,
           website = EXCLUDED.website,
           compartilhar = EXCLUDED.compartilhar,
-          codigo = EXCLUDED.codigo;
+          codigo = EXCLUDED.codigo,
+          latitude = EXCLUDED.latitude,
+          longitude = EXCLUDED.longitude;
       `, [
         finalImovel.id,
         cleanEmail,
@@ -741,7 +745,9 @@ export class ServerDb {
         finalImovel.construtora || '',
         websiteDb,
         compartilharDb,
-        finalImovel.codigo || null
+        finalImovel.codigo || null,
+        finalImovel.latitude !== undefined ? finalImovel.latitude : null,
+        finalImovel.longitude !== undefined ? finalImovel.longitude : null
       ]);
 
       return finalImovel;
@@ -839,6 +845,8 @@ export class ServerDb {
       integracaoOrigem: (r.origem && r.origem.toLowerCase() !== 'imobishare') ? r.origem : undefined,
       construtora: r.construtora || '',
       codigo: r.codigo || undefined,
+      latitude: r.latitude !== null && r.latitude !== undefined && r.latitude !== '' ? parseFloat(r.latitude) : undefined,
+      longitude: r.longitude !== null && r.longitude !== undefined && r.longitude !== '' ? parseFloat(r.longitude) : undefined,
       visibilidade: r.visibilidade || 'todos',
       dadosProprietario: isOwner ? (r.dados_proprietario || '') : undefined,
       nomeProprietario: isOwner ? (r.dados_proprietario || '') : 'Confidencial',

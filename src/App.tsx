@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0.
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import LOGO_IMAGE from './assets/logo';
 const logoImg = LOGO_IMAGE;
 import { Imovel, Corretor } from './types';
@@ -56,7 +56,9 @@ import {
   Maximize,
   LogOut,
   Eye,
-  WifiOff
+  WifiOff,
+  ArrowUpDown,
+  Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -228,16 +230,91 @@ export default function App() {
     return null;
   });
 
+  // Helper to dynamically determine the city and neighborhood with the most properties
+  const topCityAndBairro = useMemo(() => {
+    if (!allImoveis || allImoveis.length === 0) {
+      return { cidade: 'Balneário Camboriú', bairro: 'Centro' };
+    }
+    const cityCounts: Record<string, number> = {};
+    allImoveis.forEach((i) => {
+      const c = (i.cidade || '').trim();
+      if (c) cityCounts[c] = (cityCounts[c] || 0) + 1;
+    });
+
+    let topCity = 'Balneário Camboriú';
+    let maxCityCount = -1;
+    Object.entries(cityCounts).forEach(([city, count]) => {
+      if (count > maxCityCount) {
+        maxCityCount = count;
+        topCity = city;
+      }
+    });
+
+    const bairroCounts: Record<string, number> = {};
+    allImoveis.forEach((i) => {
+      const c = (i.cidade || '').trim().toLowerCase();
+      const b = (i.bairro || '').trim();
+      if (b && (c === topCity.toLowerCase() || !topCity)) {
+        bairroCounts[b] = (bairroCounts[b] || 0) + 1;
+      }
+    });
+
+    let topBairro = 'Centro';
+    let maxBairroCount = -1;
+    Object.entries(bairroCounts).forEach(([bairro, count]) => {
+      if (count > maxBairroCount) {
+        maxBairroCount = count;
+        topBairro = bairro;
+      }
+    });
+
+    return { cidade: topCity, bairro: topBairro };
+  }, [allImoveis]);
+
   // Filters & Search State (Home Tab)
   const [searchWord, setSearchWord] = useState('');
-  const [filterCidade, setFilterCidade] = useState(() => DbService.getActiveCorretor()?.cidade || 'Balneário Camboriú');
+  const [filterCidade, setFilterCidade] = useState(() => {
+    const initial = DbService.getImoveisSync();
+    const cityCounts: Record<string, number> = {};
+    initial.forEach(i => {
+      const c = (i.cidade || '').trim();
+      if (c) cityCounts[c] = (cityCounts[c] || 0) + 1;
+    });
+    let top = 'Balneário Camboriú';
+    let max = -1;
+    Object.entries(cityCounts).forEach(([c, cnt]) => {
+      if (cnt > max) { max = cnt; top = c; }
+    });
+    return top;
+  });
 
-  // Keep filterCidade aligned with active broker's registered city by default
-  useEffect(() => {
-    if (activeCorretor?.cidade?.trim()) {
-      setFilterCidade(activeCorretor.cidade.trim());
-    }
-  }, [activeCorretor?.cidade]);
+  const [filterBairro, setFilterBairro] = useState(() => {
+    const initial = DbService.getImoveisSync();
+    const cityCounts: Record<string, number> = {};
+    initial.forEach(i => {
+      const c = (i.cidade || '').trim();
+      if (c) cityCounts[c] = (cityCounts[c] || 0) + 1;
+    });
+    let topCity = 'Balneário Camboriú';
+    let max = -1;
+    Object.entries(cityCounts).forEach(([c, cnt]) => {
+      if (cnt > max) { max = cnt; topCity = c; }
+    });
+    const bCounts: Record<string, number> = {};
+    initial.forEach(i => {
+      const c = (i.cidade || '').trim().toLowerCase();
+      const b = (i.bairro || '').trim();
+      if (b && c === topCity.toLowerCase()) {
+        bCounts[b] = (bCounts[b] || 0) + 1;
+      }
+    });
+    let topB = 'Centro';
+    let maxB = -1;
+    Object.entries(bCounts).forEach(([b, cnt]) => {
+      if (cnt > maxB) { maxB = cnt; topB = b; }
+    });
+    return topB;
+  });
 
   // Dynamically compute list of unique cities from properties + active broker city
   const availableCities = useMemo(() => {
@@ -271,7 +348,9 @@ export default function App() {
     }
     return Array.from(citiesSet).sort((a, b) => a.localeCompare(b, 'pt-BR'));
   }, [allImoveis, isMyProperty, activeCorretor?.cidade, availableCities]);
-  const [filterTipo, setFilterTipo] = useState<'comprar' | 'alugar' | 'todos'>('todos');
+
+  // Home tab filters: Venda pre-selected by default, property type 'todos'
+  const [filterTipo, setFilterTipo] = useState<'comprar' | 'alugar' | 'todos'>('comprar');
   const [filterTipoImovel, setFilterTipoImovel] = useState<string>('todos');
   const [filterStatusImovel, setFilterStatusImovel] = useState<string>('todos');
   const [filterValorMin, setFilterValorMin] = useState<number>(0);
@@ -281,7 +360,6 @@ export default function App() {
   const [filterVagas, setFilterVagas] = useState<number>(0);
   const [filterMetragemMin, setFilterMetragemMin] = useState<number>(0);
   const [filterMetragemMax, setFilterMetragemMax] = useState<number>(0);
-  const [filterBairro, setFilterBairro] = useState<string>('');
   const [filterApenasFavoritos, setFilterApenasFavoritos] = useState<boolean>(false);
   const [filterMeusImoveis, setFilterMeusImoveis] = useState(true);
   const [filterOutrosCorretores, setFilterOutrosCorretores] = useState(true);
@@ -289,6 +367,66 @@ export default function App() {
   const [filterModalTab, setFilterModalTab] = useState<'home' | 'my-properties'>('home');
   const [isFilterModalOpen, setIsFilterModalOpen] = useState<boolean>(false);
   const [searchViewMode, setSearchViewMode] = useState<'como_esta_hoje' | 'lista' | 'mapa'>('como_esta_hoje');
+
+  // Sorting state for search results
+  const [sortBy, setSortBy] = useState<'relevancia' | 'menor_preco' | 'maior_preco' | 'mais_recentes' | 'maior_area'>('relevancia');
+  const [isSortMenuOpen, setIsSortMenuOpen] = useState<boolean>(false);
+
+  // Quick inline enterprise (empreendimento) search in main search card
+  const [isSearchingEmpreendimento, setIsSearchingEmpreendimento] = useState<boolean>(false);
+  const empreendimentoInputRef = useRef<HTMLInputElement>(null);
+
+  // Computed display text for main search card (First line: City and Neighborhood with most properties)
+  const searchCardCityAndNeighborhood = useMemo(() => {
+    if (filterCidade && filterCidade !== 'Todas') {
+      if (filterBairro && filterBairro.trim()) {
+        return `${filterCidade}, ${filterBairro}`;
+      }
+      return `${filterCidade}${topCityAndBairro.bairro ? `, ${topCityAndBairro.bairro}` : ''}`;
+    }
+    return `${topCityAndBairro.cidade}, ${topCityAndBairro.bairro}`;
+  }, [filterCidade, filterBairro, topCityAndBairro]);
+
+  // Computed display text for main search card (Second line: smaller info, e.g., "Venda - Sem filtros de imóvel")
+  const searchCardSubtext = useMemo(() => {
+    const tipoLabel = filterTipo === 'comprar' ? 'Venda' : filterTipo === 'alugar' ? 'Aluguel' : 'Venda e Aluguel';
+    
+    // Check if extra filters are active beyond default
+    const extraFilters: string[] = [];
+    if (searchWord.trim()) extraFilters.push(`"${searchWord.trim()}"`);
+    if (filterTipoImovel !== 'todos') extraFilters.push(filterTipoImovel);
+    if (filterStatusImovel !== 'todos') extraFilters.push(filterStatusImovel);
+    if (filterValorMin > 0) extraFilters.push(`Min R$ ${formatPriceBRL(filterValorMin)}`);
+    if (filterValorMax > 0 && filterValorMax < 15000000) extraFilters.push(`Até R$ ${formatPriceBRL(filterValorMax)}`);
+    if (filterDormitorios > 0) extraFilters.push(`${filterDormitorios}+ qts`);
+    if (filterBanheiros > 0) extraFilters.push(`${filterBanheiros}+ bwc`);
+    if (filterVagas > 0) extraFilters.push(`${filterVagas}+ vagas`);
+    if (filterMetragemMin > 0) extraFilters.push(`${filterMetragemMin}+ m²`);
+    if (filterApenasFavoritos) extraFilters.push('Favoritos');
+    if (!filterMeusImoveis || !filterOutrosCorretores || !filterIntegracao) {
+      extraFilters.push('Canais');
+    }
+
+    if (extraFilters.length === 0) {
+      return `${tipoLabel} - Sem filtros de imóvel`;
+    }
+    return `${tipoLabel} - ${extraFilters.slice(0, 2).join(', ')}${extraFilters.length > 2 ? ` (+${extraFilters.length - 2})` : ''}`;
+  }, [
+    filterTipo,
+    searchWord,
+    filterTipoImovel,
+    filterStatusImovel,
+    filterValorMin,
+    filterValorMax,
+    filterDormitorios,
+    filterBanheiros,
+    filterVagas,
+    filterMetragemMin,
+    filterApenasFavoritos,
+    filterMeusImoveis,
+    filterOutrosCorretores,
+    filterIntegracao
+  ]);
 
   // Filters & Search State (My Properties Tab - strictly independent)
   const [myPropertiesSearch, setMyPropertiesSearch] = useState('');
@@ -343,9 +481,11 @@ export default function App() {
 
   const handleResetFilters = () => {
     if (filterModalTab === 'home') {
+      setHomePage(1);
       setSearchWord('');
-      setFilterCidade('Balneário Camboriú');
-      setFilterTipo('todos');
+      setFilterCidade(topCityAndBairro.cidade || 'Balneário Camboriú');
+      setFilterBairro(topCityAndBairro.bairro || 'Centro');
+      setFilterTipo('comprar');
       setFilterTipoImovel('todos');
       setFilterStatusImovel('todos');
       setFilterValorMin(0);
@@ -355,7 +495,6 @@ export default function App() {
       setFilterVagas(0);
       setFilterMetragemMin(0);
       setFilterMetragemMax(0);
-      setFilterBairro('');
       setFilterApenasFavoritos(false);
       setFilterMeusImoveis(true);
       setFilterOutrosCorretores(true);
@@ -408,9 +547,21 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [homeTouchStartPos, setHomeTouchStartPos] = useState<{ x: number; y: number } | null>(null);
 
+  // Loading indicator for property results (thin RTL animated bar)
+  const [isLoadingImoveis, setIsLoadingImoveis] = useState(true);
+
+  useEffect(() => {
+    // Initial loading animation for smooth feedback on startup
+    const timer = setTimeout(() => {
+      setIsLoadingImoveis(false);
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, []);
+
   const handleRefreshHome = async () => {
     if (isRefreshing) return;
     setIsRefreshing(true);
+    setIsLoadingImoveis(true);
     
     try {
       await DbService.syncWithServer();
@@ -419,6 +570,7 @@ export default function App() {
       console.error('Erro ao atualizar imóveis:', err);
     } finally {
       setIsRefreshing(false);
+      setIsLoadingImoveis(false);
     }
   };
 
@@ -1225,7 +1377,7 @@ useEffect(() => {
     const query = searchWord.toLowerCase().replace('#', '').trim();
     const bairroQuery = filterBairro.toLowerCase().trim();
 
-    return allImoveis.filter((imovel) => {
+    const results = allImoveis.filter((imovel) => {
       // 1. Text keyword search (title, description, neighborhood, building, reference code like FRE03)
       if (query) {
         const propCode = getPropertyCode(imovel, allImoveis).toLowerCase();
@@ -1367,6 +1519,31 @@ useEffect(() => {
 
       return true;
     });
+
+    // Apply sorting
+    if (sortBy === 'menor_preco') {
+      results.sort((a, b) => {
+        const priceA = (filterTipo === 'alugar' && a.valorLocacao) ? a.valorLocacao : (a.valor || a.valorVenda || 0);
+        const priceB = (filterTipo === 'alugar' && b.valorLocacao) ? b.valorLocacao : (b.valor || b.valorVenda || 0);
+        return priceA - priceB;
+      });
+    } else if (sortBy === 'maior_preco') {
+      results.sort((a, b) => {
+        const priceA = (filterTipo === 'alugar' && a.valorLocacao) ? a.valorLocacao : (a.valor || a.valorVenda || 0);
+        const priceB = (filterTipo === 'alugar' && b.valorLocacao) ? b.valorLocacao : (b.valor || b.valorVenda || 0);
+        return priceB - priceA;
+      });
+    } else if (sortBy === 'mais_recentes') {
+      results.sort((a, b) => {
+        const dateA = a.dataCadastro ? new Date(a.dataCadastro).getTime() : 0;
+        const dateB = b.dataCadastro ? new Date(b.dataCadastro).getTime() : 0;
+        return dateB - dateA;
+      });
+    } else if (sortBy === 'maior_area') {
+      results.sort((a, b) => (b.metragem || 0) - (a.metragem || 0));
+    }
+
+    return results;
   }, [
     allImoveis,
     searchWord,
@@ -1389,7 +1566,72 @@ useEffect(() => {
     filterOutrosCorretores,
     isMyProperty,
     activeCorretor,
-    corretoresMap
+    corretoresMap,
+    sortBy
+  ]);
+
+  // Pagination for Home Screen Property Search (10 in 10 properties to maximize performance)
+  const HOME_PAGE_SIZE = 10;
+  const [homePage, setHomePage] = useState<number>(1);
+
+  // Automatically reset to page 1 whenever any filter or search query changes
+  useEffect(() => {
+    setHomePage(1);
+  }, [
+    searchWord,
+    filterCidade,
+    filterBairro,
+    filterTipo,
+    filterTipoImovel,
+    filterStatusImovel,
+    filterValorMin,
+    filterValorMax,
+    filterDormitorios,
+    filterBanheiros,
+    filterVagas,
+    filterMetragemMin,
+    filterMetragemMax,
+    filterApenasFavoritos,
+    filterMeusImoveis,
+    filterOutrosCorretores,
+    filterIntegracao,
+    sortBy
+  ]);
+
+  const totalHomePages = Math.max(1, Math.ceil(filteredImoveis.length / HOME_PAGE_SIZE));
+  const currentHomePage = Math.min(Math.max(1, homePage), totalHomePages);
+
+  const paginatedHomeImoveis = useMemo(() => {
+    const startIndex = (currentHomePage - 1) * HOME_PAGE_SIZE;
+    return filteredImoveis.slice(startIndex, startIndex + HOME_PAGE_SIZE);
+  }, [filteredImoveis, currentHomePage]);
+
+  const handleHomePageChange = (newPage: number) => {
+    const targetPage = Math.min(Math.max(1, newPage), totalHomePages);
+    setHomePage(targetPage);
+    const resultsHeader = document.getElementById('property-search-results-section');
+    if (resultsHeader) {
+      resultsHeader.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  // Show loading indicator briefly when filters or search change
+  useEffect(() => {
+    setIsLoadingImoveis(true);
+    const timer = setTimeout(() => {
+      setIsLoadingImoveis(false);
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [
+    searchWord,
+    filterTipo,
+    filterTipoImovel,
+    filterValorMin,
+    filterValorMax,
+    filterCidade,
+    filterBairro,
+    currentHomePage,
+    sortBy
   ]);
 
   // Check which properties are stories (registered within 24h by others and shared)
@@ -2038,10 +2280,14 @@ Toque abaixo para ver a seleção completa:
         )}
 
         {/* Dynamic Inner screens navigation */}
-        <div className={`flex-grow overflow-y-auto ${
-          activeTab === 'home' && !isAddingProperty && !selectedPropertyId 
-            ? (selectedPropertyIds.length > 0 ? 'pb-40' : 'pb-32') 
-            : 'pb-20'
+        <div className={`flex-grow ${
+          searchViewMode === 'mapa' && activeTab === 'home' && !isAddingProperty && !selectedPropertyId
+            ? 'overflow-hidden flex flex-col h-[calc(100%-64px)] pb-0'
+            : 'overflow-y-auto ' + (
+                activeTab === 'home' && !isAddingProperty && !selectedPropertyId 
+                  ? (selectedPropertyIds.length > 0 ? 'pb-40' : 'pb-32') 
+                  : 'pb-20'
+              )
         }`}>
           
           {isAddingProperty ? (
@@ -2073,35 +2319,52 @@ Toque abaixo para ver a seleção completa:
             <>
               {activeTab === 'home' && (
                 <div 
-                  className="space-y-4 touch-pan-y min-h-screen" 
-                  onTouchStart={handleHomeTouchStart} 
-                  onTouchEnd={handleHomeTouchEnd} 
+                  className={
+                    searchViewMode === 'mapa'
+                      ? "flex-1 flex flex-col h-full overflow-hidden w-full"
+                      : "space-y-4 touch-pan-y min-h-screen"
+                  }
+                  onTouchStart={searchViewMode === 'mapa' ? undefined : handleHomeTouchStart} 
+                  onTouchEnd={searchViewMode === 'mapa' ? undefined : handleHomeTouchEnd} 
                   id="home-tab-view"
                 >
                   {/* Instagram-inspired Top Bar */}
-                  <div className="px-5 pt-6 pb-4 bg-white flex justify-between items-center border-b border-gray-100">
-                    <div className="flex items-center gap-2">
-                      <img
-                        src={logoImg}
-                        alt="ImobiShare Logo"
-                        className="w-7 h-7 object-contain rounded-lg border border-slate-100/50 shadow-xs"
-                        referrerPolicy="no-referrer"
-                        onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = LOGO_IMAGE; }}
-                      />
-                      <h1 className="text-[#003366] text-base font-black tracking-tight uppercase leading-none">ImobiShare</h1>
+                  <div className="bg-white border-b border-gray-100 flex-shrink-0">
+                    <div className="px-5 pt-6 pb-4 flex justify-between items-center">
+                      <div className="flex items-center gap-2">
+                        <img
+                          src={logoImg}
+                          alt="ImobiShare Logo"
+                          className="w-7 h-7 object-contain rounded-lg border border-slate-100/50 shadow-xs"
+                          referrerPolicy="no-referrer"
+                          onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = LOGO_IMAGE; }}
+                        />
+                        <h1 className="text-[#003366] text-base font-black tracking-tight uppercase leading-none">ImobiShare</h1>
+                      </div>
+                      <div className="flex gap-2 items-center">
+                        <div className="w-8 h-8 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-xs shadow-xs" title="Notificações ativas">
+                          🔔
+                        </div>
+                        <div className="w-8 h-8 rounded-full bg-[#003366] flex items-center justify-center text-white text-[10px] font-bold shadow-sm" title={`Logado como ${activeCorretor?.nome || 'Corretor'}`}>
+                          {activeCorretor?.nome ? activeCorretor.nome.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'US'}
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex gap-2 items-center">
-                      <div className="w-8 h-8 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-xs shadow-xs" title="Notificações ativas">
-                        🔔
-                      </div>
-                      <div className="w-8 h-8 rounded-full bg-[#003366] flex items-center justify-center text-white text-[10px] font-bold shadow-sm" title={`Logado como ${activeCorretor?.nome || 'Corretor'}`}>
-                        {activeCorretor?.nome ? activeCorretor.nome.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'US'}
-                      </div>
+
+                    {/* Barra fina em movimento da direita para a esquerda indicando que os imóveis estão carregando */}
+                    <div
+                      className={`h-0.5 sm:h-1 w-full bg-slate-100 overflow-hidden relative transition-opacity duration-300 ${
+                        (isLoadingImoveis || allImoveis.length === 0 || isRefreshing) ? 'opacity-100' : 'opacity-0'
+                      }`}
+                    >
+                      {(isLoadingImoveis || allImoveis.length === 0 || isRefreshing) && (
+                        <div className="h-full w-2/5 bg-gradient-to-l from-[#003366] via-blue-500 to-[#003366] rounded-full absolute right-0 animate-progress-rtl" />
+                      )}
                     </div>
                   </div>
 
                   {/* STORIES BUBBLES CAROUSEL */}
-                  {storyImoveis.length > 0 && (
+                  {searchViewMode !== 'mapa' && storyImoveis.length > 0 && (
                     <div className="bg-white py-2.5 border-b border-slate-100">
                       <div className="flex gap-4 px-4 overflow-x-auto scrollbar-none pb-0.5">
                         {storyImoveis.map((imovel) => (
@@ -2117,7 +2380,7 @@ Toque abaixo para ver a seleção completa:
                   )}
 
                   {/* FAVORITES CAROUSEL */}
-                  {favoriteImoveis.length > 0 && (
+                  {searchViewMode !== 'mapa' && favoriteImoveis.length > 0 && (
                     <div className="px-4 pt-1">
                       <div className="flex gap-2.5 overflow-x-auto pb-2 pt-0.5 scrollbar-none snap-x">
                         {favoriteImoveis.map((imovel) => {
@@ -2180,207 +2443,466 @@ Toque abaixo para ver a seleção completa:
                     </div>
                   )}
 
-                  {/* SEARCH AREA */}
-                  <div className="bg-white border-y border-gray-100 p-4 sm:p-5 space-y-3.5">
-                    <div className="flex gap-2 items-center">
-                      <div className="relative flex-1">
-                        <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                        <input
-                          type="text"
-                          placeholder="Pesquisar por título, condomínio, bairro..."
-                          value={searchWord}
-                          onChange={(e) => setSearchWord(e.target.value)}
-                          className="w-full text-xs pl-10 pr-8 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-hidden focus:border-[#003366] focus:ring-1 focus:ring-[#003366]/20 transition-all font-medium"
-                        />
-                        {searchWord && (
-                          <button
-                            onClick={() => setSearchWord('')}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                          >
-                            <X size={14} />
-                          </button>
-                        )}
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => { setFilterModalTab('home'); setIsFilterModalOpen(true); }}
-                        className={`relative flex items-center justify-center p-3 rounded-2xl transition-all cursor-pointer shadow-xs border flex-shrink-0 ${
-                          getActiveFilterCount() > 0
-                            ? 'bg-[#003366] text-white border-[#003366] hover:bg-[#002244]'
-                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                        }`}
-                        id="btn-open-advanced-filter"
-                        title="Filtro Completo"
-                        aria-label="Filtro Completo"
+                  {/* SEARCH CARD & PILLS GROUP WITH TIGHT LINE SPACING */}
+                  <div className={searchViewMode === 'mapa' ? "flex-shrink-0 bg-white border-b border-slate-100/80 shadow-xs" : "space-y-1"}>
+                    {/* 1. MAIN SEARCH CARD */}
+                    <div className={`px-4 ${searchViewMode === 'mapa' ? 'py-2' : 'pt-1'}`}>
+                      <div
+                        onClick={() => {
+                          if (!isSearchingEmpreendimento) {
+                            setIsSearchingEmpreendimento(true);
+                            setTimeout(() => empreendimentoInputRef.current?.focus(), 50);
+                          }
+                        }}
+                        className="bg-white border border-slate-200/90 rounded-2xl p-3.5 sm:p-4 shadow-xs hover:shadow-md hover:border-[#003366]/40 transition-all flex items-center justify-between gap-3 cursor-pointer"
                       >
-                        <SlidersHorizontal size={18} />
-                        {getActiveFilterCount() > 0 && (
-                          <span className="absolute -top-1 -right-1 bg-amber-400 text-slate-900 text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-white shadow-xs">
-                            {getActiveFilterCount()}
-                          </span>
-                        )}
-                      </button>
+                        {/* Left: Two-line textual summary with instant inline enterprise search */}
+                        <div className="flex-1 min-w-0">
+                          {isSearchingEmpreendimento ? (
+                            <div className="min-w-0" onClick={(e) => e.stopPropagation()}>
+                              {/* 1st line: Seamless text input with search icon, smaller font, no underline */}
+                              <div className="relative flex items-center">
+                                <Search size={16} className="text-slate-400 flex-shrink-0 mr-2" />
+                                <input
+                                  ref={empreendimentoInputRef}
+                                  type="text"
+                                  placeholder="Buscar Imóvel"
+                                  value={searchWord}
+                                  onChange={(e) => {
+                                    setSearchWord(e.target.value);
+                                    setHomePage(1);
+                                  }}
+                                  onBlur={() => {
+                                    if (!searchWord.trim()) {
+                                      setIsSearchingEmpreendimento(false);
+                                    }
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      empreendimentoInputRef.current?.blur();
+                                    }
+                                    if (e.key === 'Escape') {
+                                      setSearchWord('');
+                                      setHomePage(1);
+                                      setIsSearchingEmpreendimento(false);
+                                    }
+                                  }}
+                                  className="w-full text-xs sm:text-sm font-medium text-slate-800 bg-transparent border-0 border-none outline-hidden focus:outline-hidden focus:ring-0 p-0 pr-6 placeholder:text-slate-400 placeholder:font-normal"
+                                  autoFocus
+                                />
+                                {searchWord ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSearchWord('');
+                                      setHomePage(1);
+                                      empreendimentoInputRef.current?.focus();
+                                    }}
+                                    className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-0.5 cursor-pointer"
+                                    title="Limpar busca"
+                                  >
+                                    <X size={14} />
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => setIsSearchingEmpreendimento(false)}
+                                    className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500 p-0.5 cursor-pointer"
+                                    title="Fechar"
+                                  >
+                                    <X size={14} />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <div>
+                              {/* 1st line: Cidade e bairro com mais imóveis ou Empreendimento ativo */}
+                              <div className="mb-0.5 flex items-center gap-1.5 min-w-0">
+                                {searchWord ? (
+                                  <>
+                                    <h3 className="text-sm sm:text-base font-extrabold text-[#003366] tracking-tight truncate flex items-center gap-1">
+                                      <Building size={15} className="text-[#003366] flex-shrink-0" />
+                                      <span>{searchWord}</span>
+                                    </h3>
+                                    <span className="text-[11px] text-slate-400 font-medium truncate">
+                                      em {searchCardCityAndNeighborhood}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSearchWord('');
+                                        setHomePage(1);
+                                      }}
+                                      className="text-slate-400 hover:text-slate-700 p-0.5 ml-0.5 cursor-pointer"
+                                      title="Remover filtro de empreendimento"
+                                    >
+                                      <X size={13} />
+                                    </button>
+                                  </>
+                                ) : (
+                                  <h3 className="text-sm sm:text-base font-extrabold text-slate-900 tracking-tight truncate hover:text-[#003366] transition-colors">
+                                    {searchCardCityAndNeighborhood}
+                                  </h3>
+                                )}
+                              </div>
+
+                              {/* 2nd line: Informações menores (Venda - Sem filtros de imóvel) */}
+                              <p className="text-[11px] sm:text-xs text-slate-500 font-medium truncate">
+                                {searchWord ? `${searchWord} • ${searchCardSubtext}` : searchCardSubtext}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Right: Circular filter button with very light gray background */}
+                        <button
+                          type="button"
+                          id="btn-search-card-filters"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFilterModalTab('home');
+                            setIsFilterModalOpen(true);
+                          }}
+                          className="w-11 h-11 rounded-full bg-slate-100/90 hover:bg-slate-200 active:scale-95 transition-all flex items-center justify-center text-slate-700 flex-shrink-0 cursor-pointer border border-slate-200/50 shadow-xs relative"
+                          title="Filtros de busca"
+                          aria-label="Filtros de busca"
+                        >
+                          <SlidersHorizontal size={18} className="text-slate-700" />
+                          {getActiveFilterCount() > 2 && (
+                            <span className="absolute -top-1 -right-1 bg-[#003366] text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center border border-white shadow-xs">
+                              {getActiveFilterCount() - 2}
+                            </span>
+                          )}
+                        </button>
+                      </div>
                     </div>
 
-                    {/* Quick City and Category row */}
-                    <div className="grid grid-cols-2 gap-3 text-xs">
-                      <div>
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Cidade</span>
-                        <select
-                          value={filterCidade}
-                          onChange={(e) => setFilterCidade(e.target.value)}
-                          className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-slate-50 focus:outline-hidden text-xs font-semibold text-slate-700"
-                        >
-                          {availableCities.map((city) => (
-                            <option key={city} value={city}>
-                              {city}
-                            </option>
-                          ))}
-                          <option value="Todas">Todas As Cidades</option>
-                        </select>
+                    {/* 2. CATEGORY & VALUE PILLS (Horizontal Capsules) - Only in list mode */}
+                    {searchViewMode !== 'mapa' && (
+                      <>
+                        {/* 2. CATEGORY PILLS (Horizontal Capsules) */}
+                        <div className="px-4">
+                      <div className="flex items-center gap-[7px] overflow-x-auto no-scrollbar scrollbar-none py-0.5">
+                        {[
+                          { id: 'todos', label: 'Todos' },
+                          { id: 'Apartamento', label: 'Apartamento' },
+                          { id: 'Casa', label: 'Casa' },
+                          { id: 'Cobertura', label: 'Cobertura' },
+                          { id: 'Sobrado', label: 'Sobrado' },
+                          { id: 'Terreno', label: 'Terreno' },
+                          { id: 'Comercial', label: 'Comercial' },
+                          { id: 'Diferenciado', label: 'Diferenciado' },
+                          { id: 'Outro', label: 'Outro' },
+                        ].map((cat) => {
+                          const isSelected = filterTipoImovel.toLowerCase() === cat.id.toLowerCase();
+                          return (
+                            <button
+                              key={cat.id}
+                              type="button"
+                              onClick={() => {
+                                setFilterTipoImovel(cat.id);
+                                setHomePage(1);
+                              }}
+                              className={`px-[7px] py-2 rounded-full text-xs font-bold transition-all whitespace-nowrap text-center cursor-pointer flex-shrink-0 ${
+                                isSelected
+                                  ? 'bg-[#003366] text-white shadow-xs'
+                                  : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                              }`}
+                            >
+                              {cat.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* 2.1 VALUE / PRICE PILLS (Horizontal Capsules for Values) */}
+                    <div className="px-4">
+                      <div className="flex items-center gap-[7px] overflow-x-auto no-scrollbar scrollbar-none py-0.5">
+                        {(filterTipo === 'alugar' ? [
+                          { id: 'todos', label: 'Todos', min: 0, max: 15000000 },
+                          { id: 'ate_2k5', label: 'Até R$ 2.500', min: 0, max: 2500 },
+                          { id: '2k5_5k', label: 'R$ 2.500 a 5.000', min: 2500, max: 5000 },
+                          { id: '5k_10k', label: 'R$ 5.000 a 10.000', min: 5000, max: 10000 },
+                          { id: '10k_20k', label: 'R$ 10.000 a 20.000', min: 10000, max: 20000 },
+                          { id: 'acima_20k', label: 'Acima de R$ 20.000', min: 20000, max: 15000000 },
+                        ] : [
+                          { id: 'todos', label: 'Todos', min: 0, max: 15000000 },
+                          { id: 'ate_500k', label: 'Até R$ 500 mil', min: 0, max: 500000 },
+                          { id: '500k_1m', label: 'R$ 500 mil a 1 mi', min: 500000, max: 1000000 },
+                          { id: '1m_2m', label: 'R$ 1 mi a 2 mi', min: 1000000, max: 2000000 },
+                          { id: '2m_3m', label: 'R$ 2 mi a 3 mi', min: 2000000, max: 3000000 },
+                          { id: '3m_5m', label: 'R$ 3 mi a 5 mi', min: 3000000, max: 5000000 },
+                          { id: 'acima_5m', label: 'Acima de R$ 5 mi', min: 5000000, max: 15000000 },
+                        ]).map((band) => {
+                          const isSelected =
+                            band.min === 0 && band.max >= 15000000
+                              ? filterValorMin === 0 && (filterValorMax === 0 || filterValorMax >= 15000000)
+                              : band.max >= 15000000
+                              ? filterValorMin === band.min && (filterValorMax === 0 || filterValorMax >= 15000000)
+                              : filterValorMin === band.min && filterValorMax === band.max;
+
+                          return (
+                            <button
+                              key={band.id}
+                              type="button"
+                              onClick={() => {
+                                if (band.min === 0 && band.max >= 15000000) {
+                                  setFilterValorMin(0);
+                                  setFilterValorMax(15000000);
+                                } else {
+                                  setFilterValorMin(band.min);
+                                  setFilterValorMax(band.max);
+                                }
+                                setHomePage(1);
+                              }}
+                              className={`px-[7px] py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap text-center cursor-pointer flex-shrink-0 ${
+                                isSelected
+                                  ? 'bg-[#003366] text-white shadow-xs'
+                                  : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                              }`}
+                            >
+                              {band.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* 3. MAIN CONTENT: FULL SCREEN MAP OR PROPERTY SEARCH RESULTS LIST */}
+                  {searchViewMode === 'mapa' ? (
+                    <div className="flex-1 w-full relative min-h-0 overflow-hidden" id="full-screen-map-container">
+                      <MapView
+                        imoveis={filteredImoveis}
+                        selectedIds={selectedPropertyIds}
+                        onSelectToggle={handleSelectToggle}
+                        onViewDetails={setSelectedPropertyId}
+                        isFullScreen
+                      />
+                    </div>
+                  ) : (
+                    <div className="px-4 space-y-3.5 pt-1" id="property-search-results-section">
+                    <div className="flex items-center justify-between gap-2">
+                      {/* Left: Contagem de imóveis e página ao lado na mesma linha */}
+                      <div className="flex items-baseline gap-2 min-w-0 flex-wrap">
+                        <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight whitespace-nowrap">
+                          {filteredImoveis.length.toLocaleString('pt-BR')} {filteredImoveis.length === 1 ? 'imóvel' : 'imóveis'}
+                        </h2>
+                        {filteredImoveis.length > 0 && (
+                          <span className="text-xs font-semibold text-slate-400 whitespace-nowrap">
+                            página {currentHomePage} de {totalHomePages}
+                          </span>
+                        )}
                       </div>
 
-                      <div>
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Negócio</span>
-                        <div className="grid grid-cols-3 gap-0.5 bg-gray-100 p-1 rounded-xl text-[10px] font-bold">
+                      {/* Right: Selected badge (if any) and Sort icon button without borders */}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {selectedPropertyIds.length > 0 && (
+                          <span className="text-[10px] font-bold text-[#003366] bg-blue-50 px-2.5 py-1 rounded-full border border-blue-100">
+                            {selectedPropertyIds.length} selecionado(s)
+                          </span>
+                        )}
+
+                        {/* Sorting button: only icon, without borders, on the right */}
+                        <div className="relative">
                           <button
                             type="button"
-                            onClick={() => setFilterTipo('todos')}
-                            className={`py-1 rounded-lg transition-all ${filterTipo === 'todos' ? 'bg-white text-[#003366] shadow-xs' : 'text-gray-500'}`}
+                            id="btn-sort-results"
+                            onClick={() => setIsSortMenuOpen(!isSortMenuOpen)}
+                            className="p-1.5 text-slate-600 hover:text-[#003366] active:scale-95 transition-all cursor-pointer rounded-lg hover:bg-slate-100"
+                            title="Ordenar resultados"
+                            aria-label="Ordenar resultados"
                           >
-                            Todos
+                            <ArrowUpDown size={18} className={sortBy !== 'relevancia' ? 'text-[#003366]' : 'text-slate-600'} />
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => setFilterTipo('comprar')}
-                            className={`py-1 rounded-lg transition-all ${filterTipo === 'comprar' ? 'bg-white text-[#003366] shadow-xs' : 'text-gray-500'}`}
-                          >
-                            Venda
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setFilterTipo('alugar')}
-                            className={`py-1 rounded-lg transition-all ${filterTipo === 'alugar' ? 'bg-white text-[#003366] shadow-xs' : 'text-gray-500'}`}
-                          >
-                            Aluguel
-                          </button>
+
+                          {isSortMenuOpen && (
+                            <>
+                              <div className="fixed inset-0 z-30" onClick={() => setIsSortMenuOpen(false)} />
+                              <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-100 p-1.5 z-40 space-y-0.5 animate-in fade-in zoom-in-95 duration-150">
+                                <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 mb-1">
+                                  Ordenar resultados
+                                </div>
+                                {[
+                                  { id: 'relevancia', label: 'Relevância (Padrão)' },
+                                  { id: 'menor_preco', label: 'Menor preço' },
+                                  { id: 'maior_preco', label: 'Maior preço' },
+                                  { id: 'mais_recentes', label: 'Mais recentes' },
+                                  { id: 'maior_area', label: 'Maior metragem' },
+                                ].map((opt) => (
+                                  <button
+                                    key={opt.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setSortBy(opt.id as any);
+                                      setIsSortMenuOpen(false);
+                                      setHomePage(1);
+                                    }}
+                                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                                      sortBy === opt.id
+                                        ? 'bg-[#003366] text-white'
+                                        : 'text-slate-700 hover:bg-slate-50'
+                                    }`}
+                                  >
+                                    <span>{opt.label}</span>
+                                    {sortBy === opt.id && <Check size={14} className="stroke-[3]" />}
+                                  </button>
+                                ))}
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
 
-                    {/* Meus Imóveis, Parcerias and Integração Checkbox switches */}
-                    <div className="flex items-center justify-between gap-1.5 sm:gap-3 pt-2.5 border-t border-gray-100 text-[10px] sm:text-xs">
-                      <div className="flex items-center gap-1 min-w-0">
-                        <input
-                          type="checkbox"
-                          id="chk-meus-imoveis"
-                          checked={filterMeusImoveis}
-                          onChange={(e) => setFilterMeusImoveis(e.target.checked)}
-                          className="w-3.5 h-3.5 text-[#003366] accent-[#003366] border-slate-300 rounded focus:ring-[#003366] cursor-pointer flex-shrink-0"
-                        />
-                        <label htmlFor="chk-meus-imoveis" className="font-bold text-slate-700 cursor-pointer truncate">
-                          Meus imóveis
-                        </label>
-                      </div>
-
-                      <div className="flex items-center gap-1 min-w-0">
-                        <input
-                          type="checkbox"
-                          id="chk-outros-corretores"
-                          checked={filterOutrosCorretores}
-                          onChange={(e) => setFilterOutrosCorretores(e.target.checked)}
-                          className="w-3.5 h-3.5 text-[#003366] accent-[#003366] border-slate-300 rounded focus:ring-[#003366] cursor-pointer flex-shrink-0"
-                        />
-                        <label htmlFor="chk-outros-corretores" className="font-bold text-slate-700 cursor-pointer truncate">
-                          Parcerias
-                        </label>
-                      </div>
-
-                      <div className="flex items-center gap-1 min-w-0">
-                        <input
-                          type="checkbox"
-                          id="chk-integracoes"
-                          checked={filterIntegracao}
-                          onChange={(e) => setFilterIntegracao(e.target.checked)}
-                          className="w-3.5 h-3.5 text-amber-500 accent-amber-500 border-slate-300 rounded focus:ring-amber-500 cursor-pointer flex-shrink-0"
-                        />
-                        <label htmlFor="chk-integracoes" className="font-bold text-slate-700 cursor-pointer truncate">
-                          Portais
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* PROPERTY SEARCH RESULTS LIST */}
-                  <div className="px-4 space-y-3.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                        Resultado da Busca ({filteredImoveis.length})
-                      </span>
-                      
-                      {selectedPropertyIds.length > 0 && (
-                        <span className="text-[9px] font-bold text-blue-900 bg-blue-50 px-1.5 py-0.5 rounded-md">
-                          {selectedPropertyIds.length} selecionados
-                        </span>
-                      )}
-                    </div>
-
                     <div className="space-y-3">
-                      {/* Render based on selected searchViewMode */}
-                      {searchViewMode === 'mapa' && filteredImoveis.length > 0 ? (
-                        <MapView
-                          imoveis={filteredImoveis}
-                          selectedIds={selectedPropertyIds}
-                          onSelectToggle={handleSelectToggle}
-                          onViewDetails={setSelectedPropertyId}
-                        />
-                      ) : (
-                        filteredImoveis.map((imovel) => {
-                          const isMine = isMyProperty(imovel);
-                          const isFav = favoritos.includes(imovel.id) || imovel.favorito === true;
-                          const isSel = selectedPropertyIds.includes(imovel.id);
+                      {paginatedHomeImoveis.map((imovel) => {
+                        const isMine = isMyProperty(imovel);
+                        const isFav = favoritos.includes(imovel.id) || imovel.favorito === true;
+                        const isSel = selectedPropertyIds.includes(imovel.id);
 
-                          if (searchViewMode === 'lista') {
-                            return (
-                              <CompactPropertyRow
-                                key={imovel.id}
-                                imovel={imovel}
-                                isMyProperty={isMine}
-                                isFavorite={isFav}
-                                isSelected={isSel}
-                                onSelectToggle={() => handleSelectToggle(imovel.id)}
-                                onShareSingle={() => handleShareSingleProperty(imovel)}
-                                onClick={() => setSelectedPropertyId(imovel.id)}
-                              />
-                            );
-                          }
-
+                        if (searchViewMode === 'lista') {
                           return (
-                            <PropertyCard
+                            <CompactPropertyRow
                               key={imovel.id}
                               imovel={imovel}
                               isMyProperty={isMine}
                               isFavorite={isFav}
                               isSelected={isSel}
-                              showCheckbox={true}
                               onSelectToggle={() => handleSelectToggle(imovel.id)}
                               onShareSingle={() => handleShareSingleProperty(imovel)}
                               onClick={() => setSelectedPropertyId(imovel.id)}
                             />
                           );
-                        })
-                      )}
+                        }
+
+                        return (
+                          <PropertyCard
+                            key={imovel.id}
+                            imovel={imovel}
+                            isMyProperty={isMine}
+                            isFavorite={isFav}
+                            isSelected={isSel}
+                            showCheckbox={true}
+                            onSelectToggle={() => handleSelectToggle(imovel.id)}
+                            onShareSingle={() => handleShareSingleProperty(imovel)}
+                            onClick={() => setSelectedPropertyId(imovel.id)}
+                          />
+                        );
+                      })}
 
                       {filteredImoveis.length === 0 && (
                         <div className="text-center py-10 bg-white border border-slate-100 rounded-xl">
                           <span className="text-xs text-slate-400">Nenhum imóvel encontrado com os filtros selecionados.</span>
                         </div>
                       )}
+
+                      {/* PAGINATION CONTROLS (10 em 10 imóveis) */}
+                      {filteredImoveis.length > HOME_PAGE_SIZE && (
+                        <div className="pt-2 pb-6 space-y-2.5" id="home-pagination-controls">
+                          {/* Quick "Ver mais" button if not on last page */}
+                          {currentHomePage < totalHomePages && (
+                            <button
+                              type="button"
+                              onClick={() => handleHomePageChange(currentHomePage + 1)}
+                              className="w-full py-3 px-4 bg-[#003366] hover:bg-[#002244] text-white font-bold text-xs sm:text-sm rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-[0.99]"
+                            >
+                              <span>Ver mais</span>
+                            </button>
+                          )}
+
+                          {/* Numbered pagination toolbar */}
+                          <div className="flex items-center justify-between gap-1 sm:gap-2 bg-white p-2.5 sm:p-3 rounded-2xl border border-slate-100 shadow-xs">
+                            <button
+                              type="button"
+                              disabled={currentHomePage <= 1}
+                              onClick={() => handleHomePageChange(currentHomePage - 1)}
+                              className={`flex items-center gap-1 px-2.5 sm:px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                                currentHomePage <= 1
+                                  ? 'text-slate-300 bg-slate-50 cursor-not-allowed border border-transparent'
+                                  : 'text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 active:scale-95'
+                              }`}
+                              aria-label="Página anterior"
+                            >
+                              <ChevronLeft size={16} />
+                              <span className="hidden sm:inline">Anterior</span>
+                            </button>
+
+                            {/* Page numbers with smart windowing */}
+                            <div className="flex items-center gap-1">
+                              {(() => {
+                                const pages: (number | string)[] = [];
+                                if (totalHomePages <= 5) {
+                                  for (let i = 1; i <= totalHomePages; i++) pages.push(i);
+                                } else {
+                                  pages.push(1);
+                                  if (currentHomePage > 3) pages.push('...');
+                                  const start = Math.max(2, currentHomePage - 1);
+                                  const end = Math.min(totalHomePages - 1, currentHomePage + 1);
+                                  for (let i = start; i <= end; i++) {
+                                    if (!pages.includes(i)) pages.push(i);
+                                  }
+                                  if (currentHomePage < totalHomePages - 2) pages.push('...');
+                                  if (!pages.includes(totalHomePages)) pages.push(totalHomePages);
+                                }
+
+                                return pages.map((page, idx) => {
+                                  if (typeof page === 'string') {
+                                    return (
+                                      <span key={`ellipsis-${idx}`} className="px-1 text-xs text-slate-400 font-bold">
+                                        ...
+                                      </span>
+                                    );
+                                  }
+
+                                  const isActive = page === currentHomePage;
+                                  return (
+                                    <button
+                                      key={`page-${page}`}
+                                      type="button"
+                                      onClick={() => handleHomePageChange(page)}
+                                      className={`min-w-[34px] sm:min-w-[38px] h-9 px-2 flex items-center justify-center rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                                        isActive
+                                          ? 'bg-[#003366] text-white shadow-xs'
+                                          : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200'
+                                      }`}
+                                      aria-label={`Ir para página ${page}`}
+                                      aria-current={isActive ? 'page' : undefined}
+                                    >
+                                      {page}
+                                    </button>
+                                  );
+                                });
+                              })()}
+                            </div>
+
+                            <button
+                              type="button"
+                              disabled={currentHomePage >= totalHomePages}
+                              onClick={() => handleHomePageChange(currentHomePage + 1)}
+                              className={`flex items-center gap-1 px-2.5 sm:px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                                currentHomePage >= totalHomePages
+                                  ? 'text-slate-300 bg-slate-50 cursor-not-allowed border border-transparent'
+                                  : 'text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 active:scale-95'
+                              }`}
+                              aria-label="Próxima página"
+                            >
+                              <span className="hidden sm:inline">Próxima</span>
+                              <ChevronRight size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
+            )}
 
               {activeTab === 'my-properties' && (
                 <div className="p-3.5 space-y-3" id="my-properties-tab-view">
@@ -2543,57 +3065,23 @@ Toque abaixo para ver a seleção completa:
 
 
 
-        {/* Floating Premium View mode switcher matching attached image */}
+        {/* Floating single toggle button: Mostrar mapa / Mostrar lista */}
         {activeTab === 'home' && !selectedPropertyId && !isAddingProperty && selectedPropertyIds.length === 0 && (
           <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 pointer-events-auto transition-all duration-300">
-            <div className="bg-white p-1 rounded-[22px] flex items-center gap-1 shadow-[0_8px_30px_rgba(0,0,0,0.12)] border border-slate-100/80">
-              <button
-                type="button"
-                onClick={() => setSearchViewMode('como_esta_hoje')}
-                className={`w-11 h-11 rounded-[18px] flex items-center justify-center transition-all ${
-                  searchViewMode === 'como_esta_hoje'
-                    ? 'bg-[#FF5A36] text-white shadow-xs'
-                    : 'bg-transparent text-slate-900 hover:bg-slate-50'
-                }`}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-                  <line x1="4" y1="5" x2="20" y2="5" />
-                  <rect x="4" y="9" width="16" height="6" rx="1.5" />
-                  <line x1="4" y1="19" x2="20" y2="19" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSearchViewMode('lista')}
-                className={`w-11 h-11 rounded-[18px] flex items-center justify-center transition-all ${
-                  searchViewMode === 'lista'
-                    ? 'bg-[#FF5A36] text-white shadow-xs'
-                    : 'bg-transparent text-slate-900 hover:bg-slate-50'
-                }`}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-                  <rect x="3" y="3" width="18" height="18" rx="4" />
-                  <line x1="3" y1="10" x2="21" y2="10" />
-                  <line x1="3" y1="15" x2="21" y2="15" />
-                  <line x1="12" y1="3" x2="12" y2="21" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSearchViewMode('mapa')}
-                className={`w-11 h-11 rounded-[18px] flex items-center justify-center transition-all ${
-                  searchViewMode === 'mapa'
-                    ? 'bg-[#FF5A36] text-white shadow-xs'
-                    : 'bg-transparent text-slate-900 hover:bg-slate-50'
-                }`}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-                  <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21" />
-                  <line x1="9" y1="3" x2="9" y2="18" />
-                  <line x1="15" y1="6" x2="15" y2="21" />
-                </svg>
-              </button>
-            </div>
+            <button
+              type="button"
+              id="btn-floating-view-toggle"
+              onClick={() => {
+                if (searchViewMode === 'mapa') {
+                  setSearchViewMode('como_esta_hoje');
+                } else {
+                  setSearchViewMode('mapa');
+                }
+              }}
+              className="px-6 py-2.5 rounded-full text-xs sm:text-sm font-bold bg-[#003366] hover:bg-[#002244] text-white shadow-[0_8px_25px_rgba(0,51,102,0.35)] active:scale-95 transition-all cursor-pointer whitespace-nowrap flex items-center justify-center border border-white/20"
+            >
+              {searchViewMode === 'mapa' ? 'Mostrar lista' : 'Mostrar mapa'}
+            </button>
           </div>
         )}
 
@@ -2684,6 +3172,32 @@ Toque abaixo para ver a seleção completa:
 
                 {/* Modal Scrollable Form */}
                 <div className="p-4 sm:p-5 overflow-y-auto space-y-5 text-xs">
+                  {/* Busca por Palavra-Chave / Código */}
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-slate-700 block uppercase tracking-wider text-[10px]">
+                      Buscar por termo, edifício ou código
+                    </label>
+                    <div className="relative">
+                      <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Ex: frente mar, piscina, FRE01..."
+                        value={filterModalTab === 'home' ? searchWord : myPropertiesSearch}
+                        onChange={(e) => filterModalTab === 'home' ? setSearchWord(e.target.value) : setMyPropertiesSearch(e.target.value)}
+                        className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-hidden focus:border-[#003366]"
+                      />
+                      {(filterModalTab === 'home' ? searchWord : myPropertiesSearch) && (
+                        <button
+                          type="button"
+                          onClick={() => filterModalTab === 'home' ? setSearchWord('') : setMyPropertiesSearch('')}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
                   {/* 1. Tipo de Negócio */}
                   <div className="space-y-1.5">
                     <label className="font-bold text-slate-700 block uppercase tracking-wider text-[10px]">1. Tipo de Negócio</label>

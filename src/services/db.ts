@@ -440,6 +440,8 @@ export class DbService {
         integrado: imovel.integrado ?? (imovel.origem && imovel.origem.toLowerCase() !== 'imobishare' ? true : false),
         integracaoOrigem: imovel.integracaoOrigem || (imovel.origem && imovel.origem.toLowerCase() !== 'imobishare' ? imovel.origem : undefined),
         construtora: imovel.construtora || '',
+        latitude: imovel.latitude,
+        longitude: imovel.longitude,
         fotos: Array.isArray(imovel.fotos) ? imovel.fotos : [],
         dataCadastro: imovel.dataCadastro || new Date().toISOString()
       };
