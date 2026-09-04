@@ -27,7 +27,7 @@ interface PropertyCardProps {
   showCheckbox?: boolean;
 }
 
-export function PropertyCard({
+function PropertyCardComponent({
   imovel,
   isMyProperty,
   isSelected = false,
@@ -86,12 +86,11 @@ export function PropertyCard({
   };
 
   return (
-    <motion.div
-      whileHover={{ y: -1 }}
-      transition={{ duration: 0.2 }}
+    <div
       onClick={handleCardClick}
-      className={`bg-white border rounded-lg overflow-hidden shadow-2xs hover:shadow-xs transition-all flex flex-row p-2 gap-2 items-stretch cursor-pointer ${
-        isSelected ? 'border-[#003366] ring-1 ring-[#003366]/20 bg-[#003366]/[0.01]' : 'border-slate-100'
+      style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 110px' }}
+      className={`bg-white border rounded-lg overflow-hidden shadow-2xs hover:shadow-xs transition-all duration-150 hover:-translate-y-0.5 will-change-transform flex flex-row p-2 gap-2 items-stretch cursor-pointer ${
+        isSelected ? 'border-blue-600 ring-1 ring-blue-600/20 bg-blue-50/20' : 'border-slate-100 hover:border-slate-200'
       }`}
       id={`property-card-${imovel.id}`}
     >
@@ -332,6 +331,19 @@ export function PropertyCard({
           </div>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }
+
+export const PropertyCard = React.memo(PropertyCardComponent, (prev, next) => {
+  return (
+    prev.imovel.id === next.imovel.id &&
+    prev.imovel.dataCadastro === next.imovel.dataCadastro &&
+    prev.imovel.valor === next.imovel.valor &&
+    prev.imovel.valorLocacao === next.imovel.valorLocacao &&
+    prev.isSelected === next.isSelected &&
+    prev.isFavorite === next.isFavorite &&
+    prev.isMyProperty === next.isMyProperty &&
+    prev.showCheckbox === next.showCheckbox
+  );
+});

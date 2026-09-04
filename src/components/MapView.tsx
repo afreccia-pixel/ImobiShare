@@ -3,11 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Imovel } from '../types';
-import { MapPin } from 'lucide-react';
+import { MapPin, Bed, Car, Maximize } from 'lucide-react';
 import { getValidImage } from '../utils/imageUtils';
 import { getCoordinatesForImovel } from '../utils/geoUtils';
 
@@ -17,6 +17,14 @@ interface MapViewProps {
   onSelectToggle: (id: string) => void;
   onViewDetails: (id: string) => void;
   isFullScreen?: boolean;
+  onClusterChange?: (hasCluster: boolean) => void;
+}
+
+interface MapCluster {
+  id: string;
+  center: [number, number];
+  imoveis: Imovel[];
+  totalCount: number;
 }
 
 // Safely patch Leaflet's L.DomUtil.getPosition to prevent Uncaught TypeError: Cannot read properties of undefined (reading '_leaflet_pos')
@@ -56,11 +64,14 @@ function safePatchLeaflet(leafletInstance: any) {
   };
 }
 
-export function MapView({ imoveis, selectedIds, onSelectToggle, onViewDetails, isFullScreen = false }: MapViewProps) {
+export function MapView({ imoveis, selectedIds, onSelectToggle, onViewDetails, isFullScreen = false, onClusterChange }: MapViewProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const layerGroupRef = useRef<L.LayerGroup | null>(null);
+  const carouselRef = useRef<HTMLDivElement>(null);
   const [mapReady, setMapReady] = useState(false);
+  const [selectedCluster, setSelectedCluster] = useState<MapCluster | null>(null);
+  const [currentZoom, setCurrentZoom] = useState<number>(13);
 
   // Format price helper
   const formatPrice = (value: number) => {
@@ -117,6 +128,17 @@ export function MapView({ imoveis, selectedIds, onSelectToggle, onViewDetails, i
       mapInstanceRef.current = map;
       layerGroupRef.current = layerGroup;
       setMapReady(true);
+      setCurrentZoom(map.getZoom());
+
+      // Close open cluster cards when clicking empty space on map
+      map.on('click', () => {
+        setSelectedCluster(null);
+      });
+
+      // Track zoom level changes
+      map.on('zoomend', () => {
+        setCurrentZoom(map.getZoom());
+      });
     } catch (err) {
       console.warn('Error initializing map:', err);
     }
@@ -135,151 +157,146 @@ export function MapView({ imoveis, selectedIds, onSelectToggle, onViewDetails, i
     };
   }, []);
 
-  // Update Markers when imoveis or selectedIds change, and auto-fit bounds
-  useEffect(() => {
+  // Compute zoom-dependent clusters
+  const computeClusters = useCallback((map: L.Map, imoveisList: Imovel[]): MapCluster[] => {
+    const zoom = map.getZoom();
+    // Clustering radius in pixels: smaller radius at higher zoom to reveal specific areas
+    const pixelRadius = zoom >= 17 ? 22 : zoom >= 15 ? 34 : zoom >= 13 ? 46 : 56;
+
+    const clusters: {
+      id: string;
+      center: [number, number];
+      pixelCenter: L.Point;
+      imoveis: Imovel[];
+    }[] = [];
+
+    imoveisList.forEach((imovel, index) => {
+      const coords = getCoordinatesForImovel(imovel, index);
+      const latLng = L.latLng(coords[0], coords[1]);
+      const pt = map.project(latLng, zoom);
+
+      // Search for an existing cluster within pixel radius
+      let bestClusterIndex = -1;
+      let minDistance = pixelRadius;
+
+      for (let i = 0; i < clusters.length; i++) {
+        const dist = clusters[i].pixelCenter.distanceTo(pt);
+        if (dist < minDistance) {
+          minDistance = dist;
+          bestClusterIndex = i;
+        }
+      }
+
+      if (bestClusterIndex >= 0) {
+        const c = clusters[bestClusterIndex];
+        c.imoveis.push(imovel);
+
+        // Update cluster center as weighted average
+        const count = c.imoveis.length;
+        c.center = [
+          (c.center[0] * (count - 1) + coords[0]) / count,
+          (c.center[1] * (count - 1) + coords[1]) / count,
+        ];
+        c.pixelCenter = map.project(L.latLng(c.center[0], c.center[1]), zoom);
+      } else {
+        clusters.push({
+          id: `cluster-${clusters.length}-${imovel.id}`,
+          center: [coords[0], coords[1]],
+          pixelCenter: pt,
+          imoveis: [imovel],
+        });
+      }
+    });
+
+    return clusters.map((c) => ({
+      id: c.id,
+      center: c.center,
+      imoveis: c.imoveis,
+      totalCount: c.imoveis.length,
+    }));
+  }, []);
+
+  // Create customized HTML icon for cluster (White background, dark bold text)
+  const createClusterIcon = useCallback((cluster: MapCluster, hasSelected: boolean) => {
+    // Sizing based on count
+    const size = cluster.totalCount >= 100 ? 44 : cluster.totalCount >= 10 ? 38 : 34;
+    const fontSize = cluster.totalCount >= 100 ? '11px' : cluster.totalCount >= 10 ? '12px' : '13px';
+
+    const selectedBadge = hasSelected
+      ? `<div style="position:absolute; top:-3px; right:-3px; width:14px; height:14px; background:#2563EB; border:2px solid #ffffff; border-radius:9999px; display:flex; align-items:center; justify-content:center; box-shadow:0 1px 3px rgba(0,0,0,0.3); font-size:8px; font-weight:bold; color:white;">✓</div>`
+      : '';
+
+    const html = `
+      <div style="position:relative; width:${size}px; height:${size}px; cursor:pointer;" class="cluster-marker-wrapper">
+        <div style="background:#ffffff; color:#0f172a; width:${size}px; height:${size}px; border-radius:9999px; border:none; box-shadow:0 3px 12px rgba(0,0,0,0.22); display:flex; align-items:center; justify-content:center; font-family:system-ui, -apple-system, sans-serif; font-weight:900; font-size:${fontSize}; transition:transform 0.15s ease;">
+          ${cluster.totalCount}
+        </div>
+        ${selectedBadge}
+      </div>
+    `;
+
+    return L.divIcon({
+      html,
+      className: 'custom-cluster-marker',
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2],
+    });
+  }, []);
+
+  // Update clusters and markers on map
+  const renderMarkers = useCallback(() => {
     if (!mapReady || !mapInstanceRef.current || !layerGroupRef.current) return;
 
     const map = mapInstanceRef.current;
     const layerGroup = layerGroupRef.current;
 
-    // Safely close open popup before changing layers
-    try {
-      map.closePopup();
-    } catch {}
+    layerGroup.clearLayers();
 
-    // Clear existing markers from layer group
-    try {
-      layerGroup.clearLayers();
-    } catch {}
-
+    const clusters = computeClusters(map, imoveis);
     const newMarkers: L.Marker[] = [];
 
-    // Add new markers
-    imoveis.forEach((imovel, index) => {
-      const coords = getCoordinates(imovel, index);
-      const isSelected = selectedIds.includes(imovel.id);
-      const isPortal = Boolean(
-        imovel.integrado ||
-        (imovel.integracaoOrigem && imovel.integracaoOrigem.trim()) ||
-        (imovel.origem && imovel.origem.toLowerCase() !== 'imobishare' && imovel.origem.trim() !== '') ||
-        (imovel.origem && (imovel.origem.toLowerCase().includes('dwv') || imovel.origem.toLowerCase().includes('portal')))
-      );
+    clusters.forEach((cluster) => {
+      const hasSelected = cluster.imoveis.some((im) => selectedIds.includes(im.id));
+      const icon = createClusterIcon(cluster, hasSelected);
+      const marker = L.marker(cluster.center, { icon });
 
-      // Custom HTML Marker matching ImobiShare theme
-      const markerHtml = `
-        <div class="relative flex items-center justify-center cursor-pointer transform hover:scale-110 transition-transform">
-          <div class="flex items-center justify-center w-8 h-8 rounded-full border-2 shadow-lg ${
-            isPortal 
-              ? 'bg-amber-500 border-white' 
-              : 'bg-[#003366] border-white'
-          }">
-            <span class="text-[10px] font-black text-white uppercase tracking-tight">
-              ${imovel.tipo === 'locação' || (imovel.tipo as string) === 'alugar' ? 'A' : 'V'}
-            </span>
-          </div>
-          ${
-            isSelected 
-              ? '<div class="absolute -top-1.5 -right-1.5 bg-emerald-500 w-5 h-5 rounded-full border-2 border-white flex items-center justify-center shadow-md"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="w-2.5 h-2.5 text-white"><polyline points="20 6 9 17 4 12"></polyline></svg></div>' 
-              : ''
-          }
-        </div>
-      `;
-
-      const customIcon = L.divIcon({
-        html: markerHtml,
-        className: 'custom-leaflet-marker',
-        iconSize: [32, 32],
-        iconAnchor: [16, 16],
-        popupAnchor: [0, -18],
+      // Click on cluster icon -> Aproxima a visualização para ter no máximo 10 imóveis e abre os cards
+      marker.on('click', (e) => {
+        L.DomEvent.stopPropagation(e);
+        if (cluster.totalCount > 10 && map.getZoom() < 18) {
+          // Aproxima para desagrupar e refinar a região
+          const nextZoom = Math.min(map.getZoom() + 2, 18);
+          map.setView(cluster.center, nextZoom, { animate: true });
+        } else {
+          map.panTo(cluster.center, { animate: true, duration: 0.35 });
+        }
+        setSelectedCluster(cluster);
       });
 
-      // Create Popup Content
-      const popupDiv = document.createElement('div');
-      popupDiv.className = 'p-2 max-w-[210px] font-sans select-none';
-      popupDiv.innerHTML = `
-        <div class="rounded-lg overflow-hidden mb-2 relative bg-slate-100 h-24">
-          <img src="${getValidImage(imovel.fotos?.[0])}" class="w-full h-full object-cover" />
-          <span class="absolute top-1.5 left-1.5 text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider ${
-            isPortal ? 'bg-amber-500 text-white shadow-xs' : 'bg-[#003366] text-white shadow-xs'
-          }">
-            ${isPortal ? (imovel.integracaoOrigem || imovel.origem || 'DWV') : 'Rede'}
-          </span>
-        </div>
-        <div class="space-y-1">
-          <div class="text-[9px] font-bold text-slate-400 uppercase tracking-tight truncate">
-            ${imovel.endereco ? `${imovel.endereco} · ` : ''}${imovel.bairro || imovel.cidade || ''}
-          </div>
-          <h4 class="font-extrabold text-slate-900 text-xs truncate leading-tight">
-            ${imovel.nomeEdificio?.trim() || imovel.titulo}
-          </h4>
-          <div class="pt-1 flex items-center justify-between border-t border-slate-100">
-            <span class="text-xs font-black text-[#003366]">
-              ${formatPrice(imovel.valor || imovel.valorVenda || imovel.valorLocacao || 0)}
-            </span>
-          </div>
-          <div class="flex gap-1.5 mt-2 pt-1 border-t border-slate-100">
-            <button id="pop-view-${imovel.id}" class="flex-1 bg-slate-100 hover:bg-slate-200 text-[10px] font-bold text-slate-700 py-1.5 px-2 rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer">
-              Ver
-            </button>
-            <button id="pop-select-${imovel.id}" class="flex-1 ${
-              isSelected ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-[#003366] hover:bg-[#002244]'
-            } text-white text-[10px] font-bold py-1.5 px-2 rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer">
-              ${isSelected ? '✓ Selecionado' : 'Selecionar'}
-            </button>
-          </div>
-        </div>
-      `;
-
-      const marker = L.marker(coords, { icon: customIcon });
-      marker.bindPopup(popupDiv, { closeButton: false, minWidth: 210, autoPan: false });
-
-      marker.on('popupopen', () => {
-        const viewBtn = document.getElementById(`pop-view-${imovel.id}`);
-        const selectBtn = document.getElementById(`pop-select-${imovel.id}`);
-
-        if (viewBtn) {
-          viewBtn.onclick = (e: MouseEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-            try {
-              marker.closePopup();
-            } catch {}
-            onViewDetails(imovel.id);
-          };
-        }
-        if (selectBtn) {
-          selectBtn.onclick = (e: MouseEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-            try {
-              marker.closePopup();
-            } catch {}
-            onSelectToggle(imovel.id);
-          };
-        }
+      // Double-click to zoom in quickly
+      marker.on('dblclick', (e) => {
+        L.DomEvent.stopPropagation(e);
+        map.setView(cluster.center, Math.min(map.getZoom() + 2, 18), { animate: true });
       });
 
       layerGroup.addLayer(marker);
       newMarkers.push(marker);
     });
 
-    // Invalidate map size to adapt to container dimensions
-    map.invalidateSize();
-    const t1 = setTimeout(() => {
-      try {
-        map.invalidateSize();
-      } catch {}
-    }, 100);
-    const t2 = setTimeout(() => {
-      try {
-        map.invalidateSize();
-      } catch {}
-    }, 350);
+    return newMarkers;
+  }, [mapReady, imoveis, selectedIds, computeClusters, createClusterIcon]);
 
-    // Auto-fit bounds to all markers
-    if (newMarkers.length > 0) {
+  // Initial bounds fit and re-clustering
+  useEffect(() => {
+    if (!mapReady || !mapInstanceRef.current) return;
+    const map = mapInstanceRef.current;
+
+    const markers = renderMarkers();
+
+    // Auto-fit bounds on initial load if markers exist
+    if (markers && markers.length > 0) {
       try {
-        const group = L.featureGroup(newMarkers);
+        const group = L.featureGroup(markers);
         const bounds = group.getBounds();
         if (bounds && bounds.isValid()) {
           map.fitBounds(bounds.pad(0.12), { maxZoom: 15, animate: false });
@@ -289,26 +306,167 @@ export function MapView({ imoveis, selectedIds, onSelectToggle, onViewDetails, i
       }
     }
 
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
+    // Recalculate clusters whenever map zoom or move finishes
+    const handleMoveOrZoom = () => {
+      renderMarkers();
     };
-  }, [mapReady, imoveis, selectedIds, onSelectToggle, onViewDetails]);
+
+    const handleMapClick = () => {
+      setSelectedCluster(null);
+    };
+
+    map.on('zoomend', handleMoveOrZoom);
+    map.on('moveend', handleMoveOrZoom);
+    map.on('click', handleMapClick);
+
+    // Invalidate map size to ensure tiles render properly
+    map.invalidateSize();
+    const t = setTimeout(() => {
+      try {
+        map.invalidateSize();
+      } catch {}
+    }, 150);
+
+    return () => {
+      clearTimeout(t);
+      map.off('zoomend', handleMoveOrZoom);
+      map.off('moveend', handleMoveOrZoom);
+      map.off('click', handleMapClick);
+    };
+  }, [mapReady, imoveis, renderMarkers]);
+
+  // Re-render markers if selection changes without resetting view
+  useEffect(() => {
+    renderMarkers();
+  }, [selectedIds, renderMarkers]);
+
+  // Sync selected cluster if imoveis list changes
+  useEffect(() => {
+    if (selectedCluster) {
+      const remaining = selectedCluster.imoveis.filter((i) => imoveis.some((curr) => curr.id === i.id));
+      if (remaining.length === 0) {
+        setSelectedCluster(null);
+      } else if (remaining.length !== selectedCluster.imoveis.length) {
+        setSelectedCluster({
+          ...selectedCluster,
+          imoveis: remaining,
+          totalCount: remaining.length,
+        });
+      }
+    }
+  }, [imoveis]);
+
+  // Reset horizontal carousel scroll when cluster changes
+  useEffect(() => {
+    if (selectedCluster && carouselRef.current) {
+      carouselRef.current.scrollTo({ left: 0, behavior: 'smooth' });
+    }
+    onClusterChange?.(Boolean(selectedCluster));
+  }, [selectedCluster, onClusterChange]);
+
+  // Limit to a maximum of 10 properties in the carousel
+  const displayedImoveis = selectedCluster ? selectedCluster.imoveis.slice(0, 10) : [];
 
   return (
     <div className={isFullScreen ? "relative w-full h-full overflow-hidden" : "relative rounded-2xl border border-slate-100 overflow-hidden shadow-sm"}>
+      {/* Leaflet Map Canvas */}
       <div 
         ref={mapContainerRef} 
         className={isFullScreen ? "w-full h-full min-h-[400px] z-0" : "w-full h-[380px] z-0"} 
         id="interactive-leaflet-map"
       />
-      {/* Property count and legend overlay */}
-      <div className={`absolute ${isFullScreen ? 'bottom-20 left-3' : 'bottom-2 left-2'} bg-slate-900/90 backdrop-blur-xs text-white text-[9px] font-bold px-2.5 py-1 rounded-md z-10 shadow-md flex items-center gap-2.5 select-none pointer-events-none`}>
-        <span className="text-white/80">{imoveis.length} no mapa</span>
-        <div className="w-px h-2.5 bg-white/30" />
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#003366] border border-white" /> Rede</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500 border border-white" /> Integração</span>
-      </div>
+
+      {/* SCROLLABLE CARDS (Cards rolantes com imagem vertical, máximo 10 imóveis, clique para ver detalhes completos) */}
+      {selectedCluster && displayedImoveis.length > 0 && (
+        <div 
+          className="absolute bottom-4 left-2 right-2 sm:left-4 sm:right-4 z-20 pointer-events-auto"
+          id="cluster-scrollable-cards-drawer"
+        >
+          {/* Horizontal Scrollable Carousel */}
+          <div 
+            ref={carouselRef}
+            className="flex gap-3 overflow-x-auto snap-x py-2 px-1 scrollbar-none overscroll-x-contain items-stretch"
+          >
+            {displayedImoveis.map((imovel) => {
+              const isSelected = selectedIds.includes(imovel.id);
+              const price = imovel.valor || imovel.valorVenda || imovel.valorLocacao || 0;
+              const photo = getValidImage(imovel.fotos?.[0]);
+
+              return (
+                <div
+                  key={imovel.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onViewDetails(imovel.id);
+                  }}
+                  className={`w-[190px] sm:w-[210px] shrink-0 snap-start bg-white rounded-2xl border ${
+                    isSelected ? 'border-blue-600 ring-2 ring-blue-600/30' : 'border-slate-200 hover:border-slate-300'
+                  } shadow-xl hover:shadow-2xl transition-all duration-200 cursor-pointer overflow-hidden flex flex-col group active:scale-[0.98] select-none`}
+                  title="Clique para abrir as informações completas do imóvel"
+                >
+                  {/* Vertical Image */}
+                  <div className="relative h-48 sm:h-52 bg-slate-100 overflow-hidden">
+                    <img
+                      src={photo}
+                      alt={imovel.titulo}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      loading="lazy"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent pointer-events-none" />
+
+                    {/* Type badge (Venda / Locação) */}
+                    <span className="absolute top-2.5 left-2.5 text-[9px] font-extrabold bg-slate-900/85 backdrop-blur-md text-white px-2 py-0.5 rounded-full uppercase tracking-wider shadow-xs">
+                      {imovel.tipo === 'locação' ? 'Locação' : 'Venda'}
+                    </span>
+
+                    {/* Price over the bottom part of the vertical image */}
+                    <div className="absolute bottom-2 left-2.5 right-2.5 text-white">
+                      <div className="text-sm sm:text-base font-black tracking-tight drop-shadow-md">
+                        {formatPrice(price)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Body Content */}
+                  <div className="p-3 flex-1 flex flex-col justify-between space-y-1.5 bg-white">
+                    <div>
+                      <div className="flex items-center text-[10px] text-slate-400 font-bold uppercase truncate">
+                        <MapPin size={10} className="mr-0.5 shrink-0 text-slate-400" />
+                        <span className="truncate">{imovel.bairro || imovel.cidade || 'Localização'}</span>
+                      </div>
+                      <h4 className="font-extrabold text-slate-800 text-xs truncate leading-snug mt-0.5" title={imovel.nomeEdificio?.trim() || imovel.titulo}>
+                        {imovel.nomeEdificio?.trim() || imovel.titulo}
+                      </h4>
+                    </div>
+
+                    {/* Specs */}
+                    <div className="flex items-center gap-2 text-[10px] text-slate-500 font-semibold border-t border-slate-100 pt-1.5">
+                      {imovel.dormitorios !== undefined && imovel.dormitorios > 0 && (
+                        <span className="flex items-center gap-0.5">
+                          <Bed size={11} className="text-slate-400" />
+                          {imovel.dormitorios} qts
+                        </span>
+                      )}
+                      {imovel.vagas !== undefined && imovel.vagas > 0 && (
+                        <span className="flex items-center gap-0.5">
+                          <Car size={11} className="text-slate-400" />
+                          {imovel.vagas} vg
+                        </span>
+                      )}
+                      {imovel.metragem !== undefined && imovel.metragem > 0 && (
+                        <span className="flex items-center gap-0.5">
+                          <Maximize size={11} className="text-slate-400" />
+                          {imovel.metragem}m²
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -45,7 +45,6 @@ import {
   ChevronRight,
   Heart,
   ExternalLink,
-  ChevronLeft,
   Smartphone,
   Lock,
   Mail,
@@ -230,10 +229,10 @@ export default function App() {
     return null;
   });
 
-  // Helper to dynamically determine the city and neighborhood with the most properties
+  // Helper to dynamically determine the city with the most properties
   const topCityAndBairro = useMemo(() => {
     if (!allImoveis || allImoveis.length === 0) {
-      return { cidade: 'Balneário Camboriú', bairro: 'Centro' };
+      return { cidade: 'Balneário Camboriú', bairro: '' };
     }
     const cityCounts: Record<string, number> = {};
     allImoveis.forEach((i) => {
@@ -250,25 +249,7 @@ export default function App() {
       }
     });
 
-    const bairroCounts: Record<string, number> = {};
-    allImoveis.forEach((i) => {
-      const c = (i.cidade || '').trim().toLowerCase();
-      const b = (i.bairro || '').trim();
-      if (b && (c === topCity.toLowerCase() || !topCity)) {
-        bairroCounts[b] = (bairroCounts[b] || 0) + 1;
-      }
-    });
-
-    let topBairro = 'Centro';
-    let maxBairroCount = -1;
-    Object.entries(bairroCounts).forEach(([bairro, count]) => {
-      if (count > maxBairroCount) {
-        maxBairroCount = count;
-        topBairro = bairro;
-      }
-    });
-
-    return { cidade: topCity, bairro: topBairro };
+    return { cidade: topCity, bairro: '' };
   }, [allImoveis]);
 
   // Filters & Search State (Home Tab)
@@ -288,33 +269,7 @@ export default function App() {
     return top;
   });
 
-  const [filterBairro, setFilterBairro] = useState(() => {
-    const initial = DbService.getImoveisSync();
-    const cityCounts: Record<string, number> = {};
-    initial.forEach(i => {
-      const c = (i.cidade || '').trim();
-      if (c) cityCounts[c] = (cityCounts[c] || 0) + 1;
-    });
-    let topCity = 'Balneário Camboriú';
-    let max = -1;
-    Object.entries(cityCounts).forEach(([c, cnt]) => {
-      if (cnt > max) { max = cnt; topCity = c; }
-    });
-    const bCounts: Record<string, number> = {};
-    initial.forEach(i => {
-      const c = (i.cidade || '').trim().toLowerCase();
-      const b = (i.bairro || '').trim();
-      if (b && c === topCity.toLowerCase()) {
-        bCounts[b] = (bCounts[b] || 0) + 1;
-      }
-    });
-    let topB = 'Centro';
-    let maxB = -1;
-    Object.entries(bCounts).forEach(([b, cnt]) => {
-      if (cnt > maxB) { maxB = cnt; topB = b; }
-    });
-    return topB;
-  });
+  const [filterBairro, setFilterBairro] = useState<string>('');
 
   // Dynamically compute list of unique cities from properties + active broker city
   const availableCities = useMemo(() => {
@@ -367,6 +322,7 @@ export default function App() {
   const [filterModalTab, setFilterModalTab] = useState<'home' | 'my-properties'>('home');
   const [isFilterModalOpen, setIsFilterModalOpen] = useState<boolean>(false);
   const [searchViewMode, setSearchViewMode] = useState<'como_esta_hoje' | 'lista' | 'mapa'>('como_esta_hoje');
+  const [isMapClusterOpen, setIsMapClusterOpen] = useState<boolean>(false);
 
   // Sorting state for search results
   const [sortBy, setSortBy] = useState<'relevancia' | 'menor_preco' | 'maior_preco' | 'mais_recentes' | 'maior_area'>('relevancia');
@@ -376,16 +332,16 @@ export default function App() {
   const [isSearchingEmpreendimento, setIsSearchingEmpreendimento] = useState<boolean>(false);
   const empreendimentoInputRef = useRef<HTMLInputElement>(null);
 
-  // Computed display text for main search card (First line: City and Neighborhood with most properties)
+  // Computed display text for main search card (First line: City and Neighborhood)
   const searchCardCityAndNeighborhood = useMemo(() => {
     if (filterCidade && filterCidade !== 'Todas') {
       if (filterBairro && filterBairro.trim()) {
-        return `${filterCidade}, ${filterBairro}`;
+        return `${filterCidade}, ${filterBairro.trim()}`;
       }
-      return `${filterCidade}${topCityAndBairro.bairro ? `, ${topCityAndBairro.bairro}` : ''}`;
+      return filterCidade;
     }
-    return `${topCityAndBairro.cidade}, ${topCityAndBairro.bairro}`;
-  }, [filterCidade, filterBairro, topCityAndBairro]);
+    return filterBairro && filterBairro.trim() ? filterBairro.trim() : 'Todas as cidades';
+  }, [filterCidade, filterBairro]);
 
   // Computed display text for main search card (Second line: smaller info, e.g., "Venda - Sem filtros de imóvel")
   const searchCardSubtext = useMemo(() => {
@@ -484,7 +440,7 @@ export default function App() {
       setHomePage(1);
       setSearchWord('');
       setFilterCidade(topCityAndBairro.cidade || 'Balneário Camboriú');
-      setFilterBairro(topCityAndBairro.bairro || 'Centro');
+      setFilterBairro('');
       setFilterTipo('comprar');
       setFilterTipoImovel('todos');
       setFilterStatusImovel('todos');
@@ -768,7 +724,7 @@ export default function App() {
     const mainImg = imovel.fotos?.[0] ? getValidImage(imovel.fotos[0]) : '';
     const isExternalImg = mainImg.startsWith('http://') || mainImg.startsWith('https://');
     const title = imovel.nomeEdificio?.trim() || imovel.titulo || 'Imóvel';
-    const location = `${imovel.bairro || 'Centro'} - ${imovel.cidade || ''}`;
+    const location = [imovel.bairro?.trim(), imovel.cidade?.trim()].filter(Boolean).join(' - ') || 'Localização sob consulta';
 
     let message = `🏠 ${title}\n📍 ${location}\n💰 ${priceText}`;
     if (isExternalImg) {
@@ -1315,7 +1271,7 @@ useEffect(() => {
               <button
                 type="submit"
                 disabled={resetSubmitting}
-                className="flex-1 bg-[#003366] hover:bg-[#002244] text-white font-bold text-xs py-3 px-4 rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs py-3 px-4 rounded-full shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
               >
                 {resetSubmitting ? (
                   <span>Salvando...</span>
@@ -1570,8 +1526,8 @@ useEffect(() => {
     sortBy
   ]);
 
-  // Pagination for Home Screen Property Search (10 in 10 properties to maximize performance)
-  const HOME_PAGE_SIZE = 10;
+  // Batch size for property search with high performance (24 properties per load)
+  const PAGE_SIZE = 24;
   const [homePage, setHomePage] = useState<number>(1);
 
   // Automatically reset to page 1 whenever any filter or search query changes
@@ -1598,41 +1554,17 @@ useEffect(() => {
     sortBy
   ]);
 
-  const totalHomePages = Math.max(1, Math.ceil(filteredImoveis.length / HOME_PAGE_SIZE));
+  const totalHomePages = Math.max(1, Math.ceil(filteredImoveis.length / PAGE_SIZE));
   const currentHomePage = Math.min(Math.max(1, homePage), totalHomePages);
 
   const paginatedHomeImoveis = useMemo(() => {
-    const startIndex = (currentHomePage - 1) * HOME_PAGE_SIZE;
-    return filteredImoveis.slice(startIndex, startIndex + HOME_PAGE_SIZE);
+    return filteredImoveis.slice(0, currentHomePage * PAGE_SIZE);
   }, [filteredImoveis, currentHomePage]);
 
   const handleHomePageChange = (newPage: number) => {
     const targetPage = Math.min(Math.max(1, newPage), totalHomePages);
     setHomePage(targetPage);
-    const resultsHeader = document.getElementById('property-search-results-section');
-    if (resultsHeader) {
-      resultsHeader.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
   };
-
-  // Show loading indicator briefly when filters or search change
-  useEffect(() => {
-    setIsLoadingImoveis(true);
-    const timer = setTimeout(() => {
-      setIsLoadingImoveis(false);
-    }, 450);
-    return () => clearTimeout(timer);
-  }, [
-    searchWord,
-    filterTipo,
-    filterTipoImovel,
-    filterValorMin,
-    filterValorMax,
-    filterCidade,
-    filterBairro,
-    currentHomePage,
-    sortBy
-  ]);
 
   // Check which properties are stories (registered within 24h by others and shared)
   const storyImoveis = useMemo(() => {
@@ -2051,7 +1983,7 @@ Toque abaixo para ver a seleção completa:
                 <button
                   type="submit"
                   disabled={authLoading}
-                  className="w-full bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold py-3 px-4 rounded-xl shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 tracking-wide uppercase cursor-pointer mt-1"
+                  className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-3 px-4 rounded-full shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 tracking-wide uppercase cursor-pointer mt-1"
                 >
                   {authLoading ? 'Entrando...' : 'Login'}
                 </button>
@@ -2183,7 +2115,7 @@ Toque abaixo para ver a seleção completa:
               <button
                 type="submit"
                 disabled={authLoading}
-                className="w-full bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold py-3 px-4 rounded-xl shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 tracking-wide uppercase mt-2 cursor-pointer"
+                className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-3 px-4 rounded-full shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 tracking-wide uppercase mt-2 cursor-pointer"
               >
                 {authLoading ? 'Criando Conta...' : 'Cadastrar e Acessar'}
               </button>
@@ -2224,7 +2156,7 @@ Toque abaixo para ver a seleção completa:
               <button
                 type="submit"
                 disabled={authLoading}
-                className="w-full bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold py-3 px-4 rounded-xl shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 tracking-wide uppercase cursor-pointer"
+                className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-3 px-4 rounded-full shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 tracking-wide uppercase cursor-pointer"
               >
                 {authLoading ? 'Enviando...' : 'Enviar Link de Recuperação'}
               </button>
@@ -2282,7 +2214,7 @@ Toque abaixo para ver a seleção completa:
         {/* Dynamic Inner screens navigation */}
         <div className={`flex-grow ${
           searchViewMode === 'mapa' && activeTab === 'home' && !isAddingProperty && !selectedPropertyId
-            ? 'overflow-hidden flex flex-col h-[calc(100%-64px)] pb-0'
+            ? 'overflow-hidden flex flex-col h-full pb-0'
             : 'overflow-y-auto ' + (
                 activeTab === 'home' && !isAddingProperty && !selectedPropertyId 
                   ? (selectedPropertyIds.length > 0 ? 'pb-40' : 'pb-32') 
@@ -2607,7 +2539,7 @@ Toque abaixo para ver a seleção completa:
                               }}
                               className={`px-[7px] py-2 rounded-full text-xs font-bold transition-all whitespace-nowrap text-center cursor-pointer flex-shrink-0 ${
                                 isSelected
-                                  ? 'bg-[#003366] text-white shadow-xs'
+                                  ? 'bg-blue-600 text-white shadow-xs'
                                   : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                               }`}
                             >
@@ -2660,7 +2592,7 @@ Toque abaixo para ver a seleção completa:
                               }}
                               className={`px-[7px] py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap text-center cursor-pointer flex-shrink-0 ${
                                 isSelected
-                                  ? 'bg-[#003366] text-white shadow-xs'
+                                  ? 'bg-blue-600 text-white shadow-xs'
                                   : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                               }`}
                             >
@@ -2683,6 +2615,7 @@ Toque abaixo para ver a seleção completa:
                         onSelectToggle={handleSelectToggle}
                         onViewDetails={setSelectedPropertyId}
                         isFullScreen
+                        onClusterChange={setIsMapClusterOpen}
                       />
                     </div>
                   ) : (
@@ -2693,11 +2626,6 @@ Toque abaixo para ver a seleção completa:
                         <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight whitespace-nowrap">
                           {filteredImoveis.length.toLocaleString('pt-BR')} {filteredImoveis.length === 1 ? 'imóvel' : 'imóveis'}
                         </h2>
-                        {filteredImoveis.length > 0 && (
-                          <span className="text-xs font-semibold text-slate-400 whitespace-nowrap">
-                            página {currentHomePage} de {totalHomePages}
-                          </span>
-                        )}
                       </div>
 
                       {/* Right: Selected badge (if any) and Sort icon button without borders */}
@@ -2745,7 +2673,7 @@ Toque abaixo para ver a seleção completa:
                                     }}
                                     className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                                       sortBy === opt.id
-                                        ? 'bg-[#003366] text-white'
+                                        ? 'bg-blue-600 text-white'
                                         : 'text-slate-700 hover:bg-slate-50'
                                     }`}
                                   >
@@ -2761,40 +2689,44 @@ Toque abaixo para ver a seleção completa:
                     </div>
 
                     <div className="space-y-3">
-                      {paginatedHomeImoveis.map((imovel) => {
-                        const isMine = isMyProperty(imovel);
-                        const isFav = favoritos.includes(imovel.id) || imovel.favorito === true;
-                        const isSel = selectedPropertyIds.includes(imovel.id);
+                      {(() => {
+                        const favSet = new Set(favoritos);
+                        const selSet = new Set(selectedPropertyIds);
+                        return paginatedHomeImoveis.map((imovel) => {
+                          const isMine = isMyProperty(imovel);
+                          const isFav = favSet.has(imovel.id) || imovel.favorito === true;
+                          const isSel = selSet.has(imovel.id);
 
-                        if (searchViewMode === 'lista') {
+                          if (searchViewMode === 'lista') {
+                            return (
+                              <CompactPropertyRow
+                                key={imovel.id}
+                                imovel={imovel}
+                                isMyProperty={isMine}
+                                isFavorite={isFav}
+                                isSelected={isSel}
+                                onSelectToggle={() => handleSelectToggle(imovel.id)}
+                                onShareSingle={() => handleShareSingleProperty(imovel)}
+                                onClick={() => setSelectedPropertyId(imovel.id)}
+                              />
+                            );
+                          }
+
                           return (
-                            <CompactPropertyRow
+                            <PropertyCard
                               key={imovel.id}
                               imovel={imovel}
                               isMyProperty={isMine}
                               isFavorite={isFav}
                               isSelected={isSel}
+                              showCheckbox={true}
                               onSelectToggle={() => handleSelectToggle(imovel.id)}
                               onShareSingle={() => handleShareSingleProperty(imovel)}
                               onClick={() => setSelectedPropertyId(imovel.id)}
                             />
                           );
-                        }
-
-                        return (
-                          <PropertyCard
-                            key={imovel.id}
-                            imovel={imovel}
-                            isMyProperty={isMine}
-                            isFavorite={isFav}
-                            isSelected={isSel}
-                            showCheckbox={true}
-                            onSelectToggle={() => handleSelectToggle(imovel.id)}
-                            onShareSingle={() => handleShareSingleProperty(imovel)}
-                            onClick={() => setSelectedPropertyId(imovel.id)}
-                          />
-                        );
-                      })}
+                        });
+                      })()}
 
                       {filteredImoveis.length === 0 && (
                         <div className="text-center py-10 bg-white border border-slate-100 rounded-xl">
@@ -2802,100 +2734,16 @@ Toque abaixo para ver a seleção completa:
                         </div>
                       )}
 
-                      {/* PAGINATION CONTROLS (10 em 10 imóveis) */}
-                      {filteredImoveis.length > HOME_PAGE_SIZE && (
-                        <div className="pt-2 pb-6 space-y-2.5" id="home-pagination-controls">
-                          {/* Quick "Ver mais" button if not on last page */}
-                          {currentHomePage < totalHomePages && (
-                            <button
-                              type="button"
-                              onClick={() => handleHomePageChange(currentHomePage + 1)}
-                              className="w-full py-3 px-4 bg-[#003366] hover:bg-[#002244] text-white font-bold text-xs sm:text-sm rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-[0.99]"
-                            >
-                              <span>Ver mais</span>
-                            </button>
-                          )}
-
-                          {/* Numbered pagination toolbar */}
-                          <div className="flex items-center justify-between gap-1 sm:gap-2 bg-white p-2.5 sm:p-3 rounded-2xl border border-slate-100 shadow-xs">
-                            <button
-                              type="button"
-                              disabled={currentHomePage <= 1}
-                              onClick={() => handleHomePageChange(currentHomePage - 1)}
-                              className={`flex items-center gap-1 px-2.5 sm:px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                                currentHomePage <= 1
-                                  ? 'text-slate-300 bg-slate-50 cursor-not-allowed border border-transparent'
-                                  : 'text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 active:scale-95'
-                              }`}
-                              aria-label="Página anterior"
-                            >
-                              <ChevronLeft size={16} />
-                              <span className="hidden sm:inline">Anterior</span>
-                            </button>
-
-                            {/* Page numbers with smart windowing */}
-                            <div className="flex items-center gap-1">
-                              {(() => {
-                                const pages: (number | string)[] = [];
-                                if (totalHomePages <= 5) {
-                                  for (let i = 1; i <= totalHomePages; i++) pages.push(i);
-                                } else {
-                                  pages.push(1);
-                                  if (currentHomePage > 3) pages.push('...');
-                                  const start = Math.max(2, currentHomePage - 1);
-                                  const end = Math.min(totalHomePages - 1, currentHomePage + 1);
-                                  for (let i = start; i <= end; i++) {
-                                    if (!pages.includes(i)) pages.push(i);
-                                  }
-                                  if (currentHomePage < totalHomePages - 2) pages.push('...');
-                                  if (!pages.includes(totalHomePages)) pages.push(totalHomePages);
-                                }
-
-                                return pages.map((page, idx) => {
-                                  if (typeof page === 'string') {
-                                    return (
-                                      <span key={`ellipsis-${idx}`} className="px-1 text-xs text-slate-400 font-bold">
-                                        ...
-                                      </span>
-                                    );
-                                  }
-
-                                  const isActive = page === currentHomePage;
-                                  return (
-                                    <button
-                                      key={`page-${page}`}
-                                      type="button"
-                                      onClick={() => handleHomePageChange(page)}
-                                      className={`min-w-[34px] sm:min-w-[38px] h-9 px-2 flex items-center justify-center rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                                        isActive
-                                          ? 'bg-[#003366] text-white shadow-xs'
-                                          : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200'
-                                      }`}
-                                      aria-label={`Ir para página ${page}`}
-                                      aria-current={isActive ? 'page' : undefined}
-                                    >
-                                      {page}
-                                    </button>
-                                  );
-                                });
-                              })()}
-                            </div>
-
-                            <button
-                              type="button"
-                              disabled={currentHomePage >= totalHomePages}
-                              onClick={() => handleHomePageChange(currentHomePage + 1)}
-                              className={`flex items-center gap-1 px-2.5 sm:px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                                currentHomePage >= totalHomePages
-                                  ? 'text-slate-300 bg-slate-50 cursor-not-allowed border border-transparent'
-                                  : 'text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 active:scale-95'
-                              }`}
-                              aria-label="Próxima página"
-                            >
-                              <span className="hidden sm:inline">Próxima</span>
-                              <ChevronRight size={16} />
-                            </button>
-                          </div>
+                      {/* CONTROLE "VER MAIS" (carregamento contínuo sem barra de paginação) */}
+                      {filteredImoveis.length > PAGE_SIZE && currentHomePage < totalHomePages && (
+                        <div className="pt-2 pb-6" id="home-pagination-controls">
+                          <button
+                            type="button"
+                            onClick={() => handleHomePageChange(currentHomePage + 1)}
+                            className="w-full py-3 px-6 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm rounded-full shadow-sm flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-[0.99] border border-blue-500/30"
+                          >
+                            <span>Ver mais imóveis</span>
+                          </button>
                         </div>
                       )}
                     </div>
@@ -2918,7 +2766,7 @@ Toque abaixo para ver a seleção completa:
                           setIsAddingProperty(true);
                         }}
                         title="Cadastrar Novo Imóvel"
-                        className="bg-[#003366] hover:bg-[#002244] text-white p-2 rounded-lg flex items-center justify-center shadow-xs transition-colors flex-shrink-0 cursor-pointer"
+                        className="bg-blue-600 hover:bg-blue-500 text-white p-2 rounded-xl flex items-center justify-center shadow-xs transition-colors flex-shrink-0 cursor-pointer"
                       >
                         <PlusCircle size={16} />
                       </button>
@@ -3037,16 +2885,16 @@ Toque abaixo para ver a seleção completa:
               initial={{ y: 80, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 80, opacity: 0 }}
-              className="absolute bottom-18 left-4 right-4 bg-[#003366] text-white px-3.5 py-2.5 rounded-2xl shadow-xl flex items-center justify-between z-30"
+              className="absolute bottom-18 left-4 right-4 bg-blue-600 text-white px-4 py-2.5 rounded-full shadow-xl flex items-center justify-between z-30 border border-white/20"
               id="multi-selection-floating-bar"
             >
               <div className="flex items-center gap-2">
-                <span className="text-[8.5px] font-semibold uppercase tracking-wider text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded-md">
+                <span className="text-[8.5px] font-semibold uppercase tracking-wider text-amber-300 bg-black/20 px-2 py-0.5 rounded-full">
                   {selectedPropertyIds.length} {selectedPropertyIds.length === 1 ? 'imóvel selecionado' : 'imóveis selecionados'}
                 </span>
                 <button
                   onClick={() => setSelectedPropertyIds([])}
-                  className="text-slate-300 hover:text-white text-[9px] font-bold uppercase tracking-wider underline cursor-pointer"
+                  className="text-white/80 hover:text-white text-[9px] font-bold uppercase tracking-wider underline cursor-pointer"
                 >
                   Limpar
                 </button>
@@ -3055,9 +2903,9 @@ Toque abaixo para ver a seleção completa:
               <button
                 onClick={handleShareMultiple}
                 title="Compartilhar selecionados"
-                className="bg-emerald-600 hover:bg-emerald-700 text-white p-2.5 rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white p-2 rounded-full flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer"
               >
-                <Share2 size={16} />
+                <Share2 size={15} />
               </button>
             </motion.div>
           )}
@@ -3067,7 +2915,11 @@ Toque abaixo para ver a seleção completa:
 
         {/* Floating single toggle button: Mostrar mapa / Mostrar lista */}
         {activeTab === 'home' && !selectedPropertyId && !isAddingProperty && selectedPropertyIds.length === 0 && (
-          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 pointer-events-auto transition-all duration-300">
+          <div className={`absolute ${
+            searchViewMode === 'mapa'
+              ? (isMapClusterOpen ? 'bottom-72' : 'bottom-5')
+              : 'bottom-20'
+          } left-1/2 -translate-x-1/2 z-30 pointer-events-auto transition-all duration-300`}>
             <button
               type="button"
               id="btn-floating-view-toggle"
@@ -3078,15 +2930,15 @@ Toque abaixo para ver a seleção completa:
                   setSearchViewMode('mapa');
                 }
               }}
-              className="px-6 py-2.5 rounded-full text-xs sm:text-sm font-bold bg-[#003366] hover:bg-[#002244] text-white shadow-[0_8px_25px_rgba(0,51,102,0.35)] active:scale-95 transition-all cursor-pointer whitespace-nowrap flex items-center justify-center border border-white/20"
+              className="px-6 py-2.5 rounded-full text-xs sm:text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-[0_8px_25px_rgba(37,99,235,0.35)] active:scale-95 transition-all cursor-pointer whitespace-nowrap flex items-center justify-center border border-white/25"
             >
               {searchViewMode === 'mapa' ? 'Mostrar lista' : 'Mostrar mapa'}
             </button>
           </div>
         )}
 
-        {/* BOTTOM NAVIGATION TABS MENU (Similar to native mobile tabs bar) */}
-        {!isAddingProperty && !selectedPropertyId && (
+        {/* BOTTOM NAVIGATION TABS MENU (Similar to native mobile tabs bar) - Hidden when viewing map */}
+        {!isAddingProperty && !selectedPropertyId && !(activeTab === 'home' && searchViewMode === 'mapa') && (
           <div className="absolute bottom-0 left-0 right-0 h-16 bg-white border-t border-slate-100 flex items-center justify-around px-2 z-20">
             <button
               onClick={() => handleTabChange('home')}
@@ -3248,7 +3100,7 @@ Toque abaixo para ver a seleção completa:
                       <label className="font-bold text-slate-700 block uppercase tracking-wider text-[10px]">3. Bairro / Região</label>
                       <input
                         type="text"
-                        placeholder="Ex: Centro, Barra Sul, Meia Praia..."
+                        placeholder="Ex: Todos os bairros, ou digite Barra Sul, Meia Praia..."
                         value={filterModalTab === 'home' ? filterBairro : filterMyBairro}
                         onChange={(e) => filterModalTab === 'home' ? setFilterBairro(e.target.value) : setFilterMyBairro(e.target.value)}
                         className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-hidden focus:border-[#003366]"
@@ -3276,7 +3128,7 @@ Toque abaixo para ver a seleção completa:
                             onClick={() => filterModalTab === 'home' ? setFilterTipoImovel(t.id) : setFilterMyTipoImovel(t.id)}
                             className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
                               cur === t.id
-                                ? 'bg-[#003366] text-white border-[#003366]'
+                                ? 'bg-blue-600 text-white border-blue-600'
                                 : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                             }`}
                           >
@@ -3305,7 +3157,7 @@ Toque abaixo para ver a seleção completa:
                             onClick={() => filterModalTab === 'home' ? setFilterStatusImovel(st.id) : setFilterMyStatusImovel(st.id)}
                             className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
                               cur === st.id
-                                ? 'bg-[#003366] text-white border-[#003366]'
+                                ? 'bg-blue-600 text-white border-blue-600'
                                 : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                             }`}
                           >
@@ -3410,7 +3262,7 @@ Toque abaixo para ver a seleção completa:
                               onClick={() => filterModalTab === 'home' ? setFilterDormitorios(num) : setFilterMyDormitorios(num)}
                               className={`w-8 h-8 rounded-lg font-bold text-xs transition-all cursor-pointer ${
                                 cur === num
-                                  ? 'bg-[#003366] text-white'
+                                  ? 'bg-blue-600 text-white'
                                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                               }`}
                             >
@@ -3434,7 +3286,7 @@ Toque abaixo para ver a seleção completa:
                               onClick={() => filterModalTab === 'home' ? setFilterBanheiros(num) : setFilterMyBanheiros(num)}
                               className={`w-8 h-8 rounded-lg font-bold text-xs transition-all cursor-pointer ${
                                 cur === num
-                                  ? 'bg-[#003366] text-white'
+                                  ? 'bg-blue-600 text-white'
                                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                               }`}
                             >
@@ -3458,7 +3310,7 @@ Toque abaixo para ver a seleção completa:
                               onClick={() => filterModalTab === 'home' ? setFilterVagas(num) : setFilterMyVagas(num)}
                               className={`w-8 h-8 rounded-lg font-bold text-xs transition-all cursor-pointer ${
                                 cur === num
-                                  ? 'bg-[#003366] text-white'
+                                  ? 'bg-blue-600 text-white'
                                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                               }`}
                             >
@@ -3553,14 +3405,14 @@ Toque abaixo para ver a seleção completa:
                   <button
                     type="button"
                     onClick={handleResetFilters}
-                    className="px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs transition-all cursor-pointer"
+                    className="px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-full font-bold text-xs transition-all cursor-pointer"
                   >
                     Limpar
                   </button>
                   <button
                     type="button"
                     onClick={() => setIsFilterModalOpen(false)}
-                    className="flex-1 bg-[#003366] hover:bg-[#002244] text-white py-3 px-4 rounded-xl font-bold text-xs shadow-md transition-all cursor-pointer text-center"
+                    className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-3 px-4 rounded-full font-bold text-xs shadow-md transition-all cursor-pointer text-center"
                   >
                     Ver {filterModalTab === 'home' ? filteredImoveis.length : filteredMyProperties.length} Imóveis Encontrados
                   </button>

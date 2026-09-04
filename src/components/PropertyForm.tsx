@@ -10,6 +10,7 @@ import { auth } from '../services/firebase';
 import { Sparkles, MapPin, Search, Plus, Trash2, Check, ArrowLeft, Image as ImageIcon, Upload, Building2, Bed, Car, Maximize, Bath, Star, GripVertical } from 'lucide-react';
 import { getValidImage, handleImageError } from '../utils/imageUtils';
 import { getPropertyCode } from '../utils/codeUtils';
+import { geocodeAddress } from '../utils/geoUtils';
 
 interface PropertyFormProps {
   imovelId?: string | null; // If editing
@@ -70,6 +71,9 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
   const [localizacao, setLocalizacao] = useState('');
   const [cidade, setCidade] = useState(() => DbService.getActiveCorretor()?.cidade || 'Balneário Camboriú');
   const [bairro, setBairro] = useState('');
+  const [latitude, setLatitude] = useState<number | undefined>(undefined);
+  const [longitude, setLongitude] = useState<number | undefined>(undefined);
+  const [geoLoading, setGeoLoading] = useState(false);
 
   // 3. Tipo de imóvel, Status, Negócio e Valor
   const [tipoImovel, setTipoImovel] = useState<PropertyTypeOption | ''>('Apartamento');
@@ -150,6 +154,8 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         setLocalizacao(found.endereco || found.localizacao || '');
         setCidade(found.cidade || DbService.getActiveCorretor()?.cidade || 'Balneário Camboriú');
         setBairro(found.bairro || '');
+        setLatitude(found.latitude);
+        setLongitude(found.longitude);
         setTipoImovel((found.tipoImovel as PropertyTypeOption) || 'Apartamento');
         setStatusImovel((found.statusImovel as any) || '');
         const isLocacaoOnly = found.tipo === 'locação' || (found.valorLocacao && !found.valorVenda && (!found.valor || found.valor === found.valorLocacao));
@@ -231,6 +237,35 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
     }
   }, [imovelId]);
 
+  // Função auxiliar para buscar e salvar coordenadas de latitude e longitude automaticamente
+  const fetchCoordinates = async (params?: { endereco?: string; bairro?: string; cidade?: string; cep?: string }) => {
+    const end = (params?.endereco !== undefined ? params.endereco : localizacao).trim();
+    const br = (params?.bairro !== undefined ? params.bairro : bairro).trim();
+    const cid = (params?.cidade !== undefined ? params.cidade : cidade).trim();
+    const cp = (params?.cep !== undefined ? params.cep : cep).trim();
+
+    if (!end && !br && !cid && !cp) return;
+
+    setGeoLoading(true);
+    try {
+      const res = await geocodeAddress({
+        endereco: end,
+        bairro: br,
+        cidade: cid,
+        cep: cp,
+      });
+      if (res && typeof res.latitude === 'number' && typeof res.longitude === 'number') {
+        setLatitude(res.latitude);
+        setLongitude(res.longitude);
+      }
+      return res;
+    } catch (err) {
+      console.warn('Erro ao obter coordenadas geográficas:', err);
+    } finally {
+      setGeoLoading(false);
+    }
+  };
+
   // Handle Autocomplete Address (CEP, Cidade, Bairro, Endereço)
   const handleAutocomplete = async () => {
     if (!localizacao.trim()) {
@@ -286,6 +321,14 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         setNomeEdificio(detectedEdificio);
       }
       setAutocompleteLoading(false);
+
+      // Geocodificar para atualizar latitude e longitude no mapa
+      fetchCoordinates({
+        endereco: localizacao,
+        bairro: detectedBairro,
+        cidade: detectedCidade,
+        cep: cep
+      });
     }
   };
 
@@ -312,6 +355,14 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
           if (data.logradouro) setLocalizacao(data.logradouro);
           if (data.bairro) setBairro(data.bairro);
           if (data.localidade) setCidade(data.localidade);
+
+          // Atualizar coordenadas GPS imediatamente a partir do CEP encontrado
+          fetchCoordinates({
+            endereco: data.logradouro || localizacao,
+            bairro: data.bairro || bairro,
+            cidade: data.localidade || cidade,
+            cep: formattedCep
+          });
         } else {
           setErrorMsg('CEP não encontrado. Verifique os dígitos informados.');
         }
@@ -649,6 +700,27 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
     }
 
     try {
+      // Garantir que latitude e longitude estejam presentes para localização no mapa
+      let finalLat = latitude;
+      let finalLng = longitude;
+
+      if (finalLat === undefined || finalLng === undefined) {
+        try {
+          const geo = await geocodeAddress({
+            endereco: localizacao.trim(),
+            bairro: bairro.trim(),
+            cidade: cidade.trim(),
+            cep: cep.trim(),
+          });
+          if (geo && typeof geo.latitude === 'number' && typeof geo.longitude === 'number') {
+            finalLat = geo.latitude;
+            finalLng = geo.longitude;
+          }
+        } catch (err) {
+          console.warn('Aviso: Não foi possível obter coordenadas antes de salvar:', err);
+        }
+      }
+
       const imovelPayload: Imovel = {
         id: imovelId || `imovel-${Date.now()}`,
         corretorEmail: activeEmail,
@@ -670,6 +742,8 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         bairro: bairro || 'Centro',
         endereco: localizacao.trim() || undefined,
         localizacao: localizacao.trim() || undefined,
+        latitude: finalLat,
+        longitude: finalLng,
         cep: cep.trim() || undefined,
         nomeEdificio: nomeEdificio.trim() || undefined,
         construtora: construtora.trim() || undefined,
@@ -876,6 +950,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
                 placeholder="Ex: Av. Atlântica, 4500 ou Yachthouse"
                 value={localizacao}
                 onChange={(e) => setLocalizacao(e.target.value)}
+                onBlur={() => fetchCoordinates()}
                 className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50"
               />
             </div>
@@ -889,6 +964,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
                 placeholder="Cidade"
                 value={cidade}
                 onChange={(e) => setCidade(e.target.value)}
+                onBlur={() => fetchCoordinates()}
                 className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-slate-50 font-medium"
               />
             </div>
@@ -899,9 +975,45 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
                 placeholder="Bairro"
                 value={bairro}
                 onChange={(e) => setBairro(e.target.value)}
+                onBlur={() => fetchCoordinates()}
                 className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50"
               />
             </div>
+          </div>
+
+          {/* Status do GPS / Coordenadas para o Mapa */}
+          <div className="pt-1">
+            {geoLoading ? (
+              <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-200/80 px-2.5 py-1.5 rounded-lg text-blue-700 text-[10px]">
+                <span className="text-xs animate-spin">📍</span>
+                <span className="font-semibold">Localizando endereço no mapa via GPS...</span>
+              </div>
+            ) : latitude !== undefined && longitude !== undefined ? (
+              <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200/80 px-2.5 py-1.5 rounded-lg text-emerald-800 text-[10px]">
+                <div className="flex items-center gap-1.5 truncate">
+                  <MapPin size={12} className="text-emerald-600 shrink-0" />
+                  <span className="font-medium truncate">
+                    GPS no mapa: <span className="font-mono font-bold">{latitude.toFixed(4)}, {longitude.toFixed(4)}</span>
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fetchCoordinates()}
+                  className="text-[9px] font-bold text-emerald-700 hover:text-emerald-900 underline shrink-0 cursor-pointer ml-2"
+                >
+                  Recalcular GPS
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => fetchCoordinates()}
+                className="flex items-center gap-1 text-[10px] font-bold text-[#003366] hover:text-blue-800 transition-colors"
+              >
+                <MapPin size={11} />
+                <span>Calcular coordenadas GPS para o mapa</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -1378,7 +1490,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         <button
           type="submit"
           disabled={isSaving}
-          className="w-full bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold py-3.5 px-4 rounded-xl shadow-md transition-all active:scale-[0.98] uppercase tracking-wider text-[11px] flex items-center justify-center min-h-[44px]"
+          className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-3.5 px-4 rounded-full shadow-md transition-all active:scale-[0.98] uppercase tracking-wider text-[11px] flex items-center justify-center min-h-[44px]"
         >
           {isSaving ? (
             <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />

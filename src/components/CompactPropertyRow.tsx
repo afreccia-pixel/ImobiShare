@@ -26,7 +26,7 @@ interface CompactPropertyRowProps {
   onClick: () => void;
 }
 
-export function CompactPropertyRow({
+function CompactPropertyRowComponent({
   imovel,
   isMyProperty,
   isSelected = false,
@@ -89,11 +89,11 @@ export function CompactPropertyRow({
   const hasActions = Boolean(onEdit || onShareToggle || onWebsiteToggle || onFavoriteToggle || onShareSingle || onDelete);
 
   return (
-    <motion.div
-      whileHover={{ scale: 0.999 }}
+    <div
       onClick={handleRowClick}
+      style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 58px' }}
       className={`bg-white border rounded-lg p-1.5 sm:p-2 cursor-pointer hover:border-slate-300 hover:shadow-xs transition-all w-full ${
-        isSelected ? 'border-[#003366] ring-1 ring-[#003366]/20 bg-blue-50/20' : 'border-slate-200'
+        isSelected ? 'border-blue-600 ring-1 ring-blue-600/20 bg-blue-50/20' : 'border-slate-200'
       }`}
       id={`compact-row-${imovel.id}`}
     >
@@ -243,7 +243,20 @@ export function CompactPropertyRow({
           </div>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }
+
+export const CompactPropertyRow = React.memo(CompactPropertyRowComponent, (prev, next) => {
+  return (
+    prev.imovel.id === next.imovel.id &&
+    prev.imovel.dataCadastro === next.imovel.dataCadastro &&
+    prev.imovel.valor === next.imovel.valor &&
+    prev.imovel.valorLocacao === next.imovel.valorLocacao &&
+    prev.isSelected === next.isSelected &&
+    prev.isFavorite === next.isFavorite &&
+    prev.isMyProperty === next.isMyProperty &&
+    prev.showImage === next.showImage
+  );
+});
 

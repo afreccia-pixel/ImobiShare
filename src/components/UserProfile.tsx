@@ -539,13 +539,13 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
                 <button
                   type="button"
                   onClick={() => setIsEditing(false)}
-                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold py-2.5 rounded-xl transition-all"
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold py-2.5 rounded-full transition-all"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-1.5 shadow-xs transition-all"
+                  className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-2.5 rounded-full flex items-center justify-center gap-1.5 shadow-xs transition-all"
                 >
                   <Save size={14} />
                   <span>Salvar Alterações</span>
@@ -559,7 +559,7 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
         <div className="bg-white border border-slate-100 rounded-xl p-4 shadow-xs space-y-4" id="grupo-parceiros-card">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Grupo de Corretores Parceiros</h3>
-            <span className="bg-[#003366]/10 text-[#003366] text-[10px] font-extrabold px-2 py-0.5 rounded-full">
+            <span className="bg-blue-50 text-blue-600 text-[10px] font-extrabold px-2 py-0.5 rounded-full">
               {parceiros.length} {parceiros.length === 1 ? 'Parceiro' : 'Parceiros'}
             </span>
           </div>
@@ -588,7 +588,7 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
               <button
                 type="submit"
                 title="Adicionar parceiro"
-                className="bg-[#003366] hover:bg-[#002244] text-white px-3.5 py-2 rounded-xl flex items-center justify-center transition-all cursor-pointer flex-shrink-0"
+                className="bg-blue-600 hover:bg-blue-500 text-white px-3.5 py-2 rounded-full flex items-center justify-center transition-all cursor-pointer flex-shrink-0"
               >
                 <Plus size={16} />
               </button>

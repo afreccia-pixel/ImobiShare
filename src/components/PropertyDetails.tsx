@@ -563,7 +563,7 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
                 navigator.clipboard.writeText(publicLink);
                 alert('Link público copiado com sucesso! Você pode compartilhar onde quiser.');
               }}
-              className="text-xs font-bold text-[#003366] hover:text-[#002244] bg-white border border-slate-200 px-2.5 py-1.5 rounded-md flex-shrink-0 shadow-2xs active:scale-95 transition-all cursor-pointer"
+              className="text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-3 py-1.5 rounded-full flex-shrink-0 shadow-xs active:scale-95 transition-all cursor-pointer"
             >
               Copiar Link
             </button>
@@ -572,7 +572,7 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
           {/* WhatsApp button below the public link */}
           <button
             onClick={handleSendWhatsApp}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 active:scale-95 text-sm cursor-pointer"
+            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-full shadow-md transition-all flex items-center justify-center gap-2 active:scale-95 text-sm cursor-pointer"
           >
             {whatsappSent ? (
               <>

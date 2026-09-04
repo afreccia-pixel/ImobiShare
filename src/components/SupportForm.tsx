@@ -128,7 +128,7 @@ export function SupportForm({ activeCorretor, onBack, triggerToast }: SupportFor
                   setDescricao('');
                   setIsSent(false);
                 }}
-                className="w-full bg-[#003366] hover:bg-[#002244] text-white font-bold text-xs py-3 px-4 rounded-xl shadow-xs transition-all uppercase tracking-wider"
+                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs py-3 px-4 rounded-full shadow-xs transition-all uppercase tracking-wider"
               >
                 Voltar ao Suporte
               </button>
@@ -202,7 +202,7 @@ export function SupportForm({ activeCorretor, onBack, triggerToast }: SupportFor
                   onClick={() => setTipo('melhoria')}
                   className={`py-1.5 px-1 rounded-lg transition-all text-center ${
                     tipo === 'melhoria' 
-                      ? 'bg-[#003366] text-white shadow-xs' 
+                      ? 'bg-blue-600 text-white shadow-xs' 
                       : 'text-slate-500 hover:bg-slate-200/50'
                   }`}
                 >
@@ -256,7 +256,7 @@ export function SupportForm({ activeCorretor, onBack, triggerToast }: SupportFor
             <button
               type="submit"
               disabled={isSending}
-              className="w-full bg-[#003366] hover:bg-[#002244] text-white font-extrabold text-xs py-3 px-4 rounded-xl flex items-center justify-center gap-1.5 shadow-md hover:shadow-lg transition-all active:scale-[0.99] uppercase tracking-wider mt-2 disabled:opacity-75 disabled:cursor-not-allowed"
+              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs py-3 px-4 rounded-full flex items-center justify-center gap-1.5 shadow-md hover:shadow-lg transition-all active:scale-[0.99] uppercase tracking-wider mt-2 disabled:opacity-75 disabled:cursor-not-allowed"
             >
               {isSending ? (
                 <>
