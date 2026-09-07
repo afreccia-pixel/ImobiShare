@@ -10,6 +10,7 @@ import { Imovel } from '../types';
 import { MapPin, Bed, Car, Maximize } from 'lucide-react';
 import { getValidImage } from '../utils/imageUtils';
 import { getCoordinatesForImovel } from '../utils/geoUtils';
+import { safePatchLeaflet } from '../utils/leafletPatch';
 
 interface MapViewProps {
   imoveis: Imovel[];
@@ -25,43 +26,6 @@ interface MapCluster {
   center: [number, number];
   imoveis: Imovel[];
   totalCount: number;
-}
-
-// Safely patch Leaflet's L.DomUtil.getPosition to prevent Uncaught TypeError: Cannot read properties of undefined (reading '_leaflet_pos')
-function safePatchLeaflet(leafletInstance: any) {
-  if (!leafletInstance || !leafletInstance.DomUtil) return;
-  if ((leafletInstance.DomUtil as any).__safeLeafletPosPatched) return;
-  (leafletInstance.DomUtil as any).__safeLeafletPosPatched = true;
-
-  const originalGetPosition = leafletInstance.DomUtil.getPosition;
-  leafletInstance.DomUtil.getPosition = function (el: any) {
-    if (!el) {
-      return { x: 0, y: 0 };
-    }
-    try {
-      if (originalGetPosition) {
-        const pos = originalGetPosition.call(leafletInstance.DomUtil, el);
-        return pos || { x: 0, y: 0 };
-      }
-      return el._leaflet_pos || { x: 0, y: 0 };
-    } catch {
-      return (el && el._leaflet_pos) || { x: 0, y: 0 };
-    }
-  };
-
-  const originalSetPosition = leafletInstance.DomUtil.setPosition;
-  leafletInstance.DomUtil.setPosition = function (el: any, point: any) {
-    if (!el) return;
-    try {
-      if (originalSetPosition) {
-        originalSetPosition.call(leafletInstance.DomUtil, el, point);
-      } else {
-        el._leaflet_pos = point;
-      }
-    } catch {
-      // ignore
-    }
-  };
 }
 
 export function MapView({ imoveis, selectedIds, onSelectToggle, onViewDetails, isFullScreen = false, onClusterChange }: MapViewProps) {

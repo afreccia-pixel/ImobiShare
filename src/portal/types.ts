@@ -7,12 +7,17 @@ import { Imovel } from '../types';
 
 export interface PortalFilterState {
   cidade: string;
-  finalidade: 'Comprar' | 'Alugar';
+  finalidade: 'Comprar' | 'Alugar' | 'Todos';
   categoria: 'Lançamentos' | 'Prontos' | 'Todos';
+  tipoImovel?: string;
+  statusImovel?: string;
   precoMin?: number;
   precoMax?: number;
   quartosMin?: number;
+  banheirosMin?: number;
   vagasMin?: number;
+  metragemMin?: number;
+  metragemMax?: number;
   bairro?: string;
   construtora?: string;
   busca?: string;
@@ -34,7 +39,9 @@ export interface PortalProperty extends Imovel {
   suites?: number;
   andar?: number | string;
   condominioFormatado?: string;
+  condominio?: number;
   iptuFormatado?: string;
+  iptu?: number;
   dataEntrega?: string;
   dataPublicacao?: string;
   isLancamento?: boolean;

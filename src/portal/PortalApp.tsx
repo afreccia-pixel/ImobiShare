@@ -29,7 +29,7 @@ export function PortalApp({
 }: PortalAppProps) {
   // Lista de imóveis do portal: dados mock de demonstração da Etapa 1 + imóveis reais adaptados
   const properties = useMemo<PortalProperty[]>(() => {
-    // Começa com os dados mock especificados (SANCHO, MAGIC SUN, SUMMER SUN, etc.)
+    // Começa com os dados mock especificados (SANCHO, MAGIC SUN, GRAND PALAIS, etc.)
     const list: PortalProperty[] = [...MOCK_PORTAL_PROPERTIES];
 
     // Se houver imóveis reais cadastrados no sistema, adapta sem alterar seus dados
@@ -53,11 +53,11 @@ export function PortalApp({
             quartos: p.dormitorios,
             banheiros: p.banheiros,
             vagas: p.vagas,
-            suites: p.suites,
-            andar: p.andar,
-            condominioFormatado: p.condominio ? `R$ ${p.condominio.toLocaleString('pt-BR')} / mês` : undefined,
-            iptuFormatado: p.iptu ? `R$ ${p.iptu.toLocaleString('pt-BR')} / ano` : undefined,
-            dataEntrega: p.dataEntrega,
+            suites: (p as any).suites,
+            andar: (p as any).andar,
+            condominioFormatado: (p as any).condominio ? `R$ ${(p as any).condominio.toLocaleString('pt-BR')} / mês` : undefined,
+            iptuFormatado: (p as any).iptu ? `R$ ${(p as any).iptu.toLocaleString('pt-BR')} / ano` : undefined,
+            dataEntrega: (p as any).dataEntrega,
             dataPublicacao: p.dataCadastro ? new Date(p.dataCadastro).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }) : undefined,
             isLancamento: p.statusImovel === 'Na planta',
             cidade: p.cidade,
@@ -80,6 +80,9 @@ export function PortalApp({
 
   // Navegação: ID do imóvel selecionado para a página de detalhes
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(initialPropertyId);
+  // Rastreia se a visualização foi aberta a partir do clique no mapa
+  const [openedFromMap, setOpenedFromMap] = useState<boolean>(false);
+  const [lastSelectedPinId, setLastSelectedPinId] = useState<string | null>(null);
 
   // Favoritos armazenados localmente
   const [favorites, setFavorites] = useState<string[]>(() => {
@@ -125,8 +128,12 @@ export function PortalApp({
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  const handleSelectProperty = (id: string) => {
+  const handleSelectProperty = (id: string, fromMap: boolean = false) => {
     setSelectedPropertyId(id);
+    setOpenedFromMap(fromMap);
+    if (fromMap) {
+      setLastSelectedPinId(id);
+    }
     window.location.hash = `#imovel/${id}`;
   };
 
@@ -147,6 +154,7 @@ export function PortalApp({
       <PortalPropertyDetailPage
         imovel={activeProperty}
         isFavorite={favorites.includes(activeProperty.id)}
+        fromMap={openedFromMap}
         onToggleFavorite={handleToggleFavorite}
         onClose={handleCloseDetail}
         onGoHome={handleCloseDetail}
@@ -160,6 +168,9 @@ export function PortalApp({
       properties={properties}
       favorites={favorites}
       isLoggedIn={isLoggedIn}
+      initialMobileViewMode={openedFromMap ? 'map' : undefined}
+      initialSelectedPinId={lastSelectedPinId}
+      openedFromMap={openedFromMap}
       onToggleFavorite={handleToggleFavorite}
       onSelectProperty={handleSelectProperty}
       onOpenAuth={onOpenAuth}

@@ -29,9 +29,12 @@
 }
 
 /* Custom Leaflet Map Markers & Clean Popups */
-.custom-leaflet-marker {
+.custom-leaflet-marker,
+.custom-div-icon,
+.custom-div-cluster-icon {
   background: transparent !important;
   border: none !important;
+  outline: none !important;
 }
 
 .leaflet-popup-content-wrapper {

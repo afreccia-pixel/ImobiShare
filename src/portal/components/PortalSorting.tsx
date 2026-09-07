@@ -13,7 +13,7 @@ interface PortalSortingProps {
 }
 
 const SORT_LABELS: Record<PortalSortOption, string> = {
-  relevancia: 'Mais relevantes',
+  relevancia: 'Relevantes',
   menor_preco: 'Menor preço',
   maior_preco: 'Maior preço',
   maior_area: 'Maior área',
@@ -41,17 +41,16 @@ export function PortalSorting({ sortBy, onChangeSort }: PortalSortingProps) {
         type="button"
         id="portal-sort-dropdown-trigger"
         onClick={() => setIsOpen((prev) => !prev)}
-        className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 py-1 cursor-pointer transition-colors focus:outline-hidden"
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200/90 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 shadow-2xs transition-all cursor-pointer focus:outline-hidden"
       >
-        <span>Ordenar por:</span>
-        <span className="font-bold text-slate-800">{SORT_LABELS[sortBy]}</span>
+        <span>{SORT_LABELS[sortBy]}</span>
         <ChevronDown size={14} className={`text-slate-500 transition-transform duration-150 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {isOpen && (
         <div 
           id="portal-sort-dropdown-menu"
-          className="absolute left-0 mt-1.5 w-52 bg-white rounded-xl shadow-xl border border-slate-100 py-1.5 z-40 animate-in fade-in zoom-in-95 duration-100"
+          className="absolute right-0 mt-1.5 w-48 bg-white rounded-xl shadow-xl border border-slate-100 py-1.5 z-40 animate-in fade-in zoom-in-95 duration-100"
         >
           {(Object.keys(SORT_LABELS) as PortalSortOption[]).map((option) => {
             const isSelected = sortBy === option;

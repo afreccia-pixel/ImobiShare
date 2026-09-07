@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { Heart } from 'lucide-react';
+import { Heart, MapPin } from 'lucide-react';
 import { PortalProperty } from '../types';
 import { formatCurrencyBRL } from '../data/mockPortalData';
 import { getValidImage, handleImageError } from '../../utils/imageUtils';
@@ -28,8 +28,9 @@ export function PortalPropertyCard({
 }: PortalPropertyCardProps) {
   const mainPhoto = getValidImage(imovel.fotos?.[0]);
   const isNaPlanta = imovel.statusImovel === 'Na planta' || imovel.isLancamento;
-  const empreendimentoNome = imovel.nomeEdificio || imovel.titulo;
-  const construtora = imovel.construtora || 'Baggio';
+  const enderecoFormatado = imovel.endereco
+    ? (imovel.bairro ? `${imovel.endereco} - ${imovel.bairro}` : imovel.endereco)
+    : [imovel.bairro, imovel.cidade].filter(Boolean).join(' - ') || 'Endereço sob consulta';
 
   const handleClick = () => {
     onSelect?.(imovel.id);
@@ -56,7 +57,7 @@ export function PortalPropertyCard({
       <div className="relative aspect-4/3 sm:aspect-16/11 bg-slate-100 overflow-hidden">
         <img
           src={mainPhoto}
-          alt={empreendimentoNome}
+          alt={imovel.titulo}
           onError={handleImageError}
           loading="lazy"
           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-103"
@@ -93,13 +94,16 @@ export function PortalPropertyCard({
 
       {/* Conteúdo do Card */}
       <div className="p-4 space-y-2">
+        {/* Título do Imóvel (substitui 'A partir de') */}
+        <h3
+          className="text-xs sm:text-sm font-bold text-slate-800 line-clamp-2 leading-snug group-hover:text-[#003366] transition-colors"
+          title={imovel.titulo}
+        >
+          {imovel.titulo}
+        </h3>
+
         {/* Preço */}
         <div>
-          {isNaPlanta && (
-            <span className="text-[11px] font-medium text-slate-400 block tracking-tight leading-tight">
-              A partir de
-            </span>
-          )}
           <span className="text-lg font-black text-slate-900 tracking-tight block">
             {formatCurrencyBRL(imovel.valor)}
           </span>
@@ -115,13 +119,11 @@ export function PortalPropertyCard({
           </p>
         </div>
 
-        {/* Empreendimento e Construtora */}
-        <div className="pt-1 border-t border-slate-50">
-          <h3 className="text-xs font-black text-slate-800 uppercase tracking-wide truncate">
-            {empreendimentoNome}
-          </h3>
-          <p className="text-[11px] text-slate-400 font-medium truncate">
-            {construtora}
+        {/* Endereço (substitui Residencial Sancho e Baggio) */}
+        <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5 text-slate-500 min-w-0">
+          <MapPin size={13} className="shrink-0 text-slate-400" />
+          <p className="text-xs text-slate-500 font-medium truncate" title={enderecoFormatado}>
+            {enderecoFormatado}
           </p>
         </div>
       </div>

@@ -3,11 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
-import { X, Calendar, Clock, CheckCircle2, User, Phone, MessageSquare } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { X, User, Phone, Mail, MessageCircle } from 'lucide-react';
 import { PortalProperty } from '../types';
 import { formatCurrencyBRL } from '../data/mockPortalData';
-import { getValidImage } from '../../utils/imageUtils';
+import { DbService } from '../../services/db';
 
 interface PortalScheduleModalProps {
   imovel: PortalProperty | null;
@@ -17,216 +17,270 @@ interface PortalScheduleModalProps {
 
 export function PortalScheduleModal({ imovel, isOpen, onClose }: PortalScheduleModalProps) {
   const [nome, setNome] = useState('');
-  const [whatsapp, setWhatsapp] = useState('');
-  const [dataPref, setDataPref] = useState('');
-  const [turno, setTurno] = useState<'manha' | 'tarde'>('tarde');
-  const [mensagem, setMensagem] = useState('');
-  const [submitted, setSubmitted] = useState(false);
+  const [telefone, setTelefone] = useState('');
+  const [email, setEmail] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+
+  // Identifica o corretor responsável pelo imóvel
+  const brokerInfo = useMemo(() => {
+    if (!imovel) {
+      return {
+        nome: 'Corretor ImobiShare',
+        email: 'contato@imobishare.com.br',
+        telefone: '47998887766',
+      };
+    }
+
+    try {
+      const corretores = DbService.getCorretores();
+      const found = corretores.find(
+        (c) =>
+          (c.id && c.id === imovel.corretorId) ||
+          (c.email && c.email.toLowerCase().trim() === imovel.corretorEmail?.toLowerCase().trim())
+      );
+
+      return {
+        nome: imovel.corretorNome || found?.nome || 'Corretor ImobiShare',
+        email: imovel.corretorEmail || found?.email || 'contato@imobishare.com.br',
+        telefone: found?.whatsapp || found?.telefone || '47998887766',
+      };
+    } catch {
+      return {
+        nome: imovel.corretorNome || 'Corretor ImobiShare',
+        email: imovel.corretorEmail || 'contato@imobishare.com.br',
+        telefone: '47998887766',
+      };
+    }
+  }, [imovel]);
+
+  // Preenchimento automático inteligente (salvo anteriormente, corretor logado ou padrão)
+  useEffect(() => {
+    if (!isOpen) return;
+    setErrorMessage('');
+
+    // 1. Tenta dados salvos da sessão do cliente
+    try {
+      const savedData = localStorage.getItem('portal_client_data');
+      if (savedData) {
+        const parsed = JSON.parse(savedData);
+        if (parsed.nome) setNome(parsed.nome);
+        if (parsed.telefone) setTelefone(parsed.telefone);
+        if (parsed.email) setEmail(parsed.email);
+        return;
+      }
+    } catch {
+      // continua para fallback
+    }
+
+    // 2. Tenta dados do usuário ativo
+    try {
+      const active = DbService.getActiveCorretor();
+      if (active) {
+        if (active.nome) setNome(active.nome);
+        if (active.telefone || active.whatsapp) setTelefone(active.telefone || active.whatsapp || '');
+        if (active.email) setEmail(active.email);
+        return;
+      }
+    } catch {
+      // continua para fallback
+    }
+
+    // 3. Padrão inteligente pré-preenchido
+    setNome((prev) => (prev ? prev : 'Carlos Alberto'));
+    setTelefone((prev) => (prev ? prev : '(47) 99123-4567'));
+    setEmail((prev) => (prev ? prev : 'carlos.interessado@gmail.com'));
+  }, [isOpen]);
 
   if (!isOpen || !imovel) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Simulação visual da Etapa 1
-    setSubmitted(true);
+  // Persiste alterações do usuário no armazenamento local
+  const saveClientData = (n: string, t: string, e: string) => {
+    try {
+      localStorage.setItem('portal_client_data', JSON.stringify({ nome: n, telefone: t, email: e }));
+    } catch {}
   };
 
-  const handleResetAndClose = () => {
-    setSubmitted(false);
-    setNome('');
-    setWhatsapp('');
-    setDataPref('');
-    setMensagem('');
+  const handleNameChange = (val: string) => {
+    setNome(val);
+    saveClientData(val, telefone, email);
+  };
+
+  const handleTelefoneChange = (val: string) => {
+    setTelefone(val);
+    saveClientData(nome, val, email);
+  };
+
+  const handleEmailChange = (val: string) => {
+    setEmail(val);
+    saveClientData(nome, telefone, val);
+  };
+
+  // Enviar informações para o corretor e abrir o WhatsApp
+  const handleFalarComCorretor = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!nome.trim()) {
+      setErrorMessage('Por favor, informe seu Nome.');
+      return;
+    }
+    if (!telefone.trim()) {
+      setErrorMessage('Por favor, informe seu Telefone / WhatsApp.');
+      return;
+    }
+    if (!email.trim() || !email.includes('@')) {
+      setErrorMessage('Por favor, informe um E-mail válido.');
+      return;
+    }
+
+    // 1. Salva os dados localmente
+    saveClientData(nome.trim(), telefone.trim(), email.trim());
+
+    // 2. Monta o texto completo com as informações para o corretor
+    const imovelNome = imovel.nomeEdificio || imovel.titulo;
+    const endereco = `${imovel.endereco ? `${imovel.endereco}, ` : ''}${imovel.bairro}, ${imovel.cidade}`;
+
+    const messageText = 
+      `Olá, ${brokerInfo.nome}!\n\n` +
+      `Gostaria de agendar uma visita para o imóvel:\n` +
+      `🏢 *${imovelNome}* (${imovel.codigo || imovel.id})\n` +
+      `💰 *Valor:* ${formatCurrencyBRL(imovel.valor)}\n` +
+      `📍 *Endereço:* ${endereco}\n\n` +
+      `👤 *Meus Dados para Contato:*\n` +
+      `• Nome: ${nome.trim()}\n` +
+      `• Telefone: ${telefone.trim()}\n` +
+      `• E-mail: ${email.trim()}\n\n` +
+      `Aguardo seu retorno para combinarmos a data e horário!`;
+
+    // 3. Envia por E-mail em segundo plano
+    if (brokerInfo.email) {
+      try {
+        const subject = encodeURIComponent(`[Agendamento de Visita] ${imovelNome} - ${nome.trim()}`);
+        const mailBody = encodeURIComponent(messageText);
+        const mailLink = document.createElement('a');
+        mailLink.href = `mailto:${brokerInfo.email}?subject=${subject}&body=${mailBody}`;
+        mailLink.click();
+      } catch {}
+    }
+
+    // 4. Abre o WhatsApp do corretor
+    const cleanPhone = (brokerInfo.telefone || '').replace(/\D/g, '');
+    const phoneWithCountry = cleanPhone.startsWith('55')
+      ? cleanPhone
+      : cleanPhone.length > 0
+        ? `55${cleanPhone}`
+        : '5547998887766';
+
+    const encodedMsg = encodeURIComponent(messageText);
+    const waUrl = `https://api.whatsapp.com/send?phone=${phoneWithCountry}&text=${encodedMsg}`;
+    
+    setTimeout(() => {
+      window.open(waUrl, '_blank', 'noopener,noreferrer');
+    }, 150);
+
+    // Fecha o modal
     onClose();
   };
-
-  const mainPhoto = getValidImage(imovel.fotos?.[0]);
 
   return (
     <div
       id="modal-agendar-visita"
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200"
     >
-      <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden border border-slate-100 relative">
+      <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden border border-slate-100 relative">
         {/* Header do Modal */}
-        <div className="flex items-center justify-between p-5 border-b border-slate-100">
+        <div className="flex items-center justify-between px-6 pt-6 pb-2">
           <div>
-            <span className="text-[10px] font-bold text-[#003366] uppercase tracking-wider block">
-              Agendamento Exclusivo
-            </span>
-            <h2 className="text-lg font-black text-slate-900">
-              Agendar Visita ao Imóvel
+            <h2 className="text-xl font-black text-slate-900">
+              Agendar Visita
             </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {imovel.nomeEdificio || imovel.titulo} • {formatCurrencyBRL(imovel.valor)}
+            </p>
           </div>
           <button
             type="button"
-            onClick={handleResetAndClose}
-            aria-label="Fechar modal de agendamento"
+            onClick={onClose}
+            aria-label="Fechar"
             className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition-colors cursor-pointer"
           >
             <X size={16} />
           </button>
         </div>
 
-        {/* Resumo do Imóvel */}
-        <div className="p-4 bg-slate-50 border-b border-slate-100 flex items-center gap-3.5">
-          <img
-            src={mainPhoto}
-            alt={imovel.titulo}
-            className="w-16 h-16 rounded-xl object-cover shrink-0 border border-slate-200"
-            referrerPolicy="no-referrer"
-          />
-          <div className="min-w-0 flex-1">
-            <h3 className="text-xs font-bold text-slate-800 truncate">
-              {imovel.nomeEdificio || imovel.titulo}
-            </h3>
-            <p className="text-[11px] text-slate-500 truncate">
-              {imovel.endereco ? `${imovel.endereco} • ` : ''}{imovel.bairro}, {imovel.cidade}
-            </p>
-            <p className="text-xs font-black text-[#003366] mt-0.5">
-              {formatCurrencyBRL(imovel.valor)}
-            </p>
-          </div>
-        </div>
-
-        {/* Conteúdo: Formulário ou Sucesso */}
-        <div className="p-6">
-          {submitted ? (
-            <div className="text-center py-6 space-y-3 animate-in zoom-in-95 duration-200">
-              <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-xs">
-                <CheckCircle2 size={28} />
-              </div>
-              <h3 className="text-base font-bold text-slate-800">
-                Solicitação de Agendamento Enviada!
-              </h3>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
-                Agradecemos o seu interesse. Nosso consultor entrará em contato via WhatsApp com você em breve para confirmar o melhor horário da visita.
-              </p>
-              <div className="pt-3">
-                <button
-                  type="button"
-                  onClick={handleResetAndClose}
-                  className="px-6 py-2.5 bg-[#003366] text-white text-xs font-bold rounded-full hover:bg-[#002244] transition-all cursor-pointer shadow-md"
-                >
-                  Concluir
-                </button>
-              </div>
+        {/* Formulário Simples: Nome, Telefone, Email */}
+        <form onSubmit={handleFalarComCorretor} className="p-6 space-y-4">
+          {errorMessage && (
+            <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl font-medium">
+              {errorMessage}
             </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Nome */}
-              <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                  Seu Nome Completo
-                </label>
-                <div className="relative">
-                  <User size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    required
-                    value={nome}
-                    onChange={(e) => setNome(e.target.value)}
-                    placeholder="Ex: João da Silva"
-                    className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-[#003366]/20 focus:border-[#003366]"
-                  />
-                </div>
-              </div>
-
-              {/* WhatsApp */}
-              <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                  WhatsApp / Telefone
-                </label>
-                <div className="relative">
-                  <Phone size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="tel"
-                    required
-                    value={whatsapp}
-                    onChange={(e) => setWhatsapp(e.target.value)}
-                    placeholder="(47) 99999-9999"
-                    className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-[#003366]/20 focus:border-[#003366]"
-                  />
-                </div>
-              </div>
-
-              {/* Data e Turno */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                    Data de Preferência
-                  </label>
-                  <div className="relative">
-                    <Calendar size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                      type="date"
-                      value={dataPref}
-                      onChange={(e) => setDataPref(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-[#003366]/20 focus:border-[#003366]"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                    Turno
-                  </label>
-                  <div className="grid grid-cols-2 gap-1.5 pt-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setTurno('manha')}
-                      className={`py-2 text-xs font-bold rounded-lg border transition-all cursor-pointer text-center ${
-                        turno === 'manha'
-                          ? 'bg-blue-50 border-[#003366] text-[#003366]'
-                          : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      Manhã
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTurno('tarde')}
-                      className={`py-2 text-xs font-bold rounded-lg border transition-all cursor-pointer text-center ${
-                        turno === 'tarde'
-                          ? 'bg-blue-50 border-[#003366] text-[#003366]'
-                          : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      Tarde
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Observações */}
-              <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                  Dúvidas ou Observações (opcional)
-                </label>
-                <div className="relative">
-                  <textarea
-                    rows={2}
-                    value={mensagem}
-                    onChange={(e) => setMensagem(e.target.value)}
-                    placeholder="Gostaria de tirar dúvidas sobre as opções de pagamento na planta..."
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-[#003366]/20 focus:border-[#003366]"
-                  />
-                </div>
-              </div>
-
-              {/* Botão de Envio */}
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  id="btn-confirmar-agendamento"
-                  className="w-full py-3 bg-[#003366] hover:bg-[#002244] text-white text-xs font-extrabold uppercase tracking-wider rounded-xl transition-all shadow-md active:scale-[0.99] cursor-pointer"
-                >
-                  Confirmar Agendamento de Visita
-                </button>
-              </div>
-            </form>
           )}
-        </div>
+
+          {/* Nome */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Nome
+            </label>
+            <div className="relative">
+              <User size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                required
+                value={nome}
+                onChange={(e) => handleNameChange(e.target.value)}
+                placeholder="Seu nome"
+                className="w-full pl-9 pr-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#003366]/20 focus:border-[#003366] focus:bg-white transition-all"
+              />
+            </div>
+          </div>
+
+          {/* Telefone */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Telefone
+            </label>
+            <div className="relative">
+              <Phone size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="tel"
+                required
+                value={telefone}
+                onChange={(e) => handleTelefoneChange(e.target.value)}
+                placeholder="(47) 99999-9999"
+                className="w-full pl-9 pr-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#003366]/20 focus:border-[#003366] focus:bg-white transition-all"
+              />
+            </div>
+          </div>
+
+          {/* E-mail */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              E-mail
+            </label>
+            <div className="relative">
+              <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => handleEmailChange(e.target.value)}
+                placeholder="seu.email@exemplo.com"
+                className="w-full pl-9 pr-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#003366]/20 focus:border-[#003366] focus:bg-white transition-all"
+              />
+            </div>
+          </div>
+
+          {/* Botão Falar com corretor */}
+          <div className="pt-2">
+            <button
+              type="submit"
+              id="btn-falar-com-corretor"
+              className="w-full py-4 px-6 bg-[#25D366] hover:bg-[#1EBE5D] text-white text-base font-extrabold rounded-2xl shadow-lg shadow-[#25D366]/25 hover:shadow-xl hover:shadow-[#25D366]/35 transition-all duration-200 cursor-pointer active:scale-[0.99] flex items-center justify-center gap-2"
+            >
+              <MessageCircle size={20} className="fill-white" />
+              <span>Falar com corretor</span>
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

@@ -107,50 +107,6 @@ Com 145 m² privativos, a planta inteligente separa perfeitamente a ala social d
 São 4 dormitórios distribuídos em 2 elegantes suítes e 2 demi-suítes, 4 banheiros e 3 vagas de garagem privativas com ponto para abastecimento de veículo elétrico. Área de lazer espetacular com rooftop lounge 360°, espaço gourmet assinado por chef e heliponto homologado nas proximidades.`
   },
   {
-    id: 'mock-summer-sun-03',
-    codigo: 'IMB-001102',
-    titulo: 'Apartamento de 2 quartos próximo à praia no Centro',
-    nomeEdificio: 'Summer Sun Residence',
-    construtora: 'Baggio',
-    tipoImovel: 'Apartamento',
-    statusImovel: 'Na planta',
-    tipo: 'venda',
-    valor: 1290000,
-    metragem: 82,
-    areaTotal: 125,
-    dormitorios: 2,
-    quartos: 2,
-    banheiros: 2,
-    vagas: 1,
-    suites: 1,
-    andar: 8,
-    condominioFormatado: 'R$ 620 / mês',
-    iptuFormatado: 'R$ 1.800 / ano',
-    dataEntrega: 'Novembro de 2026',
-    dataPublicacao: '28 de agosto de 2026',
-    isLancamento: true,
-    cidade: 'Balneário Camboriú',
-    bairro: 'Centro',
-    endereco: 'Rua 1500, 350',
-    corretorEmail: 'contato@imobishare.com.br',
-    corretorNome: 'ImobiShare Lançamentos',
-    dataCadastro: '2026-08-28T09:15:00.000Z',
-    latitude: -26.9890,
-    longitude: -48.6380,
-    fotos: [
-      'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=1600&auto=format&fit=crop&q=85',
-      'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=1600&auto=format&fit=crop&q=85',
-      'https://images.unsplash.com/photo-1554995207-c18c203602cb?w=1600&auto=format&fit=crop&q=85',
-      'https://images.unsplash.com/photo-1560185127-6ed189bf02f4?w=1600&auto=format&fit=crop&q=85',
-      'https://images.unsplash.com/photo-1560185007-cde436f6a4d0?w=1600&auto=format&fit=crop&q=85'
-    ],
-    descricao: `Excelente oportunidade de investimento e moradia no Summer Sun Residence. Situado na Rua 1500, a poucos passos do mar, supermercados gourmet e melhores restaurantes de Balneário Camboriú.
-
-Planta compacta de 82 m² privativos com aproveitamento milimétrico de cada espaço. Varanda gourmet com churrasqueira integrada ao living, cozinha estilo americana e lavanderia independente.
-
-Conta com 2 quartos, sendo 1 suíte confortável, 2 banheiros e 1 vaga de garagem coberta. Baixo custo condominial com infraestrutura enxuta e moderna: piscina na cobertura, espaço fitness e salão gourmet equipado.`
-  },
-  {
     id: 'mock-grand-palais-04',
     codigo: 'IMB-002140',
     titulo: 'Residência suspensa de 4 suítes frente mar na Barra Sul',

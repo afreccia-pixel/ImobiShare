@@ -29,6 +29,7 @@ import { PropertyDetails } from './components/PropertyDetails';
 import { UserProfile } from './components/UserProfile';
 import { PublicView } from './components/PublicView';
 import { SupportForm } from './components/SupportForm';
+import { PortalApp } from './portal/PortalApp';
 import { getValidImage, isValidImageString, handleImageError } from './utils/imageUtils';
 import {
   Home as HomeIcon,
@@ -74,6 +75,39 @@ export default function App() {
   const [authPassword, setAuthPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
+
+  // Application Mode: 'portal' (Portal Público) | 'broker' (Plataforma Corretor) | 'auth' (Login Corretor)
+  const [appMode, setAppMode] = useState<'portal' | 'broker' | 'auth'>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const hash = window.location.hash;
+
+    // Reset password mode
+    if (params.get('action') === 'reset-password' || params.get('mode') === 'resetPassword') {
+      return 'auth';
+    }
+    // Explicit broker mode
+    if (params.get('app') === '1' || hash === '#app' || hash.startsWith('#app/')) {
+      return 'broker';
+    }
+    // Default: Public Portal immediately
+    return 'portal';
+  });
+
+  // Listen to hash changes for seamless navigation (#portal, #app, #auth, #imovel/)
+  useEffect(() => {
+    const handleHash = () => {
+      const hash = window.location.hash;
+      if (hash === '#app' || hash.startsWith('#app/')) {
+        setAppMode('broker');
+      } else if (hash === '#portal' || hash.startsWith('#portal') || hash.startsWith('#imovel/')) {
+        setAppMode('portal');
+      } else if (hash === '#auth' || hash === '#login') {
+        setAppMode('auth');
+      }
+    };
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
 
   // Reset password token modal states
   const [resetTokenData, setResetTokenData] = useState<{ email: string; token: string } | null>(null);
@@ -980,6 +1014,8 @@ useEffect(() => {
         localStorage.setItem('imobishare_logged_in', 'true');
         setIsAuthenticated(true);
         setActiveCorretor(foundCorretor);
+        setAppMode('broker');
+        window.location.hash = '#app';
         setActiveTab('home');
         setSelectedPropertyId(null);
         setIsAddingProperty(false);
@@ -1113,6 +1149,8 @@ useEffect(() => {
       localStorage.setItem('imobishare_logged_in', 'true');
       setIsAuthenticated(true);
       setActiveCorretor(newCorretorObj);
+      setAppMode('broker');
+      window.location.hash = '#app';
       setActiveTab('home');
       setSelectedPropertyId(null);
       setIsAddingProperty(false);
@@ -1298,6 +1336,8 @@ useEffect(() => {
     localStorage.removeItem('imobishare_active_corretor');
     setActiveCorretor(null);
     setIsAuthenticated(false);
+    setAppMode('portal');
+    window.location.hash = '#portal';
     setAuthMode('login');
     setAuthError('');
     setAuthEmail('');
@@ -1323,6 +1363,8 @@ useEffect(() => {
     localStorage.setItem('imobishare_logged_in', 'true');
     setIsAuthenticated(true);
     setActiveCorretor(guestCorretor);
+    setAppMode('broker');
+    window.location.hash = '#app';
     triggerToast('Acessando como Visitante. Explore o catálogo de imóveis.');
   };
 
@@ -1926,11 +1968,47 @@ Toque abaixo para ver a seleção completa:
     );
   }
 
-  // --- LOGIN SCREEN IF NOT AUTHENTICATED ---
-  if (!isAuthenticated) {
+  // --- PUBLIC REAL ESTATE PORTAL (IMOBISHARE PORTAL ETAPA 1) ---
+  if (appMode === 'portal') {
+    return (
+      <PortalApp
+        realProperties={allImoveis}
+        isLoggedIn={isAuthenticated}
+        onOpenAuth={() => {
+          if (isAuthenticated) {
+            setAppMode('broker');
+            window.location.hash = '#app';
+          } else {
+            setAuthMode('login');
+            setAuthError('');
+            setAppMode('auth');
+            window.location.hash = '#auth';
+          }
+        }}
+      />
+    );
+  }
+
+  // --- LOGIN SCREEN IF NOT AUTHENTICATED OR EXPLICIT AUTH MODE ---
+  if (appMode === 'auth' || !isAuthenticated) {
     return (
       <div className="bg-[#0F172A] min-h-screen flex flex-col justify-center items-center px-4 font-sans select-none relative" id="auth-screen">
         {renderResetPasswordModal()}
+        
+        {/* Back to Public Portal button */}
+        <div className="w-full max-w-sm mb-3 px-1">
+          <button
+            type="button"
+            onClick={() => {
+              setAppMode('portal');
+              window.location.hash = '#portal';
+            }}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-300 hover:text-white transition-colors cursor-pointer"
+          >
+            ← Voltar ao Portal Público ImobiShare
+          </button>
+        </div>
+
         <div className="w-full max-w-sm bg-white rounded-[32px] p-6 shadow-2xl space-y-4 border border-gray-100 max-h-[95dvh] overflow-y-auto">
           <div className="text-center space-y-1">
             <img
@@ -2261,7 +2339,7 @@ Toque abaixo para ver a seleção completa:
                   id="home-tab-view"
                 >
                   {/* Instagram-inspired Top Bar */}
-                  <div className="bg-white border-b border-gray-100 flex-shrink-0">
+                  <div className="bg-white border-b border-gray-100 flex-shrink-0 sticky top-0 z-30 shadow-2xs">
                     <div className="px-5 pt-6 pb-4 flex justify-between items-center">
                       <div className="flex items-center gap-2">
                         <img
@@ -2274,6 +2352,17 @@ Toque abaixo para ver a seleção completa:
                         <h1 className="text-[#003366] text-base font-black tracking-tight uppercase leading-none">ImobiShare</h1>
                       </div>
                       <div className="flex gap-2 items-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAppMode('portal');
+                            window.location.hash = '#portal';
+                          }}
+                          className="px-2.5 py-1 text-[10px] font-bold text-[#003366] bg-blue-50 hover:bg-blue-100 rounded-full border border-blue-200/80 transition-all cursor-pointer shadow-2xs flex items-center gap-1"
+                          title="Acessar Portal Público de Imóveis"
+                        >
+                          <span>🌐 Portal</span>
+                        </button>
                         <div className="w-8 h-8 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-xs shadow-xs" title="Notificações ativas">
                           🔔
                         </div>

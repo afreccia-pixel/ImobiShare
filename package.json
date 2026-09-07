@@ -4,8 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "dev": "node scripts/patch-leaflet.cjs && tsx server.ts",
+    "build": "node scripts/patch-leaflet.cjs && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "postinstall": "node scripts/patch-leaflet.cjs",
     "start": "node dist/server.cjs",
     "clean": "rm -rf dist && (cd android && ./gradlew clean || true)",
     "android": "npx cap open android",
