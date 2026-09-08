@@ -94,6 +94,10 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
   // 8. Metragem privativa
   const [metragem, setMetragem] = useState<number | ''>('');
 
+  // 8.1 Valor Condomínio e Valor IPTU
+  const [condominio, setCondominio] = useState<number | ''>('');
+  const [iptu, setIptu] = useState<number | ''>('');
+
   // 9. Nome do edifício e Construtora
   const [nomeEdificio, setNomeEdificio] = useState('');
   const [construtora, setConstrutora] = useState('');
@@ -138,12 +142,6 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
     return Array.from(new Set(list)).sort((a, b) => a.localeCompare(b, 'pt-BR'));
   }, []);
 
-  const construtoraExiste = useMemo(() => {
-    if (!construtora.trim()) return false;
-    const cleanInput = construtora.trim().toLowerCase();
-    return construtorasCadastradas.some(c => c.toLowerCase() === cleanInput);
-  }, [construtora, construtorasCadastradas]);
-
   useEffect(() => {
     if (imovelId) {
       const imoveis = DbService.getImoveisSync();
@@ -169,6 +167,8 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         setVagas(found.vagas ?? '');
         setBanheiros(found.banheiros ?? '');
         setMetragem(found.metragem ?? '');
+        setCondominio(found.condominio ?? '');
+        setIptu(found.iptu ?? '');
         setNomeEdificio(found.nomeEdificio || '');
         setConstrutora(found.construtora || '');
         setTitulo(found.titulo || '');
@@ -761,6 +761,8 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         vagas: (vagas as any) !== '' ? Number(vagas) : undefined,
         banheiros: (banheiros as any) !== '' ? Number(banheiros) : undefined,
         metragem: (metragem as any) !== '' ? Number(metragem) : undefined,
+        condominio: (condominio as any) !== '' && Number(condominio) > 0 ? Number(condominio) : undefined,
+        iptu: (iptu as any) !== '' && Number(iptu) > 0 ? Number(iptu) : undefined,
         visibilidade: 'todos',
         dataCadastro: existingImovel?.dataCadastro || new Date().toISOString(),
       };
@@ -1217,6 +1219,49 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
                 <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-semibold pointer-events-none">m²</span>
               </div>
             </div>
+
+            {/* Linha 3: Valor Condomínio e Valor IPTU */}
+            <div className="grid grid-cols-2 gap-2 sm:gap-2.5 pt-0.5">
+              <div>
+                <label className="text-[10px] font-semibold text-slate-600 block mb-1 whitespace-nowrap">
+                  Valor Condomínio <span className="text-slate-400 font-normal">(opcional)</span>
+                </label>
+                <div className="relative">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-semibold pointer-events-none">R$</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="Ex: 850"
+                    value={formatNumberWithSeparators(condominio)}
+                    onChange={(e) => {
+                      const clean = e.target.value.replace(/\D/g, '');
+                      setCondominio(clean === '' ? '' : Number(clean));
+                    }}
+                    className="w-full text-xs pl-7 pr-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-semibold text-slate-600 block mb-1 whitespace-nowrap">
+                  Valor IPTU <span className="text-slate-400 font-normal">(opcional)</span>
+                </label>
+                <div className="relative">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-semibold pointer-events-none">R$</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="Ex: 2.400"
+                    value={formatNumberWithSeparators(iptu)}
+                    onChange={(e) => {
+                      const clean = e.target.value.replace(/\D/g, '');
+                      setIptu(clean === '' ? '' : Number(clean));
+                    }}
+                    className="w-full text-xs pl-7 pr-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1241,17 +1286,9 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
 
         {/* 6. CONSTRUTORA (opcional) */}
         <div className="bg-white p-3 rounded-lg border border-slate-100 space-y-1.5">
-          <div className="flex items-center justify-between gap-2">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 whitespace-nowrap">
-              6. CONSTRUTORA <span className="text-slate-400 font-normal lowercase">(opcional)</span>
-            </label>
-            {construtoraExiste && (
-              <span className="text-[9px] text-emerald-800 font-bold bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded-full flex items-center gap-1">
-                <Check size={10} className="text-emerald-700" />
-                Construtora cadastrada no sistema
-              </span>
-            )}
-          </div>
+          <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 whitespace-nowrap">
+            6. CONSTRUTORA <span className="text-slate-400 font-normal lowercase">(opcional)</span>
+          </label>
           <div className="relative">
             <input
               type="text"

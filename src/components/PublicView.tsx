@@ -267,6 +267,24 @@ export function PublicView({ imovel, activeCorretor, onExit }: PublicViewProps) 
             );
           })()}
 
+          {/* Encargos Adicionais: Condomínio e IPTU */}
+          {(Boolean(imovel.condominio) || Boolean(imovel.iptu)) && (
+            <div className="flex flex-wrap items-center gap-2 pt-1 pb-0.5">
+              {imovel.condominio ? (
+                <div className="text-xs bg-slate-50 border border-slate-200/80 px-2.5 py-1 rounded-lg text-slate-600">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 mr-1">Condomínio:</span>
+                  <span className="font-bold text-slate-800">R$ {imovel.condominio.toLocaleString('pt-BR')} /mês</span>
+                </div>
+              ) : null}
+              {imovel.iptu ? (
+                <div className="text-xs bg-slate-50 border border-slate-200/80 px-2.5 py-1 rounded-lg text-slate-600">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 mr-1">IPTU:</span>
+                  <span className="font-bold text-slate-800">R$ {imovel.iptu.toLocaleString('pt-BR')} /ano</span>
+                </div>
+              ) : null}
+            </div>
+          )}
+
           {imovel.descricao && (
             <div>
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Descrição detalhada</span>

@@ -30,7 +30,25 @@ export function PortalPropertyCard({
   const isNaPlanta = imovel.statusImovel === 'Na planta' || imovel.isLancamento;
   const enderecoFormatado = imovel.endereco
     ? (imovel.bairro ? `${imovel.endereco} - ${imovel.bairro}` : imovel.endereco)
-    : [imovel.bairro, imovel.cidade].filter(Boolean).join(' - ') || 'Endereço sob consulta';
+    : [imovel.bairro, imovel.cidade].filter(Boolean).join(' - ');
+
+  const quartosCount = imovel.dormitorios || imovel.quartos;
+  const hasMetragem = typeof imovel.metragem === 'number' && imovel.metragem > 0;
+  const hasQuartos = typeof quartosCount === 'number' && quartosCount > 0;
+  const hasVagas = typeof imovel.vagas === 'number' && imovel.vagas > 0;
+
+  // Nome do empreendimento / edifício ou título
+  const nomeEmpreendimento = imovel.nomeEdificio && imovel.nomeEdificio.trim() !== ''
+    ? imovel.nomeEdificio.trim()
+    : (imovel.titulo && imovel.titulo.trim() !== '' ? imovel.titulo.trim() : '');
+
+  // Construtora (ocultar se não existir ou se for texto genérico)
+  const construtoraValida = imovel.construtora && 
+    imovel.construtora.trim() !== '' && 
+    !imovel.construtora.toLowerCase().includes('não informada') &&
+    !imovel.construtora.toLowerCase().includes('indefinid')
+    ? imovel.construtora.trim()
+    : null;
 
   const handleClick = () => {
     onSelect?.(imovel.id);
@@ -94,38 +112,57 @@ export function PortalPropertyCard({
 
       {/* Conteúdo do Card */}
       <div className="p-4 space-y-2">
-        {/* Título do Imóvel (substitui 'A partir de') */}
-        <h3
-          className="text-xs sm:text-sm font-bold text-slate-800 line-clamp-2 leading-snug group-hover:text-[#003366] transition-colors"
-          title={imovel.titulo}
-        >
-          {imovel.titulo}
-        </h3>
-
-        {/* Preço */}
+        {/* Preço (com 'A partir de' para lançamentos conforme instrução 6) */}
         <div>
+          {isNaPlanta && (
+            <span className="text-[11px] font-medium text-slate-500 block leading-tight">
+              A partir de
+            </span>
+          )}
           <span className="text-lg font-black text-slate-900 tracking-tight block">
             {formatCurrencyBRL(imovel.valor)}
           </span>
         </div>
 
-        {/* Área e Quartos */}
-        <div className="space-y-0.5">
+        {/* Área Privativa e Quartos - Oculta campos inexistentes, sem exibir undefined ou 0 quartos */}
+        {(hasMetragem || hasQuartos) && (
           <p className="text-xs font-semibold text-slate-700 tracking-tight">
-            {imovel.metragem} m² • {imovel.dormitorios || imovel.quartos} {((imovel.dormitorios || imovel.quartos) === 1) ? 'quarto' : 'quartos'}
+            {hasMetragem && `${imovel.metragem} m²`}
+            {hasMetragem && hasQuartos && ' • '}
+            {hasQuartos && `${quartosCount} ${quartosCount === 1 ? 'quarto' : 'quartos'}`}
           </p>
+        )}
+
+        {/* Vagas - Oculta quando não existir ou for 0 */}
+        {hasVagas && (
           <p className="text-xs text-slate-500 font-normal">
             {imovel.vagas} {imovel.vagas === 1 ? 'vaga' : 'vagas'}
           </p>
-        </div>
+        )}
 
-        {/* Endereço (substitui Residencial Sancho e Baggio) */}
-        <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5 text-slate-500 min-w-0">
-          <MapPin size={13} className="shrink-0 text-slate-400" />
-          <p className="text-xs text-slate-500 font-medium truncate" title={enderecoFormatado}>
-            {enderecoFormatado}
+        {/* Nome do Edifício / Empreendimento */}
+        {nomeEmpreendimento && (
+          <p className="text-xs font-bold text-slate-800 tracking-tight truncate" title={nomeEmpreendimento}>
+            {nomeEmpreendimento}
           </p>
-        </div>
+        )}
+
+        {/* Construtora - Ocultar quando não existir, nunca exibir "Construtora não informada" */}
+        {construtoraValida && (
+          <p className="text-[11px] font-medium text-slate-500 truncate" title={construtoraValida}>
+            {construtoraValida}
+          </p>
+        )}
+
+        {/* Localização */}
+        {enderecoFormatado && (
+          <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5 text-slate-500 min-w-0">
+            <MapPin size={13} className="shrink-0 text-slate-400" />
+            <p className="text-xs text-slate-500 font-medium truncate" title={enderecoFormatado}>
+              {enderecoFormatado}
+            </p>
+          </div>
+        )}
       </div>
     </article>
   );

@@ -144,6 +144,8 @@ export class ServerDb {
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS codigo VARCHAR(50);`);
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS latitude NUMERIC;`);
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS longitude NUMERIC;`);
+    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS condominio NUMERIC;`);
+    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS iptu NUMERIC;`);
 
     // 3. Tabela parcerias
     await this.pool.query(`
@@ -675,14 +677,14 @@ export class ServerDb {
           area_privativa, nome_edificio, titulo, palavra_destacada, descricao,
           visibilidade, dados_proprietario, imagens, data_cadastro,
           valor_anterior, valor_locacao_anterior, informacoes, origem, construtora,
-          website, compartilhar, codigo, latitude, longitude
+          website, compartilhar, codigo, latitude, longitude, condominio, iptu
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8,
           $9, $10, $11, $12, $13, $14,
           $15, $16, $17, $18, $19,
           $20, $21, $22, $23,
           $24, $25, $26, $27, $28,
-          $29, $30, $31, $32, $33
+          $29, $30, $31, $32, $33, $34, $35
         ) ON CONFLICT (id) DO UPDATE SET
           cep = EXCLUDED.cep,
           endereco = EXCLUDED.endereco,
@@ -713,7 +715,9 @@ export class ServerDb {
           compartilhar = EXCLUDED.compartilhar,
           codigo = EXCLUDED.codigo,
           latitude = EXCLUDED.latitude,
-          longitude = EXCLUDED.longitude;
+          longitude = EXCLUDED.longitude,
+          condominio = EXCLUDED.condominio,
+          iptu = EXCLUDED.iptu;
       `, [
         finalImovel.id,
         cleanEmail,
@@ -747,7 +751,9 @@ export class ServerDb {
         compartilharDb,
         finalImovel.codigo || null,
         finalImovel.latitude !== undefined ? finalImovel.latitude : null,
-        finalImovel.longitude !== undefined ? finalImovel.longitude : null
+        finalImovel.longitude !== undefined ? finalImovel.longitude : null,
+        finalImovel.condominio !== undefined ? finalImovel.condominio : null,
+        finalImovel.iptu !== undefined ? finalImovel.iptu : null
       ]);
 
       return finalImovel;
@@ -835,6 +841,8 @@ export class ServerDb {
       banheiros: parseInt(r.bwc || '0', 10),
       vagas: parseInt(r.vagas || '0', 10),
       metragem: r.area_privativa ? parseFloat(r.area_privativa) : 0,
+      condominio: r.condominio ? parseFloat(r.condominio) : undefined,
+      iptu: r.iptu ? parseFloat(r.iptu) : undefined,
       nomeEdificio: r.nome_edificio || '',
       titulo: r.titulo,
       palavraDestacada: r.palavra_destacada || '',

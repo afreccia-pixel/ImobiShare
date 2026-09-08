@@ -38,83 +38,24 @@ interface PortalPropertyDetailPageProps {
 }
 
 /**
- * Calcula o tempo decorrido desde a publicação no formato:
- * "Publicado a 1 dia", "Publicado a 10 dias", "Publicado a 1 mês", "Publicado a 2 meses", etc.
+ * Formata a data de publicação ou cadastro real do imóvel em português:
+ * "Publicado em 8 de setembro de 2026"
  */
-function formatTempoPublicacao(dataCadastro?: string, dataPublicacao?: string): string {
-  let date: Date | null = null;
+function formatDataPublicacaoReal(dataCadastro?: string, dataPublicacao?: string): string | null {
+  const rawDate = dataCadastro || dataPublicacao;
+  if (!rawDate) return null;
 
-  if (dataCadastro) {
-    const parsed = new Date(dataCadastro);
-    if (!isNaN(parsed.getTime())) {
-      date = parsed;
-    }
-  }
+  const parsed = new Date(rawDate);
+  if (isNaN(parsed.getTime())) return null;
 
-  if (!date && dataPublicacao) {
-    const meses: Record<string, number> = {
-      janeiro: 0,
-      fevereiro: 1,
-      marco: 2,
-      março: 2,
-      abril: 3,
-      maio: 4,
-      junho: 5,
-      julho: 6,
-      agosto: 7,
-      setembro: 8,
-      outubro: 9,
-      novembro: 10,
-      dezembro: 11,
-    };
-    const match = dataPublicacao.toLowerCase().match(/(\d{1,2})\s+de\s+([a-zçã]+)\s+de\s+(\d{4})/);
-    if (match) {
-      const dia = parseInt(match[1], 10);
-      const mesNome = match[2];
-      const ano = parseInt(match[3], 10);
-      if (meses[mesNome] !== undefined) {
-        date = new Date(ano, meses[mesNome], dia);
-      }
-    } else {
-      const parsed = new Date(dataPublicacao);
-      if (!isNaN(parsed.getTime())) {
-        date = parsed;
-      }
-    }
-  }
-
-  if (!date) {
-    return 'Publicado a poucos dias';
-  }
-
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffDays <= 0) {
-    if (diffHours <= 1) return 'Publicado a 1 hora';
-    if (diffHours < 24) return `Publicado a ${diffHours} horas`;
-    return 'Publicado hoje';
-  }
-  if (diffDays === 1) {
-    return 'Publicado a 1 dia';
-  }
-  if (diffDays < 30) {
-    return `Publicado a ${diffDays} dias`;
-  }
-  const diffMonths = Math.floor(diffDays / 30);
-  if (diffMonths === 1) {
-    return 'Publicado a 1 mês';
-  }
-  if (diffMonths < 12) {
-    return `Publicado a ${diffMonths} meses`;
-  }
-  const diffYears = Math.floor(diffDays / 365);
-  if (diffYears === 1) {
-    return 'Publicado a 1 ano';
-  }
-  return `Publicado a ${diffYears} anos`;
+  const dia = parsed.getDate();
+  const meses = [
+    'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
+    'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'
+  ];
+  const mes = meses[parsed.getMonth()];
+  const ano = parsed.getFullYear();
+  return `Publicado em ${dia} de ${mes} de ${ano}`;
 }
 
 export function PortalPropertyDetailPage({
@@ -158,35 +99,39 @@ export function PortalPropertyDetailPage({
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, [imovel.id]);
 
-  const valorM2Formatted = formatValorM2(imovel.valor, imovel.metragem);
+  const isNaPlanta = imovel.statusImovel === 'Na planta' || imovel.isLancamento;
 
-  // Valores formatados para as 6 características em destaque com ícones após o preço
-  const areaPrivativaText = imovel.metragem
-    ? `${imovel.metragem} m²`
-    : (imovel.areaTotal ? `${imovel.areaTotal} m²` : '-');
+  // Valor do m²: calculado SOMENTE quando houver preço válido e área privativa > 0
+  const hasAreaPrivativaValida = typeof imovel.metragem === 'number' && imovel.metragem > 0;
+  const hasPrecoValido = typeof imovel.valor === 'number' && imovel.valor > 0;
+  const valorM2Calculado = (hasPrecoValido && hasAreaPrivativaValida)
+    ? Math.round(imovel.valor / imovel.metragem!)
+    : null;
+  const valorM2Formatted = valorM2Calculado ? `R$ ${valorM2Calculado.toLocaleString('pt-BR')}/m²` : null;
 
-  const totalQuartos = imovel.dormitorios || imovel.quartos;
-  const quartosText = totalQuartos
-    ? `${totalQuartos} ${totalQuartos === 1 ? 'quarto' : 'quartos'}`
-    : '-';
+  // Características reais
+  const totalQuartos = (typeof imovel.dormitorios === 'number' && imovel.dormitorios > 0)
+    ? imovel.dormitorios
+    : ((typeof imovel.quartos === 'number' && imovel.quartos > 0) ? imovel.quartos : null);
 
-  const banheirosText = imovel.banheiros
-    ? `${imovel.banheiros} ${imovel.banheiros === 1 ? 'banheiro' : 'banheiros'}`
-    : '-';
+  const hasQuartos = totalQuartos !== null;
+  const hasBanheiros = typeof imovel.banheiros === 'number' && imovel.banheiros > 0;
+  const hasVagas = typeof imovel.vagas === 'number' && imovel.vagas > 0;
+  const hasCondominio = typeof imovel.condominio === 'number' && imovel.condominio > 0;
+  const hasIptu = typeof imovel.iptu === 'number' && imovel.iptu > 0;
 
-  const vagasText = imovel.vagas
-    ? `${imovel.vagas} ${imovel.vagas === 1 ? 'vaga' : 'vagas'}`
-    : '-';
+  const dataPublicacaoText = formatDataPublicacaoReal(imovel.dataCadastro, imovel.dataPublicacao);
 
-  const condominioText = imovel.condominioFormatado || (
-    imovel.condominio ? `R$ ${imovel.condominio.toLocaleString('pt-BR')} / mês` : 'Sob consulta'
-  );
+  // Construtora limpa (não exibir se não informada)
+  const construtoraLimpa = imovel.construtora &&
+    imovel.construtora.trim() !== '' &&
+    !imovel.construtora.toLowerCase().includes('não informada')
+    ? imovel.construtora.trim()
+    : null;
 
-  const iptuText = imovel.iptuFormatado || (
-    imovel.iptu ? `R$ ${imovel.iptu.toLocaleString('pt-BR')} / ano` : 'Sob consulta'
-  );
-
-  const tempoPublicacaoText = formatTempoPublicacao(imovel.dataCadastro, imovel.dataPublicacao);
+  const nomeEdificioLimpo = imovel.nomeEdificio && imovel.nomeEdificio.trim() !== ''
+    ? imovel.nomeEdificio.trim()
+    : null;
 
   return (
     <div className="bg-white min-h-screen text-slate-900 font-sans pb-24" id="portal-property-detail-page">
@@ -333,23 +278,31 @@ export function PortalPropertyDetailPage({
                     Início
                   </button>
                 </li>
-                <li>›</li>
-                <li>
-                  <span className="hover:text-slate-600 transition-colors">
-                    {imovel.cidade}
-                  </span>
-                </li>
-                <li>›</li>
-                <li>
-                  <span className="hover:text-slate-600 transition-colors">
-                    {imovel.bairro}
-                  </span>
-                </li>
+                {imovel.cidade && (
+                  <>
+                    <li>›</li>
+                    <li>
+                      <span className="text-slate-600">
+                        {imovel.cidade}
+                      </span>
+                    </li>
+                  </>
+                )}
+                {imovel.bairro && (
+                  <>
+                    <li>›</li>
+                    <li>
+                      <span className="text-slate-600">
+                        {imovel.bairro}
+                      </span>
+                    </li>
+                  </>
+                )}
                 {imovel.endereco && (
                   <>
                     <li>›</li>
                     <li>
-                      <span className="hover:text-slate-600 transition-colors">
+                      <span className="text-slate-600">
                         {imovel.endereco}
                       </span>
                     </li>
@@ -367,14 +320,21 @@ export function PortalPropertyDetailPage({
               <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight leading-tight">
                 {imovel.titulo}
               </h2>
-              <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
-                <Clock size={14} className="text-slate-400 shrink-0" />
-                <span>{tempoPublicacaoText}</span>
-              </div>
+              {dataPublicacaoText && (
+                <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+                  <Clock size={14} className="text-slate-400 shrink-0" />
+                  <span>{dataPublicacaoText}</span>
+                </div>
+              )}
             </section>
 
             {/* 24. PREÇO & VALOR POR M² */}
             <section className="space-y-1">
+              {isNaPlanta && (
+                <span className="text-xs sm:text-sm font-semibold text-slate-500 block">
+                  A partir de
+                </span>
+              )}
               <div className="flex items-baseline gap-4 flex-wrap">
                 <span className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
                   {formatCurrencyBRL(imovel.valor)}
@@ -387,98 +347,110 @@ export function PortalPropertyDetailPage({
               </div>
             </section>
 
-            {/* 25. CARACTERÍSTICAS EM DESTAQUE COM ÍCONES */}
+            {/* 25. CARACTERÍSTICAS EM DESTAQUE COM ÍCONES (apenas itens reais existentes) */}
             <section className="py-4 border-y border-slate-100" id="caracteristicas-destaque-imovel">
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {/* Área privativa */}
-                <div className="flex items-center gap-3 p-3 bg-slate-50/70 rounded-2xl border border-slate-100/90 hover:bg-slate-50 transition-colors">
-                  <div className="w-10 h-10 rounded-xl bg-white border border-slate-200/80 flex items-center justify-center text-[#003366] shrink-0 shadow-2xs">
-                    <Maximize2 size={18} />
+                {hasAreaPrivativaValida && (
+                  <div className="flex items-center gap-3 p-3 bg-slate-50/70 rounded-2xl border border-slate-100/90 hover:bg-slate-50 transition-colors">
+                    <div className="w-10 h-10 rounded-xl bg-white border border-slate-200/80 flex items-center justify-center text-[#003366] shrink-0 shadow-2xs">
+                      <Maximize2 size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Área privativa
+                      </span>
+                      <span className="text-xs sm:text-sm font-bold text-slate-800 block truncate">
+                        {imovel.metragem} m²
+                      </span>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Área privativa
-                    </span>
-                    <span className="text-xs sm:text-sm font-bold text-slate-800 block truncate" title={areaPrivativaText}>
-                      {areaPrivativaText}
-                    </span>
-                  </div>
-                </div>
+                )}
 
                 {/* Quartos */}
-                <div className="flex items-center gap-3 p-3 bg-slate-50/70 rounded-2xl border border-slate-100/90 hover:bg-slate-50 transition-colors">
-                  <div className="w-10 h-10 rounded-xl bg-white border border-slate-200/80 flex items-center justify-center text-[#003366] shrink-0 shadow-2xs">
-                    <BedDouble size={18} />
+                {hasQuartos && (
+                  <div className="flex items-center gap-3 p-3 bg-slate-50/70 rounded-2xl border border-slate-100/90 hover:bg-slate-50 transition-colors">
+                    <div className="w-10 h-10 rounded-xl bg-white border border-slate-200/80 flex items-center justify-center text-[#003366] shrink-0 shadow-2xs">
+                      <BedDouble size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Quartos
+                      </span>
+                      <span className="text-xs sm:text-sm font-bold text-slate-800 block truncate">
+                        {totalQuartos} {totalQuartos === 1 ? 'quarto' : 'quartos'}
+                      </span>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Quartos
-                    </span>
-                    <span className="text-xs sm:text-sm font-bold text-slate-800 block truncate" title={quartosText}>
-                      {quartosText}
-                    </span>
-                  </div>
-                </div>
+                )}
 
                 {/* Banheiros */}
-                <div className="flex items-center gap-3 p-3 bg-slate-50/70 rounded-2xl border border-slate-100/90 hover:bg-slate-50 transition-colors">
-                  <div className="w-10 h-10 rounded-xl bg-white border border-slate-200/80 flex items-center justify-center text-[#003366] shrink-0 shadow-2xs">
-                    <Bath size={18} />
+                {hasBanheiros && (
+                  <div className="flex items-center gap-3 p-3 bg-slate-50/70 rounded-2xl border border-slate-100/90 hover:bg-slate-50 transition-colors">
+                    <div className="w-10 h-10 rounded-xl bg-white border border-slate-200/80 flex items-center justify-center text-[#003366] shrink-0 shadow-2xs">
+                      <Bath size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Banheiros
+                      </span>
+                      <span className="text-xs sm:text-sm font-bold text-slate-800 block truncate">
+                        {imovel.banheiros} {imovel.banheiros === 1 ? 'banheiro' : 'banheiros'}
+                      </span>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Banheiros
-                    </span>
-                    <span className="text-xs sm:text-sm font-bold text-slate-800 block truncate" title={banheirosText}>
-                      {banheirosText}
-                    </span>
-                  </div>
-                </div>
+                )}
 
                 {/* Vagas */}
-                <div className="flex items-center gap-3 p-3 bg-slate-50/70 rounded-2xl border border-slate-100/90 hover:bg-slate-50 transition-colors">
-                  <div className="w-10 h-10 rounded-xl bg-white border border-slate-200/80 flex items-center justify-center text-[#003366] shrink-0 shadow-2xs">
-                    <Car size={18} />
+                {hasVagas && (
+                  <div className="flex items-center gap-3 p-3 bg-slate-50/70 rounded-2xl border border-slate-100/90 hover:bg-slate-50 transition-colors">
+                    <div className="w-10 h-10 rounded-xl bg-white border border-slate-200/80 flex items-center justify-center text-[#003366] shrink-0 shadow-2xs">
+                      <Car size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Vagas
+                      </span>
+                      <span className="text-xs sm:text-sm font-bold text-slate-800 block truncate">
+                        {imovel.vagas} {imovel.vagas === 1 ? 'vaga' : 'vagas'}
+                      </span>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Vagas
-                    </span>
-                    <span className="text-xs sm:text-sm font-bold text-slate-800 block truncate" title={vagasText}>
-                      {vagasText}
-                    </span>
-                  </div>
-                </div>
+                )}
 
-                {/* Condomínio */}
-                <div className="flex items-center gap-3 p-3 bg-slate-50/70 rounded-2xl border border-slate-100/90 hover:bg-slate-50 transition-colors">
-                  <div className="w-10 h-10 rounded-xl bg-white border border-slate-200/80 flex items-center justify-center text-[#003366] shrink-0 shadow-2xs">
-                    <Building2 size={18} />
+                {/* Condomínio (apenas se maior que zero) */}
+                {hasCondominio && (
+                  <div className="flex items-center gap-3 p-3 bg-slate-50/70 rounded-2xl border border-slate-100/90 hover:bg-slate-50 transition-colors">
+                    <div className="w-10 h-10 rounded-xl bg-white border border-slate-200/80 flex items-center justify-center text-[#003366] shrink-0 shadow-2xs">
+                      <Building2 size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Condomínio
+                      </span>
+                      <span className="text-xs sm:text-sm font-bold text-slate-800 block truncate">
+                        R$ {imovel.condominio!.toLocaleString('pt-BR')} / mês
+                      </span>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Condomínio
-                    </span>
-                    <span className="text-xs sm:text-sm font-bold text-slate-800 block truncate" title={condominioText}>
-                      {condominioText}
-                    </span>
-                  </div>
-                </div>
+                )}
 
-                {/* IPTU */}
-                <div className="flex items-center gap-3 p-3 bg-slate-50/70 rounded-2xl border border-slate-100/90 hover:bg-slate-50 transition-colors">
-                  <div className="w-10 h-10 rounded-xl bg-white border border-slate-200/80 flex items-center justify-center text-[#003366] shrink-0 shadow-2xs">
-                    <Receipt size={18} />
+                {/* IPTU (apenas se maior que zero) */}
+                {hasIptu && (
+                  <div className="flex items-center gap-3 p-3 bg-slate-50/70 rounded-2xl border border-slate-100/90 hover:bg-slate-50 transition-colors">
+                    <div className="w-10 h-10 rounded-xl bg-white border border-slate-200/80 flex items-center justify-center text-[#003366] shrink-0 shadow-2xs">
+                      <Receipt size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        IPTU
+                      </span>
+                      <span className="text-xs sm:text-sm font-bold text-slate-800 block truncate">
+                        R$ {imovel.iptu!.toLocaleString('pt-BR')} / ano
+                      </span>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      IPTU
-                    </span>
-                    <span className="text-xs sm:text-sm font-bold text-slate-800 block truncate" title={iptuText}>
-                      {iptuText}
-                    </span>
-                  </div>
-                </div>
+                )}
               </div>
             </section>
 
@@ -510,16 +482,32 @@ export function PortalPropertyDetailPage({
             {/* Bloco de Título, Empreendimento/Edifício, Preço e Favoritar */}
             <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
               <div>
-                <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#003366] bg-blue-50 px-2.5 py-1 rounded-full inline-block mb-2">
-                  {imovel.nomeEdificio || 'Lançamento Exclusivo'}
-                </span>
+                {nomeEdificioLimpo ? (
+                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#003366] bg-blue-50 px-2.5 py-1 rounded-full inline-block mb-2">
+                    {nomeEdificioLimpo}
+                  </span>
+                ) : imovel.bairro ? (
+                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-700 bg-slate-100 px-2.5 py-1 rounded-full inline-block mb-2">
+                    {imovel.bairro}
+                  </span>
+                ) : null}
                 <h1 className="text-xl font-black text-slate-900 leading-tight tracking-tight">
                   {imovel.titulo}
                 </h1>
+                {construtoraLimpa && (
+                  <p className="text-xs font-semibold text-slate-500 mt-1">
+                    Construtora {construtoraLimpa}
+                  </p>
+                )}
               </div>
 
               {/* Preço e Valor por m² */}
               <div className="pt-1">
+                {isNaPlanta && (
+                  <span className="text-[11px] font-medium text-slate-500 block mb-0.5">
+                    A partir de
+                  </span>
+                )}
                 <div className="flex items-baseline gap-3 flex-wrap">
                   <span className="text-2xl font-black text-slate-900 tracking-tight">
                     {formatCurrencyBRL(imovel.valor)}

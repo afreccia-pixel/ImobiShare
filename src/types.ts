@@ -56,6 +56,8 @@ export interface Imovel {
   valorDesconto?: number;
   valorLocacao?: number;
   valorLocacaoAnterior?: number; // Valor de locação anterior caso tenha reduzido
+  condominio?: number; // Valor do condomínio (R$)
+  iptu?: number; // Valor do IPTU (R$)
   
   // Especificações
   dormitorios: number; // quartos

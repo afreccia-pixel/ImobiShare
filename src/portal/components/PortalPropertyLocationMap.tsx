@@ -27,11 +27,21 @@ export function PortalPropertyLocationMap({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
 
-  // Validate coordinates safely
-  const safeLat = typeof latitude === 'number' && !isNaN(latitude) && latitude !== 0 ? latitude : -26.9924;
-  const safeLng = typeof longitude === 'number' && !isNaN(longitude) && longitude !== 0 ? longitude : -48.6341;
+  // Validate if real coordinates are provided
+  const hasValidCoords =
+    typeof latitude === 'number' &&
+    typeof longitude === 'number' &&
+    !isNaN(latitude) &&
+    !isNaN(longitude) &&
+    latitude !== 0 &&
+    longitude !== 0;
+
+  const safeLat = hasValidCoords ? latitude : 0;
+  const safeLng = hasValidCoords ? longitude : 0;
 
   useEffect(() => {
+    if (!hasValidCoords) return;
+
     safePatchLeaflet(L);
 
     if (!mapContainerRef.current) return;
@@ -124,13 +134,15 @@ export function PortalPropertyLocationMap({
       id="portal-property-location-card"
       className="bg-white rounded-2xl overflow-hidden border border-slate-200/80 shadow-xs"
     >
-      {/* Mini Leaflet Map */}
-      <div className="relative h-48 w-full bg-slate-100">
-        <div ref={mapContainerRef} className="w-full h-full z-10" />
-      </div>
+      {/* Mini Leaflet Map - exibido somente se houver coordenadas reais */}
+      {hasValidCoords && (
+        <div className="relative h-48 w-full bg-slate-100">
+          <div ref={mapContainerRef} className="w-full h-full z-10" />
+        </div>
+      )}
 
       {/* Endereço text */}
-      <div className="p-4 bg-white border-t border-slate-100 flex items-start gap-2.5">
+      <div className={`p-4 bg-white ${hasValidCoords ? 'border-t border-slate-100' : ''} flex items-start gap-2.5`}>
         <MapPin size={16} className="text-[#DC2626] shrink-0 mt-0.5" />
         <div className="space-y-0.5 text-xs flex-1 min-w-0">
           {endereco && (
@@ -138,12 +150,16 @@ export function PortalPropertyLocationMap({
               {endereco}
             </p>
           )}
-          <p className="text-slate-600 font-medium">
-            {bairro}
-          </p>
-          <p className="text-slate-400 font-normal">
-            {cidade} - SC
-          </p>
+          {bairro && (
+            <p className="text-slate-600 font-medium">
+              {bairro}
+            </p>
+          )}
+          {cidade && (
+            <p className="text-slate-400 font-normal">
+              {cidade} - SC
+            </p>
+          )}
         </div>
       </div>
     </div>

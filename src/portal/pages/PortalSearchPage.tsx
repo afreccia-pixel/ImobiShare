@@ -5,6 +5,7 @@
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Map, List } from 'lucide-react';
+import fotoCapaAsset from '../../assets/images/fotocapa.jpg';
 import { PortalHeader } from '../components/PortalHeader';
 import { PortalFilters } from '../components/PortalFilters';
 import { PortalSorting } from '../components/PortalSorting';
@@ -23,6 +24,8 @@ interface PortalSearchPageProps {
   initialMobileViewMode?: 'list' | 'map';
   initialSelectedPinId?: string | null;
   openedFromMap?: boolean;
+  initialFilters?: Partial<PortalFilterState>;
+  onGoHome?: () => void;
   onToggleFavorite: (id: string) => void;
   onSelectProperty: (id: string, fromMap?: boolean) => void;
   onOpenAuth?: () => void;
@@ -35,6 +38,8 @@ export function PortalSearchPage({
   initialMobileViewMode,
   initialSelectedPinId,
   openedFromMap = false,
+  initialFilters,
+  onGoHome,
   onToggleFavorite,
   onSelectProperty,
   onOpenAuth,
@@ -60,18 +65,25 @@ export function PortalSearchPage({
     return best;
   }, [properties]);
 
-  // Filtros padrão: Balneário Camboriú já selecionado por padrão
+  // Filtros padrão: inicializa com os filtros passados da tela de abertura ou padrão
   const [filters, setFilters] = useState<PortalFilterState>(() => ({
-    cidade: 'Balneário Camboriú',
-    finalidade: 'Comprar',
-    categoria: 'Lançamentos',
-    precoMin: undefined,
-    precoMax: undefined,
-    quartosMin: undefined,
-    vagasMin: undefined,
-    bairro: undefined,
-    construtora: undefined,
+    cidade: initialFilters?.cidade || 'Balneário Camboriú',
+    finalidade: initialFilters?.finalidade || 'Comprar',
+    categoria: initialFilters?.categoria || 'Lançamentos',
+    precoMin: initialFilters?.precoMin,
+    precoMax: initialFilters?.precoMax,
+    quartosMin: initialFilters?.quartosMin,
+    vagasMin: initialFilters?.vagasMin,
+    bairro: initialFilters?.bairro,
+    construtora: initialFilters?.construtora,
   }));
+
+  // Sincroniza quando initialFilters mudar
+  useEffect(() => {
+    if (initialFilters) {
+      setFilters((prev) => ({ ...prev, ...initialFilters }));
+    }
+  }, [initialFilters]);
 
   // Sincroniza cidade padrão no desktop se não foi informada
   useEffect(() => {
@@ -80,9 +92,40 @@ export function PortalSearchPage({
     }
   }, [topCity]);
 
-  // Estado de busca: tela inicial básica vs visualização de resultados com mapa e filtros
-  const [hasSearched, setHasSearched] = useState<boolean>(() => Boolean(initialMobileViewMode === 'map' || openedFromMap));
+  // Estado de busca: ao entrar no site a primeira tela é a inicial básica (hasSearched = false)
+  const [hasSearched, setHasSearched] = useState<boolean>(() => {
+    if (initialMobileViewMode === 'map' || openedFromMap) return true;
+    return false;
+  });
   const [mobileViewMode, setMobileViewMode] = useState<'list' | 'map'>(() => initialMobileViewMode || 'list');
+
+  // URL da imagem de capa (com suporte a import via Vite, fallback local e tratativa de erro)
+  const [heroBgUrl, setHeroBgUrl] = useState<string>(() => (fotoCapaAsset as string) || '/fotocapa.jpg');
+
+  // Sincroniza hash da URL (#home, #busca, etc.)
+  useEffect(() => {
+    const handleHash = () => {
+      const hash = window.location.hash;
+      if (hash === '#home' || hash === '' || hash === '#') {
+        setHasSearched(false);
+        setMobileViewMode('list');
+      } else if (hash.startsWith('#busca') || hash.startsWith('#imoveis')) {
+        setHasSearched(true);
+      }
+    };
+
+    window.addEventListener('hashchange', handleHash);
+
+    // Se a página for carregada inicialmente sem vir do mapa, assegura que a tela de capa com o card de busca seja a primeira
+    if (!openedFromMap && initialMobileViewMode !== 'map') {
+      if (window.location.hash.startsWith('#busca') || window.location.hash.startsWith('#imoveis')) {
+        window.location.hash = '#home';
+        setHasSearched(false);
+      }
+    }
+
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, [openedFromMap, initialMobileViewMode]);
 
   // Sincroniza se o usuário retornou da visualização aberta a partir do mapa
   useEffect(() => {
@@ -259,13 +302,12 @@ export function PortalSearchPage({
           isLoggedIn={isLoggedIn}
           onOpenAuth={onOpenAuth}
           onGoHome={() => {
-            setFilters({
-              cidade: topCity,
-              finalidade: 'Comprar',
-              categoria: 'Lançamentos',
-            });
             setHasSearched(false);
             setMobileViewMode('list');
+            window.location.hash = '#home';
+            if (onGoHome) {
+              onGoHome();
+            }
           }}
         />
       </div>
@@ -275,15 +317,44 @@ export function PortalSearchPage({
       {/* COM ÍCONE DO IMOBISHARE, BOTÃO DE PAINEL DE CORRETOR E BOTÃO DE BUSCA */}
       {/* ========================================================================= */}
       {!hasSearched ? (
-        <div className="flex-1 min-h-0 overflow-y-auto bg-gradient-to-b from-slate-50/70 via-white to-slate-50/40 flex items-center justify-center p-3 sm:p-6 lg:p-8">
-          <PortalMobileInitialSearch
-            properties={properties}
-            filters={filters}
-            onChangeFilters={handleUpdateFilters}
-            onSearch={() => setHasSearched(true)}
-            onOpenAuth={onOpenAuth}
-            topCity={topCity}
-          />
+        <div 
+          className="relative flex-1 min-h-0 w-full overflow-y-auto flex flex-col justify-between bg-slate-900 bg-cover bg-no-repeat transition-all"
+          style={{
+            backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.60) 0%, rgba(0,0,0,0.22) 45%, rgba(0,0,0,0.45) 100%), url("${heroBgUrl}")`,
+            backgroundPosition: 'center 65%',
+            backgroundSize: 'cover'
+          }}
+        >
+          {/* Fundo fotográfico de capa com as pessoas nítidas e visíveis */}
+          <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none select-none">
+            <img
+              src={heroBgUrl}
+              alt="Balneário Camboriú"
+              className="w-full h-full object-cover object-[center_65%]"
+              loading="eager"
+              decoding="async"
+              onError={() => {
+                setHeroBgUrl((prev) => (prev !== '/fotocapa.jpg' ? '/fotocapa.jpg' : '/fotocapa.png'));
+              }}
+            />
+            {/* Gradiente sutil: escurecido no topo para leitura do card e translúcido no centro/base onde estão as pessoas */}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/25 to-black/40" />
+          </div>
+
+          {/* Conteúdo posicionado no topo e alinhado no lado esquerdo para destacar a foto de fundo */}
+          <div className="relative z-10 w-full pt-4 sm:pt-8 md:pt-12 px-3 sm:px-6 lg:px-8 flex flex-col items-start">
+            <PortalMobileInitialSearch
+              properties={properties}
+              filters={filters}
+              onChangeFilters={handleUpdateFilters}
+              onSearch={() => {
+                setHasSearched(true);
+                window.location.hash = '#busca';
+              }}
+              onOpenAuth={onOpenAuth}
+              topCity={topCity}
+            />
+          </div>
         </div>
       ) : (
         <>
@@ -313,13 +384,18 @@ export function PortalSearchPage({
                   <button
                     type="button"
                     onClick={() => {
+                      setHasSearched(false);
                       setFilters({
                         cidade: topCity,
                         finalidade: 'Comprar',
                         categoria: 'Lançamentos',
                       });
+                      window.location.hash = '#home';
+                      if (onGoHome) {
+                        onGoHome();
+                      }
                     }}
-                    className="hover:text-[#003366] transition-colors cursor-pointer"
+                    className="hover:text-[#003366] font-medium transition-colors cursor-pointer"
                   >
                     Início
                   </button>
@@ -414,7 +490,14 @@ export function PortalSearchPage({
             filters={filters}
             onChangeFilters={handleUpdateFilters}
             onOpenMoreFilters={() => setIsMoreFiltersOpen(true)}
-            onBackToInitial={() => setHasSearched(false)}
+            onBackToInitial={() => {
+              setHasSearched(false);
+              setMobileViewMode('list');
+              window.location.hash = '#home';
+              if (onGoHome) {
+                onGoHome();
+              }
+            }}
           />
         </div>
 
@@ -503,7 +586,12 @@ export function PortalSearchPage({
                   filters={filters}
                   onChangeFilters={handleUpdateFilters}
                   onOpenMoreFilters={() => setIsMoreFiltersOpen(true)}
-                  onBackToInitial={() => setHasSearched(false)}
+                  onBackToInitial={() => {
+                    setHasSearched(false);
+                    setMobileViewMode('list');
+                    window.location.hash = '#home';
+                    if (onGoHome) onGoHome();
+                  }}
                   isMapOverlay
                 />
 

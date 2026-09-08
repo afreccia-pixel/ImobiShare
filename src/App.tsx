@@ -93,13 +93,21 @@ export default function App() {
     return 'portal';
   });
 
-  // Listen to hash changes for seamless navigation (#portal, #app, #auth, #imovel/)
+  // Listen to hash changes for seamless navigation (#portal, #home, #busca, #app, #auth, #imovel/)
   useEffect(() => {
     const handleHash = () => {
       const hash = window.location.hash;
       if (hash === '#app' || hash.startsWith('#app/')) {
         setAppMode('broker');
-      } else if (hash === '#portal' || hash.startsWith('#portal') || hash.startsWith('#imovel/')) {
+      } else if (
+        hash === '' ||
+        hash === '#' ||
+        hash === '#portal' ||
+        hash === '#home' ||
+        hash === '#busca' ||
+        hash.startsWith('#portal') ||
+        hash.startsWith('#imovel/')
+      ) {
         setAppMode('portal');
       } else if (hash === '#auth' || hash === '#login') {
         setAppMode('auth');

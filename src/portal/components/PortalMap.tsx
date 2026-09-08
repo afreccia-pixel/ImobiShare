@@ -27,6 +27,23 @@ interface ClusterGroup {
 }
 
 /**
+ * Formata o preço do imóvel para exibição compacta no mapa (ex: "R$ 1,8 mi", "R$ 850 mil")
+ */
+function formatMapPrice(val?: number): string {
+  if (!val || val <= 0) return 'Consulte';
+  if (val >= 1000000) {
+    const mi = val / 1000000;
+    const formatted = mi.toFixed(1).replace('.', ',');
+    return `R$ ${formatted.endsWith(',0') ? formatted.slice(0, -2) : formatted} mi`;
+  }
+  if (val >= 1000) {
+    const mil = Math.round(val / 1000);
+    return `R$ ${mil} mil`;
+  }
+  return `R$ ${val.toLocaleString('pt-BR')}`;
+}
+
+/**
  * Agrupa imóveis baseado na distância em pixels na tela (clustering dinâmico).
  * Conforme o usuário aproxima (zoom in), os agrupamentos diminuem até exibirem
  * os imóveis individualmente com o badge de valor conforme a visualização padrão.
@@ -39,12 +56,23 @@ function computeClusters(
 ): ClusterGroup[] {
   const currentZoom = map.getZoom();
 
+  // Filtra ESTRITAMENTE apenas imóveis com coordenadas reais válidas
+  const validItems = imoveis.filter(
+    (p) =>
+      typeof p.latitude === 'number' &&
+      typeof p.longitude === 'number' &&
+      !isNaN(p.latitude) &&
+      !isNaN(p.longitude) &&
+      p.latitude !== 0 &&
+      p.longitude !== 0
+  );
+
   // Em zoom alto (16+), desativa agrupamento e exibe todos individualmente
   if (currentZoom >= maxClusterZoom) {
-    return imoveis.map((item) => ({
+    return validItems.map((item) => ({
       id: `single-${item.id}`,
-      lat: item.latitude || -26.9924,
-      lng: item.longitude || -48.6341,
+      lat: item.latitude!,
+      lng: item.longitude!,
       items: [item],
     }));
   }
@@ -52,14 +80,12 @@ function computeClusters(
   const clusters: ClusterGroup[] = [];
   const visited = new Set<string>();
 
-  const validItems = imoveis.filter((p) => typeof (p.latitude || -26.9924) === 'number');
-
   for (let i = 0; i < validItems.length; i++) {
     const item = validItems[i];
     if (visited.has(item.id)) continue;
 
-    const lat1 = item.latitude || -26.9924;
-    const lng1 = item.longitude || -48.6341;
+    const lat1 = item.latitude!;
+    const lng1 = item.longitude!;
     let p1: L.Point;
     try {
       p1 = map.latLngToLayerPoint([lat1, lng1]);
@@ -77,8 +103,8 @@ function computeClusters(
       const other = validItems[j];
       if (visited.has(other.id)) continue;
 
-      const lat2 = other.latitude || -26.9924;
-      const lng2 = other.longitude || -48.6341;
+      const lat2 = other.latitude!;
+      const lng2 = other.longitude!;
       let p2: L.Point;
       try {
         p2 = map.latLngToLayerPoint([lat2, lng2]);
@@ -133,8 +159,9 @@ export function PortalMap({
 
     clusters.forEach((cluster) => {
       if (cluster.items.length === 1) {
-        // Marcador individual: mostra quantidade 1 em fundo branco sem borda
+        // Marcador individual: mostra o preço real do imóvel conforme instrução 13
         const imovel = cluster.items[0];
+        const precoBadge = formatMapPrice(imovel.valor);
 
         const markerHtml = `
           <div 
@@ -145,26 +172,27 @@ export function PortalMap({
               color: #003366;
               border: none !important;
               outline: none !important;
-              width: 36px;
-              height: 36px;
+              padding: 6px 10px;
+              height: 30px;
               border-radius: 9999px;
               display: flex;
               align-items: center;
               justify-content: center;
               font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-              font-size: 13px;
+              font-size: 11.5px;
               font-weight: 800;
+              letter-spacing: -0.01em;
               white-space: nowrap;
               cursor: pointer;
-              box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+              box-shadow: 0 3px 12px rgba(0,0,0,0.18);
               transform: translate(-50%, -50%) scale(1);
               transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
               position: relative;
               z-index: 10;
             "
-            title="${imovel.titulo} (1 imóvel)"
+            title="${imovel.titulo} - ${precoBadge}"
           >
-            <span>1</span>
+            <span>${precoBadge}</span>
           </div>
         `;
 
@@ -365,11 +393,19 @@ export function PortalMap({
     // Renderiza inicialmente
     renderMarkers();
 
-    // Auto-fit inicial caso haja coordenadas e não seja navegação manual
+    // Auto-fit inicial caso haja coordenadas reais e não seja navegação manual
     if (imoveis.length > 0 && !isUserInteractingRef.current) {
       const validCoordinates: [number, number][] = imoveis
-        .filter((p) => typeof (p.latitude || -26.9924) === 'number')
-        .map((p) => [p.latitude || -26.9924, p.longitude || -48.6341]);
+        .filter(
+          (p) =>
+            typeof p.latitude === 'number' &&
+            typeof p.longitude === 'number' &&
+            !isNaN(p.latitude) &&
+            !isNaN(p.longitude) &&
+            p.latitude !== 0 &&
+            p.longitude !== 0
+        )
+        .map((p) => [p.latitude!, p.longitude!]);
 
       if (validCoordinates.length > 0) {
         try {
@@ -399,9 +435,17 @@ export function PortalMap({
   useEffect(() => {
     if (!selectedId || !mapInstanceRef.current) return;
     const targetItem = imoveis.find((p) => p.id === selectedId);
-    if (targetItem && typeof (targetItem.latitude || -26.9924) === 'number') {
-      const lat = targetItem.latitude || -26.9924;
-      const lng = targetItem.longitude || -48.6341;
+    if (
+      targetItem &&
+      typeof targetItem.latitude === 'number' &&
+      typeof targetItem.longitude === 'number' &&
+      !isNaN(targetItem.latitude) &&
+      !isNaN(targetItem.longitude) &&
+      targetItem.latitude !== 0 &&
+      targetItem.longitude !== 0
+    ) {
+      const lat = targetItem.latitude;
+      const lng = targetItem.longitude;
       const map = mapInstanceRef.current;
       const targetZoom = Math.max(map.getZoom(), 16);
       map.setView([lat, lng], targetZoom, { animate: true });
