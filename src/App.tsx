@@ -78,8 +78,27 @@ export default function App() {
 
   // Application Mode: 'portal' (Portal Público) | 'broker' (Plataforma Corretor) | 'auth' (Login Corretor)
   const [appMode, setAppMode] = useState<'portal' | 'broker' | 'auth'>(() => {
+    const hostname = window.location.hostname.toLowerCase();
     const params = new URLSearchParams(window.location.search);
     const hash = window.location.hash;
+
+    // Regra do projeto: Se acessar via imobishare.app.br (ou www.imobishare.app.br),
+    // sempre abre diretamente o portal dos clientes
+    if (hostname.includes('imobishare.app.br')) {
+      if (params.get('action') === 'reset-password' || params.get('mode') === 'resetPassword') {
+        return 'auth';
+      }
+      return 'portal';
+    }
+
+    // Regra do projeto: Se acessar via imobishare.onrender.com (ou onrender.com),
+    // é a aplicação oficial dos corretores (ImobiShare App)
+    if (hostname.includes('imobishare.onrender.com') || hostname.includes('onrender.com')) {
+      if (params.get('portal') === '1' || hash === '#portal' || hash.startsWith('#portal') || hash.startsWith('#imovel/')) {
+        return 'portal';
+      }
+      return 'broker';
+    }
 
     // Reset password mode
     if (params.get('action') === 'reset-password' || params.get('mode') === 'resetPassword') {
@@ -97,11 +116,12 @@ export default function App() {
   useEffect(() => {
     const handleHash = () => {
       const hash = window.location.hash;
+      const hostname = window.location.hostname.toLowerCase();
+      const isRender = hostname.includes('imobishare.onrender.com') || hostname.includes('onrender.com');
+
       if (hash === '#app' || hash.startsWith('#app/')) {
         setAppMode('broker');
       } else if (
-        hash === '' ||
-        hash === '#' ||
         hash === '#portal' ||
         hash === '#home' ||
         hash === '#busca' ||
@@ -111,6 +131,12 @@ export default function App() {
         setAppMode('portal');
       } else if (hash === '#auth' || hash === '#login') {
         setAppMode('auth');
+      } else if (hash === '' || hash === '#') {
+        if (isRender) {
+          setAppMode('broker');
+        } else {
+          setAppMode('portal');
+        }
       }
     };
     window.addEventListener('hashchange', handleHash);
