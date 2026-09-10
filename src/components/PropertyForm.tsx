@@ -148,6 +148,11 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
       const found = imoveis.find(i => i.id === imovelId);
       if (found) {
         setFotos(found.fotos || []);
+        DbService.getImovelById(imovelId).then(full => {
+          if (full && Array.isArray(full.fotos) && full.fotos.length > 0) {
+            setFotos(full.fotos);
+          }
+        }).catch(() => {});
         setCep(found.cep || '');
         setLocalizacao(found.endereco || found.localizacao || '');
         setCidade(found.cidade || DbService.getActiveCorretor()?.cidade || 'Balneário Camboriú');

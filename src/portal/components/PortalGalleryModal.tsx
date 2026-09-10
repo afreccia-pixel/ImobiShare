@@ -53,9 +53,9 @@ export function PortalGalleryModal({
           id="btn-close-gallery-modal"
           onClick={onClose}
           aria-label="Fechar galeria"
-          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 transition-all cursor-pointer shadow-xs active:scale-95"
+          className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-bold text-slate-800 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-300/80 transition-all cursor-pointer shadow-xs active:scale-95"
         >
-          <X size={15} />
+          <X size={18} className="stroke-[2.5]" />
           <span>Fechar</span>
         </button>
       </div>

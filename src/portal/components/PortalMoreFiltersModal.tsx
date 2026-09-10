@@ -92,10 +92,11 @@ export function PortalMoreFiltersModal({
   const matchingCount = useMemo(() => {
     if (!properties || properties.length === 0) return 0;
     return properties.filter((p) => {
-      // Cidade
+      // Cidade (correspondência precisa para diferenciar Camboriú de Balneário Camboriú)
       if (cidade && cidade !== 'Todas') {
-        const c = cidade.toLowerCase();
-        if (!p.cidade.toLowerCase().includes(c) && !c.includes(p.cidade.toLowerCase())) {
+        const c = cidade.toLowerCase().trim();
+        const pCity = (p.cidade || '').toLowerCase().trim();
+        if (pCity !== c) {
           return false;
         }
       }

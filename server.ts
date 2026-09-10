@@ -12,7 +12,7 @@ import nodemailer from 'nodemailer';
 import crypto from 'crypto';
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
-import { ServerDb, logBackendError } from './server-db';
+import { ServerDb, logBackendError, logMemory } from './server-db';
 
 dotenv.config();
 
@@ -527,26 +527,93 @@ app.get(['/api/brokers', '/api/corretores'], async (req: Request, res: Response)
   }
 });
 
-// List Properties (Public + Partnerships filter, owner data stripped unless owner)
+// List Properties (Public + Partnerships filter, owner data stripped unless owner, paginated & summary)
 app.get(['/api/properties', '/api/imoveis'], optionalAuthToken, async (req: AuthenticatedRequest, res: Response) => {
+  logMemory('GET /api/properties BEFORE');
   try {
-    const list = await ServerDb.getImoveis(req.userEmail);
+    const pageParam = req.query.page;
+    const limitParam = req.query.limit;
+    const page = pageParam ? Math.max(1, parseInt(pageParam as string, 10)) : undefined;
+    const limit = limitParam ? Math.min(100, Math.max(1, parseInt(limitParam as string, 10))) : 24;
+    const isPaginated = page !== undefined || req.query.format === 'paginated';
+
+    const result = await ServerDb.getImoveis({
+      userEmail: req.userEmail,
+      page: page || 1,
+      limit,
+      paginate: isPaginated
+    });
+
+    logMemory('GET /api/properties AFTER');
+
+    if (isPaginated && typeof result === 'object' && 'data' in result) {
+      res.setHeader('X-Total-Count', result.total.toString());
+      res.setHeader('X-Page', result.page.toString());
+      res.setHeader('X-Limit', result.limit.toString());
+      res.setHeader('X-Total-Pages', result.totalPages.toString());
+      return res.json(result);
+    }
+
+    const list = Array.isArray(result) ? result : (result as any).data;
+    res.setHeader('X-Total-Count', list.length.toString());
     return res.json(list);
   } catch (err: any) {
+    logMemory('GET /api/properties ERROR');
     logBackendError('/api/properties', err);
     return res.status(500).json({ error: 'Erro ao listar imóveis.' });
   }
 });
 
-// List My Properties (strictly filtered by token email)
+// List My Properties (strictly filtered by token email, paginated & summary)
 app.get('/api/properties/mine', verifyAuthToken, async (req: AuthenticatedRequest, res: Response) => {
+  logMemory('GET /api/properties/mine BEFORE');
   try {
     const email = req.userEmail!;
-    const list = await ServerDb.getMeusImoveis(email);
+    const pageParam = req.query.page;
+    const limitParam = req.query.limit;
+    const page = pageParam ? Math.max(1, parseInt(pageParam as string, 10)) : undefined;
+    const limit = limitParam ? Math.min(100, Math.max(1, parseInt(limitParam as string, 10))) : 50;
+    const isPaginated = page !== undefined || req.query.format === 'paginated';
+
+    const result = await ServerDb.getMeusImoveis(email, {
+      page: page || 1,
+      limit,
+      paginate: isPaginated
+    });
+
+    logMemory('GET /api/properties/mine AFTER');
+
+    if (isPaginated && typeof result === 'object' && 'data' in result) {
+      res.setHeader('X-Total-Count', result.total.toString());
+      res.setHeader('X-Page', result.page.toString());
+      res.setHeader('X-Limit', result.limit.toString());
+      res.setHeader('X-Total-Pages', result.totalPages.toString());
+      return res.json(result);
+    }
+
+    const list = Array.isArray(result) ? result : (result as any).data;
     return res.json(list);
   } catch (err: any) {
+    logMemory('GET /api/properties/mine ERROR');
     logBackendError('/api/properties/mine', err);
     return res.status(500).json({ error: 'Erro ao listar seus imóveis.' });
+  }
+});
+
+// Get Single Property with full photos & details
+app.get(['/api/properties/:id', '/api/imoveis/:id'], optionalAuthToken, async (req: AuthenticatedRequest, res: Response) => {
+  logMemory(`GET /api/properties/${req.params.id} BEFORE`);
+  try {
+    const property = await ServerDb.getImovelById(req.params.id);
+    if (!property) {
+      return res.status(404).json({ error: 'Imóvel não encontrado.' });
+    }
+    logMemory(`GET /api/properties/${req.params.id} AFTER`);
+    return res.json(property);
+  } catch (err: any) {
+    logMemory(`GET /api/properties/${req.params.id} ERROR`);
+    logBackendError(`/api/properties/${req.params.id}`, err);
+    return res.status(500).json({ error: 'Erro ao buscar imóvel.' });
   }
 });
 

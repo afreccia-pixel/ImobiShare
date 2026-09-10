@@ -3,9 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { Map, List } from 'lucide-react';
-import fotoCapaAsset from '../../assets/images/fotocapa.jpg';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { Map, List, Loader2 } from 'lucide-react';
 import { PortalHeader } from '../components/PortalHeader';
 import { PortalFilters } from '../components/PortalFilters';
 import { PortalSorting } from '../components/PortalSorting';
@@ -17,6 +16,8 @@ import { PortalMobileInitialSearch } from '../components/PortalMobileInitialSear
 import { PortalMobileSearchBar } from '../components/PortalMobileSearchBar';
 import { PortalFilterState, PortalSortOption, PortalProperty } from '../types';
 
+const FALLBACK_HERO_IMAGE = 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=1600&auto=format&fit=crop&q=80';
+
 interface PortalSearchPageProps {
   properties: PortalProperty[];
   favorites: string[];
@@ -25,6 +26,9 @@ interface PortalSearchPageProps {
   initialSelectedPinId?: string | null;
   openedFromMap?: boolean;
   initialFilters?: Partial<PortalFilterState>;
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  onLoadMore?: () => void;
   onGoHome?: () => void;
   onToggleFavorite: (id: string) => void;
   onSelectProperty: (id: string, fromMap?: boolean) => void;
@@ -39,11 +43,16 @@ export function PortalSearchPage({
   initialSelectedPinId,
   openedFromMap = false,
   initialFilters,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
   onGoHome,
   onToggleFavorite,
   onSelectProperty,
   onOpenAuth,
 }: PortalSearchPageProps) {
+  // Ref para rastrear tentativas de imagem e evitar loop de requisições
+  const heroImageErrorAttemptRef = useRef(0);
   // Cidade com maior número de imóveis cadastrados
   const topCity = useMemo(() => {
     if (!properties || properties.length === 0) return 'Balneário Camboriú';
@@ -66,10 +75,11 @@ export function PortalSearchPage({
   }, [properties]);
 
   // Filtros padrão: inicializa com os filtros passados da tela de abertura ou padrão
+  // "categoria: 'Todos'" e "finalidade: 'Comprar'" garantem que, ao selecionar apenas a cidade, todos os imóveis daquela cidade sejam exibidos sem restrições
   const [filters, setFilters] = useState<PortalFilterState>(() => ({
     cidade: initialFilters?.cidade || 'Balneário Camboriú',
     finalidade: initialFilters?.finalidade || 'Comprar',
-    categoria: initialFilters?.categoria || 'Lançamentos',
+    categoria: initialFilters?.categoria || 'Todos',
     precoMin: initialFilters?.precoMin,
     precoMax: initialFilters?.precoMax,
     quartosMin: initialFilters?.quartosMin,
@@ -99,8 +109,8 @@ export function PortalSearchPage({
   });
   const [mobileViewMode, setMobileViewMode] = useState<'list' | 'map'>(() => initialMobileViewMode || 'list');
 
-  // URL da imagem de capa (com suporte a import via Vite, fallback local e tratativa de erro)
-  const [heroBgUrl, setHeroBgUrl] = useState<string>(() => (fotoCapaAsset as string) || '/fotocapa.jpg');
+  // URL da imagem de capa usando caminho relativo local (/fotocapa.jpg)
+  const [heroBgUrl, setHeroBgUrl] = useState<string>('/fotocapa.jpg');
 
   // Sincroniza hash da URL (#home, #busca, etc.)
   useEffect(() => {
@@ -116,16 +126,13 @@ export function PortalSearchPage({
 
     window.addEventListener('hashchange', handleHash);
 
-    // Se a página for carregada inicialmente sem vir do mapa, assegura que a tela de capa com o card de busca seja a primeira
-    if (!openedFromMap && initialMobileViewMode !== 'map') {
-      if (window.location.hash.startsWith('#busca') || window.location.hash.startsWith('#imoveis')) {
-        window.location.hash = '#home';
-        setHasSearched(false);
-      }
+    // Se já estiver em #busca ou #imoveis, preserva a tela de busca ativa
+    if (window.location.hash.startsWith('#busca') || window.location.hash.startsWith('#imoveis')) {
+      setHasSearched(true);
     }
 
     return () => window.removeEventListener('hashchange', handleHash);
-  }, [openedFromMap, initialMobileViewMode]);
+  }, []);
 
   // Sincroniza se o usuário retornou da visualização aberta a partir do mapa
   useEffect(() => {
@@ -168,10 +175,13 @@ export function PortalSearchPage({
   const filteredAndSortedProperties = useMemo(() => {
     let list = [...properties];
 
-    // Filtro de cidade (insensível a maiúsculas)
+    // Filtro de cidade (insensível a maiúsculas com correspondência precisa para evitar que Camboriú traga Balneário Camboriú)
     if (filters.cidade && filters.cidade !== 'Todas') {
-      const c = filters.cidade.toLowerCase();
-      list = list.filter((p) => p.cidade.toLowerCase().includes(c) || c.includes(p.cidade.toLowerCase()));
+      const c = filters.cidade.toLowerCase().trim();
+      list = list.filter((p) => {
+        const itemCity = (p.cidade || '').toLowerCase().trim();
+        return itemCity === c;
+      });
     }
 
     // Filtro de finalidade (Comprar -> tipo 'venda' ou 'ambos', Alugar -> 'locação', Todos -> sem filtro)
@@ -318,26 +328,29 @@ export function PortalSearchPage({
       {/* ========================================================================= */}
       {!hasSearched ? (
         <div 
-          className="relative flex-1 min-h-0 w-full overflow-y-auto flex flex-col justify-between bg-slate-900 bg-cover bg-no-repeat transition-all"
-          style={{
-            backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.60) 0%, rgba(0,0,0,0.22) 45%, rgba(0,0,0,0.45) 100%), url("${heroBgUrl}")`,
-            backgroundPosition: 'center 65%',
-            backgroundSize: 'cover'
-          }}
+          className="relative flex-1 min-h-0 w-full overflow-y-auto flex flex-col justify-between bg-slate-900 transition-all"
         >
-          {/* Fundo fotográfico de capa com as pessoas nítidas e visíveis */}
+          {/* Fundo fotográfico de capa único, sem repetição e sem duplicidade vertical */}
           <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none select-none">
             <img
               src={heroBgUrl}
               alt="Balneário Camboriú"
-              className="w-full h-full object-cover object-[center_65%]"
+              className="w-full h-full object-cover object-center"
               loading="eager"
               decoding="async"
-              onError={() => {
-                setHeroBgUrl((prev) => (prev !== '/fotocapa.jpg' ? '/fotocapa.jpg' : '/fotocapa.png'));
+              onError={(e) => {
+                // Previne loops de requisição e erros 429
+                const img = e.currentTarget;
+                img.onerror = null;
+                heroImageErrorAttemptRef.current += 1;
+                if (heroImageErrorAttemptRef.current === 1) {
+                  setHeroBgUrl('/fotocapa.png');
+                } else {
+                  setHeroBgUrl(FALLBACK_HERO_IMAGE);
+                }
               }}
             />
-            {/* Gradiente sutil: escurecido no topo para leitura do card e translúcido no centro/base onde estão as pessoas */}
+            {/* Gradiente sutil para garantir contraste de leitura dos textos e cards */}
             <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/25 to-black/40" />
           </div>
 
@@ -374,95 +387,120 @@ export function PortalSearchPage({
 
             {/* 8. ESTRUTURA PRINCIPAL DESKTOP (60% Imóveis Roláveis / 40% Mapa 100% Fixo) */}
             <div className="flex-1 min-h-0 flex flex-row overflow-hidden">
-        {/* COLUNA ESQUERDA: ~60% Imóveis (ÚNICA ÁREA QUE ROLA) */}
-        <div className="w-full lg:w-[60%] h-full overflow-y-auto px-4 sm:px-6 lg:px-8 py-5 space-y-4 scroll-smooth">
-          {/* Subcabeçalho de navegação e ordenação fixado no topo da coluna de imóveis */}
-          <div className="sticky top-0 -mt-5 pt-5 pb-3 bg-white/95 backdrop-blur-xs z-10 flex items-center justify-between gap-3 flex-wrap border-b border-slate-100/80">
-            <nav aria-label="Navegação estrutural" className="min-w-0">
-              <ol className="flex items-center gap-1.5 text-xs text-slate-500 flex-wrap">
-                <li>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setHasSearched(false);
-                      setFilters({
-                        cidade: topCity,
-                        finalidade: 'Comprar',
-                        categoria: 'Lançamentos',
-                      });
-                      window.location.hash = '#home';
-                      if (onGoHome) {
-                        onGoHome();
-                      }
-                    }}
-                    className="hover:text-[#003366] font-medium transition-colors cursor-pointer"
-                  >
-                    Início
-                  </button>
-                </li>
-                <li className="text-slate-400">›</li>
-                <li>
-                  <span className="hover:text-slate-800 transition-colors">
-                    {filters.cidade || topCity}
-                  </span>
-                </li>
-                {filters.bairro && (
-                  <>
-                    <li className="text-slate-400">›</li>
-                    <li>
-                      <span className="hover:text-slate-800 transition-colors">
-                        {filters.bairro}
-                      </span>
-                    </li>
-                  </>
-                )}
-              </ol>
-            </nav>
+              {/* COLUNA ESQUERDA: ~60% Imóveis */}
+              <div className="w-full lg:w-[60%] h-full flex flex-col min-h-0 overflow-hidden bg-white">
+                {/* Subcabeçalho de navegação e ordenação 100% FIXO no topo (não se move ao rolar os cards) */}
+                <div className="shrink-0 px-4 sm:px-6 lg:px-8 py-3.5 bg-white border-b border-slate-100 flex items-center justify-between gap-3 flex-wrap z-10 shadow-2xs">
+                  <nav aria-label="Navegação estrutural" className="min-w-0">
+                    <ol className="flex items-center gap-1.5 text-xs text-slate-500 flex-wrap">
+                      <li>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setHasSearched(false);
+                            setFilters({
+                              cidade: topCity,
+                              finalidade: 'Comprar',
+                              categoria: 'Lançamentos',
+                            });
+                            window.location.hash = '#home';
+                            if (onGoHome) {
+                              onGoHome();
+                            }
+                          }}
+                          className="hover:text-[#003366] font-medium transition-colors cursor-pointer"
+                        >
+                          Início
+                        </button>
+                      </li>
+                      <li className="text-slate-400">›</li>
+                      <li>
+                        <span className="hover:text-slate-800 transition-colors font-medium">
+                          {filters.cidade || topCity}
+                        </span>
+                      </li>
+                      {filters.bairro && (
+                        <>
+                          <li className="text-slate-400">›</li>
+                          <li>
+                            <span className="hover:text-slate-800 transition-colors font-medium">
+                              {filters.bairro}
+                            </span>
+                          </li>
+                        </>
+                      )}
+                    </ol>
+                  </nav>
 
-            <div className="shrink-0">
-              <PortalSorting sortBy={sortBy} onChangeSort={setSortBy} />
-            </div>
-          </div>
+                  <div className="shrink-0">
+                    <PortalSorting sortBy={sortBy} onChangeSort={setSortBy} />
+                  </div>
+                </div>
 
-          {/* GRID DE CARDS DESKTOP */}
-          {filteredAndSortedProperties.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5 pb-12">
-              {filteredAndSortedProperties.map((imovel) => (
-                <PortalPropertyCard
-                  key={imovel.id}
-                  imovel={imovel}
-                  isHovered={hoveredId === imovel.id || selectedPinId === imovel.id}
-                  isFavorite={favorites.includes(imovel.id)}
-                  onHover={setHoveredId}
-                  onSelect={onSelectProperty}
-                  onToggleFavorite={onToggleFavorite}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-20 bg-slate-50 rounded-2xl border border-slate-100 p-8 space-y-3">
-              <p className="text-sm font-bold text-slate-700">
-                Nenhum imóvel encontrado com os filtros selecionados
-              </p>
-              <p className="text-xs text-slate-400">
-                Tente ajustar a faixa de valor, número de quartos ou remover filtros adicionais.
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  setFilters({
-                    cidade: topCity,
-                    finalidade: 'Comprar',
-                    categoria: 'Lançamentos',
-                  });
-                }}
-                className="px-4 py-2 bg-[#003366] text-white text-xs font-bold rounded-lg hover:bg-[#002244] transition-all cursor-pointer"
-              >
-                Redefinir Filtros
-              </button>
-            </div>
-          )}
-        </div>
+                {/* ÁREA DE CARDS QUE ROLA SUAVEMENTE ABAIXO DA BARRA FIXA */}
+                <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 lg:px-8 py-5 scroll-smooth">
+                  {/* GRID DE CARDS DESKTOP */}
+                  {filteredAndSortedProperties.length > 0 ? (
+                    <div className="pb-12">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5 pb-6">
+                        {filteredAndSortedProperties.map((imovel) => (
+                          <PortalPropertyCard
+                            key={imovel.id}
+                            imovel={imovel}
+                            isHovered={hoveredId === imovel.id || selectedPinId === imovel.id}
+                            isFavorite={favorites.includes(imovel.id)}
+                            onHover={setHoveredId}
+                            onSelect={onSelectProperty}
+                            onToggleFavorite={onToggleFavorite}
+                          />
+                        ))}
+                      </div>
+
+                      {hasMore && (
+                        <div className="flex justify-center pt-2 pb-6">
+                          <button
+                            type="button"
+                            onClick={onLoadMore}
+                            disabled={loadingMore}
+                            className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#003366] hover:bg-[#002244] disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
+                          >
+                            {loadingMore ? (
+                              <>
+                                <Loader2 className="animate-spin w-4 h-4" />
+                                <span>Carregando mais imóveis...</span>
+                              </>
+                            ) : (
+                              <span>Carregar mais imóveis</span>
+                            )}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-center py-20 bg-slate-50 rounded-2xl border border-slate-100 p-8 space-y-3">
+                      <p className="text-sm font-bold text-slate-700">
+                        Nenhum imóvel encontrado com os filtros selecionados
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        Tente ajustar a faixa de valor, número de quartos ou remover filtros adicionais.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFilters({
+                            cidade: topCity,
+                            finalidade: 'Comprar',
+                            categoria: 'Lançamentos',
+                          });
+                        }}
+                        className="px-4 py-2 bg-[#003366] text-white text-xs font-bold rounded-lg hover:bg-[#002244] transition-all cursor-pointer"
+                      >
+                        Redefinir Filtros
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
 
         {/* COLUNA DIREITA DESKTOP: ~40% Mapa Permanente 100% Fixo */}
         <aside className="w-full lg:w-[40%] h-full shrink-0 border-l border-slate-200 relative overflow-hidden" id="portal-map-wrapper">
@@ -532,6 +570,26 @@ export function PortalSearchPage({
                           onToggleFavorite={onToggleFavorite}
                         />
                       ))}
+
+                      {hasMore && (
+                        <div className="flex justify-center pt-2 pb-6">
+                          <button
+                            type="button"
+                            onClick={onLoadMore}
+                            disabled={loadingMore}
+                            className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#003366] hover:bg-[#002244] disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
+                          >
+                            {loadingMore ? (
+                              <>
+                                <Loader2 className="animate-spin w-4 h-4" />
+                                <span>Carregando mais...</span>
+                              </>
+                            ) : (
+                              <span>Carregar mais imóveis</span>
+                            )}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="text-center py-16 bg-slate-50 rounded-2xl border border-slate-200/80 p-6 space-y-3 mt-4">

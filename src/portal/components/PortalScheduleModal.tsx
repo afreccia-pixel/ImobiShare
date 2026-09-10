@@ -201,9 +201,9 @@ export function PortalScheduleModal({ imovel, isOpen, onClose }: PortalScheduleM
             type="button"
             onClick={onClose}
             aria-label="Fechar"
-            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition-colors cursor-pointer"
+            className="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 transition-colors cursor-pointer active:scale-95"
           >
-            <X size={16} />
+            <X size={20} />
           </button>
         </div>
 

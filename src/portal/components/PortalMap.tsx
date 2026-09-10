@@ -27,20 +27,20 @@ interface ClusterGroup {
 }
 
 /**
- * Formata o preço do imóvel para exibição compacta no mapa (ex: "R$ 1,8 mi", "R$ 850 mil")
+ * Formata o preço do imóvel para exibição compacta no mapa sem o símbolo da moeda (ex: "1,8 mi", "850 mil")
  */
 function formatMapPrice(val?: number): string {
   if (!val || val <= 0) return 'Consulte';
   if (val >= 1000000) {
     const mi = val / 1000000;
     const formatted = mi.toFixed(1).replace('.', ',');
-    return `R$ ${formatted.endsWith(',0') ? formatted.slice(0, -2) : formatted} mi`;
+    return `${formatted.endsWith(',0') ? formatted.slice(0, -2) : formatted} mi`;
   }
   if (val >= 1000) {
     const mil = Math.round(val / 1000);
-    return `R$ ${mil} mil`;
+    return `${mil} mil`;
   }
-  return `R$ ${val.toLocaleString('pt-BR')}`;
+  return `${val.toLocaleString('pt-BR')}`;
 }
 
 /**
@@ -385,35 +385,45 @@ export function PortalMap({
     return () => observer.disconnect();
   }, []);
 
-  // Recalcula agrupamentos quando os imóveis mudam ou quando o usuário dá zoom / pan
+  // Recalcula agrupamentos e redimensiona os limites do mapa quando os imóveis mudam ou quando o usuário dá zoom / pan
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
 
-    // Renderiza inicialmente
+    // Renderiza inicialmente os marcadores e agrupamentos
     renderMarkers();
 
-    // Auto-fit inicial caso haja coordenadas reais e não seja navegação manual
-    if (imoveis.length > 0 && !isUserInteractingRef.current) {
-      const validCoordinates: [number, number][] = imoveis
-        .filter(
-          (p) =>
-            typeof p.latitude === 'number' &&
-            typeof p.longitude === 'number' &&
-            !isNaN(p.latitude) &&
-            !isNaN(p.longitude) &&
-            p.latitude !== 0 &&
-            p.longitude !== 0
-        )
-        .map((p) => [p.latitude!, p.longitude!]);
+    // Redimensiona o mapa para mostrar todos os imóveis do filtro selecionado
+    const validCoordinates: [number, number][] = imoveis
+      .filter(
+        (p) =>
+          typeof p.latitude === 'number' &&
+          typeof p.longitude === 'number' &&
+          !isNaN(p.latitude) &&
+          !isNaN(p.longitude) &&
+          p.latitude !== 0 &&
+          p.longitude !== 0
+      )
+      .map((p) => [p.latitude!, p.longitude!]);
 
-      if (validCoordinates.length > 0) {
-        try {
-          const bounds = L.latLngBounds(validCoordinates);
-          map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15, animate: false });
-        } catch (err) {
-          console.warn('[PortalMap] fitBounds error suprimido:', err);
+    if (validCoordinates.length > 0) {
+      try {
+        const bounds = L.latLngBounds(validCoordinates);
+        // Reseta o flag de interação do usuário para garantir que o enquadramento do novo filtro aconteça
+        isUserInteractingRef.current = false;
+        setShowSearchAreaBtn(false);
+
+        if (validCoordinates.length === 1) {
+          map.setView(validCoordinates[0], 16, { animate: true });
+        } else {
+          map.fitBounds(bounds, {
+            padding: [45, 45],
+            maxZoom: 16,
+            animate: true,
+          });
         }
+      } catch (err) {
+        console.warn('[PortalMap] fitBounds error suprimido:', err);
       }
     }
 

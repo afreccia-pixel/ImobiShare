@@ -128,10 +128,10 @@ export function PortalFilters({
                 type="button"
                 id="filter-btn-cidade"
                 onClick={() => toggleDropdown('cidade')}
-                className={`h-12 px-4.5 sm:px-5 inline-flex items-center gap-2 rounded-xl text-sm sm:text-base font-bold tracking-tight transition-all border cursor-pointer whitespace-nowrap shadow-2xs ${
-                  filters.cidade !== 'Balneário Camboriú'
-                    ? 'bg-blue-50 text-[#003366] border-[#003366]'
-                    : 'bg-white text-slate-800 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                className={`h-12 px-4.5 sm:px-5 inline-flex items-center gap-2 rounded-xl text-sm sm:text-base tracking-tight transition-all border cursor-pointer whitespace-nowrap shadow-2xs ${
+                  filters.cidade && filters.cidade !== 'Todas'
+                    ? 'font-bold bg-blue-50 text-[#003366] border-[#003366]'
+                    : 'font-normal bg-white text-slate-800 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                 }`}
               >
                 <MapPin size={18} className="text-[#003366] shrink-0" />
@@ -159,7 +159,7 @@ export function PortalFilters({
                           setOpenDropdown(null);
                         }}
                         className={`w-full text-left px-4 py-3 text-sm sm:text-base flex items-center justify-between hover:bg-blue-50/60 transition-colors cursor-pointer ${
-                          filters.cidade === city ? 'font-bold text-[#003366] bg-blue-50' : 'text-slate-700'
+                          filters.cidade === city ? 'font-bold text-[#003366] bg-blue-50' : 'text-slate-700 font-normal'
                         }`}
                       >
                         <span>{city}</span>
@@ -177,13 +177,13 @@ export function PortalFilters({
                 type="button"
                 id="filter-btn-finalidade"
                 onClick={() => toggleDropdown('finalidade')}
-                className={`h-12 px-4.5 sm:px-5 inline-flex items-center gap-2 rounded-xl text-sm sm:text-base font-bold tracking-tight transition-all border cursor-pointer whitespace-nowrap shadow-2xs ${
-                  filters.finalidade !== 'Comprar'
-                    ? 'bg-blue-50 text-[#003366] border-[#003366]'
-                    : 'bg-white text-slate-800 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                className={`h-12 px-4.5 sm:px-5 inline-flex items-center gap-2 rounded-xl text-sm sm:text-base tracking-tight transition-all border cursor-pointer whitespace-nowrap shadow-2xs ${
+                  filters.finalidade && filters.finalidade !== 'Todos'
+                    ? 'font-bold bg-blue-50 text-[#003366] border-[#003366]'
+                    : 'font-normal bg-white text-slate-800 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                 }`}
               >
-                <span>{filters.finalidade}</span>
+                <span>{filters.finalidade || 'Comprar'}</span>
                 <ChevronDown
                   size={16}
                   className={`text-slate-500 transition-transform duration-200 ${
@@ -194,7 +194,7 @@ export function PortalFilters({
 
               {openDropdown === 'finalidade' && (
                 <div className="absolute top-full left-0 mt-2 w-56 bg-white rounded-2xl shadow-2xl border border-slate-100 py-2.5 z-50">
-                  {(['Comprar', 'Alugar'] as const).map((opt) => (
+                  {(['Comprar', 'Alugar', 'Todos'] as const).map((opt) => (
                     <button
                       key={opt}
                       type="button"
@@ -203,7 +203,7 @@ export function PortalFilters({
                         setOpenDropdown(null);
                       }}
                       className={`w-full text-left px-4 py-3 text-sm sm:text-base flex items-center justify-between hover:bg-blue-50/60 transition-colors cursor-pointer ${
-                        filters.finalidade === opt ? 'font-bold text-[#003366] bg-blue-50' : 'text-slate-700'
+                        filters.finalidade === opt ? 'font-bold text-[#003366] bg-blue-50' : 'text-slate-700 font-normal'
                       }`}
                     >
                       <span>{opt}</span>
@@ -220,13 +220,13 @@ export function PortalFilters({
                 type="button"
                 id="filter-btn-categoria"
                 onClick={() => toggleDropdown('categoria')}
-                className={`h-12 px-4.5 sm:px-5 inline-flex items-center gap-2 rounded-xl text-sm sm:text-base font-bold tracking-tight transition-all border cursor-pointer whitespace-nowrap shadow-2xs ${
-                  filters.categoria !== 'Lançamentos'
-                    ? 'bg-blue-50 text-[#003366] border-[#003366]'
-                    : 'bg-white text-slate-800 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                className={`h-12 px-4.5 sm:px-5 inline-flex items-center gap-2 rounded-xl text-sm sm:text-base tracking-tight transition-all border cursor-pointer whitespace-nowrap shadow-2xs ${
+                  filters.categoria && filters.categoria !== 'Todos'
+                    ? 'font-bold bg-blue-50 text-[#003366] border-[#003366]'
+                    : 'font-normal bg-white text-slate-800 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                 }`}
               >
-                <span>{filters.categoria}</span>
+                <span>{filters.categoria || 'Todos'}</span>
                 <ChevronDown
                   size={16}
                   className={`text-slate-500 transition-transform duration-200 ${
@@ -246,7 +246,7 @@ export function PortalFilters({
                         setOpenDropdown(null);
                       }}
                       className={`w-full text-left px-4 py-3 text-sm sm:text-base flex items-center justify-between hover:bg-blue-50/60 transition-colors cursor-pointer ${
-                        filters.categoria === cat ? 'font-bold text-[#003366] bg-blue-50' : 'text-slate-700'
+                        filters.categoria === cat ? 'font-bold text-[#003366] bg-blue-50' : 'text-slate-700 font-normal'
                       }`}
                     >
                       <span>{cat}</span>
@@ -263,10 +263,10 @@ export function PortalFilters({
                 type="button"
                 id="filter-btn-valor"
                 onClick={() => toggleDropdown('valor')}
-                className={`h-12 px-4.5 sm:px-5 inline-flex items-center gap-2 rounded-xl text-sm sm:text-base font-bold tracking-tight transition-all border cursor-pointer whitespace-nowrap shadow-2xs ${
+                className={`h-12 px-4.5 sm:px-5 inline-flex items-center gap-2 rounded-xl text-sm sm:text-base tracking-tight transition-all border cursor-pointer whitespace-nowrap shadow-2xs ${
                   filters.precoMin || filters.precoMax
-                    ? 'bg-blue-50 text-[#003366] border-[#003366]'
-                    : 'bg-white text-slate-800 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                    ? 'font-bold bg-blue-50 text-[#003366] border-[#003366]'
+                    : 'font-normal bg-white text-slate-800 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                 }`}
               >
                 <span>
@@ -307,7 +307,7 @@ export function PortalFilters({
                           setOpenDropdown(null);
                         }}
                         className={`w-full text-left px-4 py-3 text-sm sm:text-base flex items-center justify-between hover:bg-blue-50/60 transition-colors cursor-pointer ${
-                          isSelected ? 'font-bold text-[#003366] bg-blue-50' : 'text-slate-700'
+                          isSelected ? 'font-bold text-[#003366] bg-blue-50' : 'text-slate-700 font-normal'
                         }`}
                       >
                         <span>{range.label}</span>
@@ -325,10 +325,10 @@ export function PortalFilters({
                 type="button"
                 id="filter-btn-quartos"
                 onClick={() => toggleDropdown('quartos')}
-                className={`h-12 px-4.5 sm:px-5 inline-flex items-center gap-2 rounded-xl text-sm sm:text-base font-bold tracking-tight transition-all border cursor-pointer whitespace-nowrap shadow-2xs ${
+                className={`h-12 px-4.5 sm:px-5 inline-flex items-center gap-2 rounded-xl text-sm sm:text-base tracking-tight transition-all border cursor-pointer whitespace-nowrap shadow-2xs ${
                   filters.quartosMin
-                    ? 'bg-blue-50 text-[#003366] border-[#003366]'
-                    : 'bg-white text-slate-800 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                    ? 'font-bold bg-blue-50 text-[#003366] border-[#003366]'
+                    : 'font-normal bg-white text-slate-800 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                 }`}
               >
                 <span>{filters.quartosMin ? `${filters.quartosMin}+ quartos` : 'Quartos'}</span>
@@ -359,7 +359,7 @@ export function PortalFilters({
                           setOpenDropdown(null);
                         }}
                         className={`w-full text-left px-4 py-3 text-sm sm:text-base flex items-center justify-between hover:bg-blue-50/60 transition-colors cursor-pointer ${
-                          isSelected ? 'font-bold text-[#003366] bg-blue-50' : 'text-slate-700'
+                          isSelected ? 'font-bold text-[#003366] bg-blue-50' : 'text-slate-700 font-normal'
                         }`}
                       >
                         <span>{q.label}</span>
@@ -376,10 +376,10 @@ export function PortalFilters({
               type="button"
               id="filter-btn-mais-filtros"
               onClick={onOpenMoreFilters}
-              className={`h-12 px-4.5 sm:px-5 inline-flex items-center gap-2 rounded-xl text-sm sm:text-base font-bold tracking-tight transition-all border cursor-pointer whitespace-nowrap shadow-2xs ${
+              className={`h-12 px-4.5 sm:px-5 inline-flex items-center gap-2 rounded-xl text-sm sm:text-base tracking-tight transition-all border cursor-pointer whitespace-nowrap shadow-2xs ${
                 hasActiveCustomFilters
-                  ? 'bg-blue-50 text-[#003366] border-[#003366]'
-                  : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                  ? 'font-bold bg-blue-50 text-[#003366] border-[#003366]'
+                  : 'font-normal bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
               }`}
             >
               <SlidersHorizontal size={17} className="text-slate-500 shrink-0" />

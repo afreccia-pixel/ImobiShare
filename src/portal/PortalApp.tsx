@@ -52,12 +52,29 @@ export function PortalApp({
   }, [realProperties]);
 
   // Carregamento e subscrição reativa à base de dados real
+  const [paginationInfo, setPaginationInfo] = useState(() => DbService.getPaginationInfo());
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  const handleLoadMore = async () => {
+    if (loadingMore || !paginationInfo.hasMore) return;
+    setLoadingMore(true);
+    try {
+      await DbService.loadMoreImoveis();
+      setPaginationInfo(DbService.getPaginationInfo());
+    } catch (err) {
+      console.error('[PortalApp] Erro ao carregar mais imóveis:', err);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   const fetchRealProperties = async () => {
     try {
       setIsLoading(true);
       setLoadError(null);
-      const data = await DbService.getImoveis();
+      const data = await DbService.getImoveis({ page: 1, limit: 24 });
       setInternalList(data);
+      setPaginationInfo(DbService.getPaginationInfo());
     } catch (err: any) {
       console.error('[PortalApp] Erro ao carregar imóveis reais:', err);
       setLoadError('Não foi possível carregar os imóveis no momento. Verifique sua conexão.');
@@ -80,6 +97,7 @@ export function PortalApp({
         const updated = DbService.getImoveisSync();
         if (updated.length > 0) {
           setInternalList(updated);
+          setPaginationInfo(DbService.getPaginationInfo());
           setIsLoading(false);
         }
       }
@@ -285,7 +303,11 @@ export function PortalApp({
 
   const handleCloseDetail = () => {
     setSelectedPropertyId(null);
-    window.location.hash = '#busca';
+    if (window.history.length > 1 && window.location.hash.startsWith('#imovel/')) {
+      window.history.back();
+    } else {
+      window.location.hash = '#busca';
+    }
   };
 
   const handleGoHome = () => {
@@ -333,33 +355,36 @@ export function PortalApp({
     );
   }
 
-  // Se houver um imóvel selecionado, renderiza a página completa do imóvel real
-  if (activeProperty) {
-    return (
-      <PortalPropertyDetailPage
-        imovel={activeProperty}
-        isFavorite={favorites.includes(activeProperty.id)}
-        fromMap={openedFromMap}
-        onToggleFavorite={handleToggleFavorite}
-        onClose={handleCloseDetail}
-        onGoHome={handleGoHome}
-      />
-    );
-  }
-
-  // Página principal do portal: exibe primeiro a tela inicial de busca básica e, após o clique em Buscar, a listagem com mapa
   return (
-    <PortalSearchPage
-      properties={properties}
-      favorites={favorites}
-      isLoggedIn={isLoggedIn}
-      initialMobileViewMode={openedFromMap ? 'map' : undefined}
-      initialSelectedPinId={lastSelectedPinId}
-      openedFromMap={openedFromMap}
-      onGoHome={handleGoHome}
-      onToggleFavorite={handleToggleFavorite}
-      onSelectProperty={handleSelectProperty}
-      onOpenAuth={onOpenAuth}
-    />
+    <>
+      <div className={activeProperty ? 'hidden' : 'contents'}>
+        <PortalSearchPage
+          properties={properties}
+          favorites={favorites}
+          isLoggedIn={isLoggedIn}
+          hasMore={paginationInfo.hasMore}
+          loadingMore={loadingMore}
+          onLoadMore={handleLoadMore}
+          initialMobileViewMode={openedFromMap ? 'map' : undefined}
+          initialSelectedPinId={lastSelectedPinId}
+          openedFromMap={openedFromMap}
+          onGoHome={handleGoHome}
+          onToggleFavorite={handleToggleFavorite}
+          onSelectProperty={handleSelectProperty}
+          onOpenAuth={onOpenAuth}
+        />
+      </div>
+
+      {activeProperty && (
+        <PortalPropertyDetailPage
+          imovel={activeProperty}
+          isFavorite={favorites.includes(activeProperty.id)}
+          fromMap={openedFromMap}
+          onToggleFavorite={handleToggleFavorite}
+          onClose={handleCloseDetail}
+          onGoHome={handleGoHome}
+        />
+      )}
+    </>
   );
 }

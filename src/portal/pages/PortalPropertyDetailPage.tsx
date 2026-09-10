@@ -9,13 +9,14 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
-  Building2,
   Maximize2,
   BedDouble,
   Bath,
   Car,
-  Receipt,
   Clock,
+  Share2,
+  Calendar,
+  Check,
 } from 'lucide-react';
 import { PortalProperty } from '../types';
 import {
@@ -24,6 +25,7 @@ import {
 } from '../data/mockPortalData';
 import { getValidImage, handleImageError } from '../../utils/imageUtils';
 import { LOGO_IMAGE } from '../../assets/logo';
+import { DbService } from '../../services/db';
 import { PortalGalleryModal } from '../components/PortalGalleryModal';
 import { PortalPropertyLocationMap } from '../components/PortalPropertyLocationMap';
 import { PortalScheduleModal } from '../components/PortalScheduleModal';
@@ -69,9 +71,53 @@ export function PortalPropertyDetailPage({
   const [activePhotoIdx, setActivePhotoIdx] = useState(0);
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
+  const [copiedShare, setCopiedShare] = useState(false);
+  const [fullFotos, setFullFotos] = useState<string[]>(imovel.fotos || []);
 
-  const fotos = imovel.fotos && imovel.fotos.length > 0
-    ? imovel.fotos
+  useEffect(() => {
+    if (imovel.id) {
+      DbService.getImovelById(imovel.id).then(full => {
+        if (full && Array.isArray(full.fotos) && full.fotos.length > 0) {
+          setFullFotos(full.fotos);
+        }
+      }).catch(() => {});
+    }
+  }, [imovel.id]);
+
+  const handleShare = async () => {
+    const url = window.location.href;
+    const shareData = {
+      title: imovel.titulo,
+      text: `${imovel.titulo} - ImobiShare`,
+      url,
+    };
+    if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch (err) {
+        if ((err as any)?.name === 'AbortError') return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedShare(true);
+      setTimeout(() => setCopiedShare(false), 2500);
+    } catch {
+      const textArea = document.createElement('textarea');
+      textArea.value = url;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      setCopiedShare(true);
+      setTimeout(() => setCopiedShare(false), 2500);
+    }
+  };
+
+  const activeFotos = fullFotos.length > 0 ? fullFotos : (imovel.fotos || []);
+  const fotos = activeFotos.length > 0
+    ? activeFotos
     : ['https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=1600&auto=format&fit=crop&q=85'];
 
   const prevPhoto = useCallback(() => {
@@ -125,13 +171,153 @@ export function PortalPropertyDetailPage({
   // Construtora limpa (não exibir se não informada)
   const construtoraLimpa = imovel.construtora &&
     imovel.construtora.trim() !== '' &&
-    !imovel.construtora.toLowerCase().includes('não informada')
+    !imovel.construtora.toLowerCase().includes('não informada') &&
+    !imovel.construtora.toLowerCase().includes('indefinid')
     ? imovel.construtora.trim()
     : null;
 
   const nomeEdificioLimpo = imovel.nomeEdificio && imovel.nomeEdificio.trim() !== ''
     ? imovel.nomeEdificio.trim()
     : null;
+
+  const getCondominioVal = (): string | null => {
+    if (typeof imovel.condominio === 'number' && imovel.condominio > 0) {
+      return `R$ ${imovel.condominio.toLocaleString('pt-BR')}`;
+    }
+    if (imovel.condominioFormatado && imovel.condominioFormatado.trim() !== '') {
+      const match = imovel.condominioFormatado.match(/R\$\s*[\d.,]+/i);
+      if (match) {
+        return match[0].replace(/\s+/g, ' ').trim();
+      }
+    }
+    return null;
+  };
+
+  const getIptuVal = (): string | null => {
+    if (typeof imovel.iptu === 'number' && imovel.iptu > 0) {
+      return `R$ ${imovel.iptu.toLocaleString('pt-BR')}`;
+    }
+    if (imovel.iptuFormatado && imovel.iptuFormatado.trim() !== '') {
+      const match = imovel.iptuFormatado.match(/R\$\s*[\d.,]+/i);
+      if (match) {
+        return match[0].replace(/\s+/g, ' ').trim();
+      }
+    }
+    return null;
+  };
+
+  const renderActionCard = (isMobileView: boolean = false) => {
+    const condVal = getCondominioVal();
+    const iptuVal = getIptuVal();
+    const hasTaxas = Boolean(condVal || iptuVal);
+
+    return (
+    <div
+      id={isMobileView ? 'card-acao-mobile' : 'card-acao-desktop'}
+      className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/80 shadow-xs space-y-4"
+    >
+      <div>
+        {construtoraLimpa && (
+          <div className="mb-2">
+            <span className="inline-flex items-center px-2.5 py-0.5 bg-slate-100 text-[#003366] text-[11px] sm:text-xs font-extrabold rounded-full tracking-wider uppercase border border-slate-200/60">
+              {construtoraLimpa}
+            </span>
+          </div>
+        )}
+        <h1 className="text-xl sm:text-2xl font-black text-slate-900 leading-tight tracking-tight">
+          {imovel.titulo}
+        </h1>
+      </div>
+
+      {/* Preço e Valor por m² */}
+      <div className="pt-1">
+        <div className="flex items-baseline gap-3 flex-wrap">
+          <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+            {formatCurrencyBRL(imovel.valor)}
+          </span>
+          {valorM2Formatted && (
+            <span className="text-xs sm:text-sm font-bold text-slate-500">
+              {valorM2Formatted}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Condomínio e IPTU na linha abaixo do valor com /mês e /anual em tamanho menor e só mostrar se tiver valor */}
+      {hasTaxas && (
+        <div className="pt-3 pb-2 border-t border-slate-100 space-y-1.5">
+          {condVal && (
+            <div className="text-base sm:text-lg tracking-tight flex items-baseline gap-1.5 flex-wrap">
+              <span className="font-black text-slate-900">{condVal}</span>
+              <span className="text-xs sm:text-sm font-semibold text-slate-500">/mês</span>
+              <span className="font-bold text-slate-700">Condomínio</span>
+            </div>
+          )}
+          {iptuVal && (
+            <div className="text-base sm:text-lg tracking-tight flex items-baseline gap-1.5 flex-wrap">
+              <span className="font-black text-slate-900">{iptuVal}</span>
+              <span className="text-xs sm:text-sm font-semibold text-slate-500">/anual</span>
+              <span className="font-bold text-slate-700">IPTU</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* DEPOIS O BOTAO DE Favoritar, Agendar e Compartilhar */}
+      <div className="space-y-2.5 pt-1">
+        {/* Agendar */}
+        <button
+          type="button"
+          id={isMobileView ? 'btn-agendar-mobile' : 'btn-agendar-sidebar'}
+          onClick={() => setIsScheduleModalOpen(true)}
+          className="w-full py-3.5 px-4 bg-[#003366] hover:bg-[#002244] text-white text-sm sm:text-base font-extrabold rounded-xl shadow-md shadow-[#003366]/20 transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-[0.99]"
+        >
+          <Calendar size={18} />
+          <span>Agendar Visita</span>
+        </button>
+
+        {/* Favoritar e Compartilhar */}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            id={isMobileView ? 'btn-favoritar-mobile' : 'btn-favoritar-sidebar'}
+            onClick={() => onToggleFavorite?.(imovel.id)}
+            className={`py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold border transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 ${
+              isFavorite
+                ? 'bg-rose-50 border-rose-200 text-rose-600'
+                : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
+            }`}
+          >
+            <Heart
+              size={16}
+              className={isFavorite ? 'fill-rose-500 text-rose-500' : 'text-slate-500'}
+            />
+            <span>{isFavorite ? 'Favoritado' : 'Favoritar'}</span>
+          </button>
+
+          <button
+            type="button"
+            id={isMobileView ? 'btn-compartilhar-mobile' : 'btn-compartilhar-sidebar'}
+            onClick={handleShare}
+            className="py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
+          >
+            {copiedShare ? (
+              <>
+                <Check size={16} className="text-emerald-600" />
+                <span className="text-emerald-700 font-bold">Copiado!</span>
+              </>
+            ) : (
+              <>
+                <Share2 size={16} className="text-slate-500" />
+                <span>Compartilhar</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+    );
+  };
 
   return (
     <div className="bg-white min-h-screen text-slate-900 font-sans pb-24" id="portal-property-detail-page">
@@ -157,33 +343,15 @@ export function PortalPropertyDetailPage({
           </button>
 
           <div className="flex items-center gap-3">
-            {/* ♡ Favoritar / ♥ Favoritado */}
-            <button
-              type="button"
-              id="btn-detail-favorite-top"
-              onClick={() => onToggleFavorite?.(imovel.id)}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold border transition-all cursor-pointer shadow-xs active:scale-95 ${
-                isFavorite
-                  ? 'bg-rose-50 border-rose-200 text-rose-600'
-                  : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              <Heart
-                size={14}
-                className={isFavorite ? 'fill-rose-500 text-rose-500' : 'text-slate-500'}
-              />
-              <span>{isFavorite ? 'Favoritado' : 'Favoritar'}</span>
-            </button>
-
             {/* ✕ Fechar */}
             <button
               type="button"
               id="btn-detail-close-top"
               onClick={onClose}
               aria-label="Fechar detalhes do imóvel"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 transition-all cursor-pointer shadow-xs active:scale-95"
+              className="flex items-center gap-2 px-5 py-2 sm:px-6 sm:py-2.5 rounded-full text-sm sm:text-base font-bold text-slate-800 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-300/90 transition-all cursor-pointer shadow-xs active:scale-95"
             >
-              <X size={15} />
+              <X size={20} className="stroke-[2.5]" />
               <span>Fechar</span>
             </button>
           </div>
@@ -317,6 +485,13 @@ export function PortalPropertyDetailPage({
 
             {/* 23. TÍTULO COMPLETO E DATA DE PUBLICAÇÃO */}
             <section className="space-y-2">
+              {construtoraLimpa && (
+                <div>
+                  <span className="inline-flex items-center px-3 py-1 bg-slate-100 text-[#003366] text-xs sm:text-sm font-extrabold rounded-full tracking-wider uppercase border border-slate-200/60">
+                    {construtoraLimpa}
+                  </span>
+                </div>
+              )}
               <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight leading-tight">
                 {imovel.titulo}
               </h2>
@@ -328,39 +503,25 @@ export function PortalPropertyDetailPage({
               )}
             </section>
 
-            {/* 24. PREÇO & VALOR POR M² */}
-            <section className="space-y-1">
-              {isNaPlanta && (
-                <span className="text-xs sm:text-sm font-semibold text-slate-500 block">
-                  A partir de
-                </span>
-              )}
-              <div className="flex items-baseline gap-4 flex-wrap">
-                <span className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
-                  {formatCurrencyBRL(imovel.valor)}
-                </span>
-                {valorM2Formatted && (
-                  <span className="text-sm sm:text-base font-bold text-slate-500">
-                    {valorM2Formatted}
-                  </span>
-                )}
-              </div>
-            </section>
+            {/* CARD DE AÇÃO MOBILE (Preço, Condomínio, IPTU e Botões) */}
+            <div className="lg:hidden">
+              {renderActionCard(true)}
+            </div>
 
-            {/* 25. CARACTERÍSTICAS EM DESTAQUE COM ÍCONES (apenas itens reais existentes) */}
-            <section className="py-4 border-y border-slate-100" id="caracteristicas-destaque-imovel">
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {/* 25. CARACTERÍSTICAS EM DESTAQUE COM ÍCONES (Área privativa, Quartos, Banheiros, Vagas) */}
+            <section className="py-5 border-y border-slate-100" id="caracteristicas-destaque-imovel">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
                 {/* Área privativa */}
                 {hasAreaPrivativaValida && (
-                  <div className="flex items-center gap-3 p-3 bg-slate-50/70 rounded-2xl border border-slate-100/90 hover:bg-slate-50 transition-colors">
-                    <div className="w-10 h-10 rounded-xl bg-white border border-slate-200/80 flex items-center justify-center text-[#003366] shrink-0 shadow-2xs">
-                      <Maximize2 size={18} />
+                  <div className="flex items-center gap-3.5 p-3.5 sm:p-4 bg-slate-50/80 rounded-2xl border border-slate-100/90 hover:bg-slate-50 transition-colors">
+                    <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-white border border-slate-200/80 flex items-center justify-center text-[#003366] shrink-0 shadow-2xs">
+                      <Maximize2 size={22} />
                     </div>
                     <div className="min-w-0">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      <span className="text-xs sm:text-sm font-bold text-slate-500 uppercase tracking-wider block">
                         Área privativa
                       </span>
-                      <span className="text-xs sm:text-sm font-bold text-slate-800 block truncate">
+                      <span className="text-base sm:text-lg lg:text-xl font-black text-slate-900 block truncate">
                         {imovel.metragem} m²
                       </span>
                     </div>
@@ -369,16 +530,16 @@ export function PortalPropertyDetailPage({
 
                 {/* Quartos */}
                 {hasQuartos && (
-                  <div className="flex items-center gap-3 p-3 bg-slate-50/70 rounded-2xl border border-slate-100/90 hover:bg-slate-50 transition-colors">
-                    <div className="w-10 h-10 rounded-xl bg-white border border-slate-200/80 flex items-center justify-center text-[#003366] shrink-0 shadow-2xs">
-                      <BedDouble size={18} />
+                  <div className="flex items-center gap-3.5 p-3.5 sm:p-4 bg-slate-50/80 rounded-2xl border border-slate-100/90 hover:bg-slate-50 transition-colors">
+                    <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-white border border-slate-200/80 flex items-center justify-center text-[#003366] shrink-0 shadow-2xs">
+                      <BedDouble size={22} />
                     </div>
                     <div className="min-w-0">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      <span className="text-xs sm:text-sm font-bold text-slate-500 uppercase tracking-wider block">
                         Quartos
                       </span>
-                      <span className="text-xs sm:text-sm font-bold text-slate-800 block truncate">
-                        {totalQuartos} {totalQuartos === 1 ? 'quarto' : 'quartos'}
+                      <span className="text-base sm:text-lg lg:text-xl font-black text-slate-900 block truncate">
+                        {totalQuartos}
                       </span>
                     </div>
                   </div>
@@ -386,16 +547,16 @@ export function PortalPropertyDetailPage({
 
                 {/* Banheiros */}
                 {hasBanheiros && (
-                  <div className="flex items-center gap-3 p-3 bg-slate-50/70 rounded-2xl border border-slate-100/90 hover:bg-slate-50 transition-colors">
-                    <div className="w-10 h-10 rounded-xl bg-white border border-slate-200/80 flex items-center justify-center text-[#003366] shrink-0 shadow-2xs">
-                      <Bath size={18} />
+                  <div className="flex items-center gap-3.5 p-3.5 sm:p-4 bg-slate-50/80 rounded-2xl border border-slate-100/90 hover:bg-slate-50 transition-colors">
+                    <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-white border border-slate-200/80 flex items-center justify-center text-[#003366] shrink-0 shadow-2xs">
+                      <Bath size={22} />
                     </div>
                     <div className="min-w-0">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      <span className="text-xs sm:text-sm font-bold text-slate-500 uppercase tracking-wider block">
                         Banheiros
                       </span>
-                      <span className="text-xs sm:text-sm font-bold text-slate-800 block truncate">
-                        {imovel.banheiros} {imovel.banheiros === 1 ? 'banheiro' : 'banheiros'}
+                      <span className="text-base sm:text-lg lg:text-xl font-black text-slate-900 block truncate">
+                        {imovel.banheiros}
                       </span>
                     </div>
                   </div>
@@ -403,50 +564,16 @@ export function PortalPropertyDetailPage({
 
                 {/* Vagas */}
                 {hasVagas && (
-                  <div className="flex items-center gap-3 p-3 bg-slate-50/70 rounded-2xl border border-slate-100/90 hover:bg-slate-50 transition-colors">
-                    <div className="w-10 h-10 rounded-xl bg-white border border-slate-200/80 flex items-center justify-center text-[#003366] shrink-0 shadow-2xs">
-                      <Car size={18} />
+                  <div className="flex items-center gap-3.5 p-3.5 sm:p-4 bg-slate-50/80 rounded-2xl border border-slate-100/90 hover:bg-slate-50 transition-colors">
+                    <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-white border border-slate-200/80 flex items-center justify-center text-[#003366] shrink-0 shadow-2xs">
+                      <Car size={22} />
                     </div>
                     <div className="min-w-0">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      <span className="text-xs sm:text-sm font-bold text-slate-500 uppercase tracking-wider block">
                         Vagas
                       </span>
-                      <span className="text-xs sm:text-sm font-bold text-slate-800 block truncate">
-                        {imovel.vagas} {imovel.vagas === 1 ? 'vaga' : 'vagas'}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Condomínio (apenas se maior que zero) */}
-                {hasCondominio && (
-                  <div className="flex items-center gap-3 p-3 bg-slate-50/70 rounded-2xl border border-slate-100/90 hover:bg-slate-50 transition-colors">
-                    <div className="w-10 h-10 rounded-xl bg-white border border-slate-200/80 flex items-center justify-center text-[#003366] shrink-0 shadow-2xs">
-                      <Building2 size={18} />
-                    </div>
-                    <div className="min-w-0">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                        Condomínio
-                      </span>
-                      <span className="text-xs sm:text-sm font-bold text-slate-800 block truncate">
-                        R$ {imovel.condominio!.toLocaleString('pt-BR')} / mês
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {/* IPTU (apenas se maior que zero) */}
-                {hasIptu && (
-                  <div className="flex items-center gap-3 p-3 bg-slate-50/70 rounded-2xl border border-slate-100/90 hover:bg-slate-50 transition-colors">
-                    <div className="w-10 h-10 rounded-xl bg-white border border-slate-200/80 flex items-center justify-center text-[#003366] shrink-0 shadow-2xs">
-                      <Receipt size={18} />
-                    </div>
-                    <div className="min-w-0">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                        IPTU
-                      </span>
-                      <span className="text-xs sm:text-sm font-bold text-slate-800 block truncate">
-                        R$ {imovel.iptu!.toLocaleString('pt-BR')} / ano
+                      <span className="text-base sm:text-lg lg:text-xl font-black text-slate-900 block truncate">
+                        {imovel.vagas}
                       </span>
                     </div>
                   </div>
@@ -456,91 +583,33 @@ export function PortalPropertyDetailPage({
 
             {/* 26. DESCRIÇÃO (boa largura, legibilidade, espaçamento) */}
             <section className="space-y-4">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              <h3 className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-wider">
                 Descrição do Imóvel
               </h3>
-              <div className="text-slate-700 text-sm sm:text-base leading-relaxed space-y-4 whitespace-pre-line font-normal">
+              <div className="text-slate-800 text-base sm:text-lg lg:text-xl leading-relaxed space-y-4 whitespace-pre-line font-normal">
                 {imovel.descricao}
               </div>
-
-              {/* Botão grande: Agendar Visita sem o ícone */}
-              <div className="pt-2">
-                <button
-                  type="button"
-                  id="btn-agendar-visita-descricao"
-                  onClick={() => setIsScheduleModalOpen(true)}
-                  className="w-full py-4 px-8 bg-[#003366] hover:bg-[#002244] text-white text-base sm:text-lg font-extrabold rounded-2xl shadow-lg shadow-[#003366]/20 hover:shadow-xl hover:shadow-[#003366]/30 transition-all duration-200 cursor-pointer active:scale-[0.99] text-center"
-                >
-                  Agendar Visita
-                </button>
-              </div>
             </section>
+
+            {/* Mapa no Mobile */}
+            <div className="lg:hidden pt-4">
+              <PortalPropertyLocationMap
+                latitude={imovel.latitude}
+                longitude={imovel.longitude}
+                endereco={imovel.endereco}
+                bairro={imovel.bairro}
+                cidade={imovel.cidade}
+              />
+            </div>
           </div>
 
-          {/* COLUNA DIREITA STICKY (4 colunas no lg) - Apenas desktop, oculta no celular para não duplicar informações abaixo de Agendar Visita */}
+          {/* COLUNA DIREITA STICKY (4 colunas no lg) - Desktop */}
           <div className="hidden lg:block lg:col-span-4 space-y-5 lg:sticky lg:top-20 self-start">
-            {/* Bloco de Título, Empreendimento/Edifício, Preço e Favoritar */}
-            <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
-              <div>
-                {nomeEdificioLimpo ? (
-                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#003366] bg-blue-50 px-2.5 py-1 rounded-full inline-block mb-2">
-                    {nomeEdificioLimpo}
-                  </span>
-                ) : imovel.bairro ? (
-                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-700 bg-slate-100 px-2.5 py-1 rounded-full inline-block mb-2">
-                    {imovel.bairro}
-                  </span>
-                ) : null}
-                <h1 className="text-xl font-black text-slate-900 leading-tight tracking-tight">
-                  {imovel.titulo}
-                </h1>
-                {construtoraLimpa && (
-                  <p className="text-xs font-semibold text-slate-500 mt-1">
-                    Construtora {construtoraLimpa}
-                  </p>
-                )}
-              </div>
+            {/* Bloco de Título, Preço, Condomínio, IPTU e Botões */}
+            {renderActionCard(false)}
 
-              {/* Preço e Valor por m² */}
-              <div className="pt-1">
-                {isNaPlanta && (
-                  <span className="text-[11px] font-medium text-slate-500 block mb-0.5">
-                    A partir de
-                  </span>
-                )}
-                <div className="flex items-baseline gap-3 flex-wrap">
-                  <span className="text-2xl font-black text-slate-900 tracking-tight">
-                    {formatCurrencyBRL(imovel.valor)}
-                  </span>
-                  {valorM2Formatted && (
-                    <span className="text-xs font-semibold text-slate-500">
-                      {valorM2Formatted}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Botão secundário: ♡ Favoritar */}
-              <button
-                type="button"
-                id="btn-favoritar-sidebar"
-                onClick={() => onToggleFavorite?.(imovel.id)}
-                className={`w-full py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                  isFavorite
-                    ? 'bg-rose-50 border-rose-200 text-rose-600'
-                    : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
-                }`}
-              >
-                <Heart
-                  size={14}
-                  className={isFavorite ? 'fill-rose-500 text-rose-500' : 'text-slate-500'}
-                />
-                <span>{isFavorite ? '♥ Favoritado na sua lista' : '♡ Adicionar aos Favoritos'}</span>
-              </button>
-            </div>
-
-            {/* 21. MAPA DO IMÓVEL (Card de Localização) - Apenas no computador (desktop), oculto no celular */}
-            <div className="hidden lg:block">
+            {/* 21. MAPA DO IMÓVEL (Card de Localização) */}
+            <div>
               <PortalPropertyLocationMap
                 latitude={imovel.latitude}
                 longitude={imovel.longitude}

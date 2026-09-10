@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Imovel, Corretor } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { MapPin, Phone, MessageCircle, ArrowLeft, Building2, UserCheck, ShieldAlert, Check, Bed, Car, Maximize, Bath } from 'lucide-react';
@@ -21,6 +21,19 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
   const [whatsappSent, setWhatsappSent] = useState(false);
   const [touchStartPos, setTouchStartPos] = useState<{ x: number; y: number } | null>(null);
+  const [fullFotos, setFullFotos] = useState<string[]>(imovel.fotos || []);
+
+  useEffect(() => {
+    if (imovel.id) {
+      DbService.getImovelById(imovel.id).then(full => {
+        if (full && Array.isArray(full.fotos) && full.fotos.length > 0) {
+          setFullFotos(full.fotos);
+        }
+      }).catch(() => {});
+    }
+  }, [imovel.id]);
+
+  const fotos = fullFotos.length > 0 ? fullFotos : (imovel.fotos || []);
 
   const activeEmailClean = (activeCorretor?.email || '').toLowerCase().trim();
   const imovelEmailClean = (imovel.corretorEmail || '').toLowerCase().trim();
@@ -50,10 +63,10 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
     }
 
     // Photo carousel swipe logic
-    if (Math.abs(diffX) > 35 && imovel.fotos && imovel.fotos.length > 1) {
+    if (Math.abs(diffX) > 35 && fotos.length > 1) {
       if (diffX < 0) {
         // Swiped left -> Next photo
-        setActivePhotoIndex((prev) => (prev + 1) % imovel.fotos.length);
+        setActivePhotoIndex((prev) => (prev + 1) % fotos.length);
       } else if (activePhotoIndex > 0) {
         // Swiped right -> Previous photo
         setActivePhotoIndex((prev) => prev - 1);
@@ -99,7 +112,7 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
     specsPartsList.push(`${imovel.metragem ?? 0}m²`);
 
     const caracteristicas = specsPartsList.join(' • ');
-    const mainImg = imovel.fotos?.[0] ? getValidImage(imovel.fotos[0]) : '';
+    const mainImg = fotos?.[0] ? getValidImage(fotos[0]) : '';
     const isExternalImg = mainImg.startsWith('http://') || mainImg.startsWith('https://');
 
     let messageText = `🏠 ${location}\n💰 ${preco} (${tipoLabel})\n✨ ${caracteristicas}`;
@@ -139,7 +152,7 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
           onTouchEnd={handleTouchEnd}
         >
           <img
-            src={getValidImage(imovel.fotos?.[activePhotoIndex])}
+            src={getValidImage(fotos?.[activePhotoIndex])}
             alt=""
             onError={handleImageError}
             referrerPolicy="no-referrer"
@@ -147,16 +160,16 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
           />
 
           {/* Gallery Counter Indicator */}
-          {imovel.fotos.length > 0 && (
+          {fotos.length > 0 && (
             <span className="absolute top-4 right-4 bg-slate-900/80 backdrop-blur-md text-white text-[11px] font-bold px-2.5 py-1 rounded-full border border-white/20 shadow-md">
-              {activePhotoIndex + 1} / {imovel.fotos.length}
+              {activePhotoIndex + 1} / {fotos.length}
             </span>
           )}
 
           {/* Dots Indicator */}
-          {imovel.fotos.length > 1 && (
+          {fotos.length > 1 && (
             <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-1.5 z-10">
-              {imovel.fotos.map((_, idx) => (
+              {fotos.map((_, idx) => (
                 <button
                   key={idx}
                   onClick={() => setActivePhotoIndex(idx)}
@@ -179,9 +192,9 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
         </div>
 
         {/* Thumbnail gallery preview */}
-        {imovel.fotos.length > 1 && (
+        {fotos.length > 1 && (
           <div className="bg-white p-3 border-b border-slate-100 flex gap-2 overflow-x-auto">
-            {imovel.fotos.map((foto, idx) => (
+            {fotos.map((foto, idx) => (
               <button
                 key={idx}
                 onClick={() => setActivePhotoIndex(idx)}

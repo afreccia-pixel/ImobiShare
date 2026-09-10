@@ -51,36 +51,55 @@ function safeSetLocalStorage(key: string, value: string): void {
   // Execute storage writes asynchronously so main thread rendering stays ultra-fast
   setTimeout(() => {
     try {
-      if (key === 'imobishare_imoveis') {
-        // Lightweight cache pruning for localStorage to prevent quota crashes & freeze
+      // REGRA: Nunca salvar a lista inteira de imóveis ('imobishare_imoveis') no localStorage!
+      // O banco de dados é a fonte principal da verdade, prevenindo QuotaExceededError.
+      if (key === 'imobishare_imoveis' || key.includes('imovel') || key.includes('properties')) {
+        return;
+      }
+      // Se for a lista de corretores, sanitizar removendo fotos em Base64 grandes antes de persistir
+      if (key === 'imobishare_corretores') {
         try {
-          const items: Imovel[] = JSON.parse(value);
-          const pruned = items.map(imovel => {
-            if (!imovel.fotos || imovel.fotos.length === 0) return imovel;
-            // Keep first photo and prune subsequent huge base64 strings for localStorage
-            const prunedFotos = imovel.fotos.slice(0, 3).map((f) => {
-              if (f.startsWith('data:image') && f.length > 50000) {
-                return f.substring(0, 20000); // lightweight thumbnail
-              }
-              return f;
-            });
-            return { ...imovel, fotos: prunedFotos };
-          });
-          localStorage.setItem(key, JSON.stringify(pruned));
-          return;
-        } catch {
-          // Fallback if parsing fails
-        }
+          const parsed = JSON.parse(value);
+          if (Array.isArray(parsed)) {
+            const sanitized = parsed.map(c => ({
+              ...c,
+              foto: (c.foto && c.foto.startsWith('data:image')) ? '' : c.foto,
+              fotoUrl: (c.fotoUrl && c.fotoUrl.startsWith('data:image')) ? '' : c.fotoUrl,
+            }));
+            value = JSON.stringify(sanitized);
+          }
+        } catch {}
       }
       localStorage.setItem(key, value);
-    } catch (err) {
-      console.warn(`[DbService] localStorage write bypassed for "${key}" due to browser quota limit:`, err);
+    } catch (err: any) {
+      if (err?.name === 'QuotaExceededError' || err?.code === 22) {
+        console.warn(`[DbService] localStorage quota exceeded for "${key}". Writing bypassed.`);
+        try {
+          localStorage.removeItem('imobishare_imoveis');
+          localStorage.removeItem('imobishare_properties');
+          localStorage.removeItem('imoveis');
+        } catch {}
+      } else {
+        console.warn(`[DbService] localStorage write bypassed for "${key}":`, err);
+      }
     }
   }, 0);
 }
 
 function loadInitialFromLocalStorage() {
   try {
+    // Remove chave legada 'imobishare_imoveis' caso ainda exista,
+    // liberando imediatamente os 5MB do navegador ocupados por fotos antigas
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('imobishare_imoveis');
+        localStorage.removeItem('imobishare_properties');
+        localStorage.removeItem('imoveis');
+      }
+    } catch {
+      // Ignora se localStorage não estiver disponível
+    }
+
     const savedActive = localStorage.getItem('imobishare_active_corretor');
     if (savedActive) {
       cachedCorretor = JSON.parse(savedActive);
@@ -88,10 +107,6 @@ function loadInitialFromLocalStorage() {
     const savedBrokers = localStorage.getItem('imobishare_corretores');
     if (savedBrokers) {
       cachedCorretores = JSON.parse(savedBrokers);
-    }
-    const savedImoveis = localStorage.getItem('imobishare_imoveis');
-    if (savedImoveis) {
-      cachedImoveis = JSON.parse(savedImoveis);
     }
     const savedFavs = localStorage.getItem('imobishare_favorites');
     if (savedFavs) {
@@ -331,24 +346,135 @@ export class DbService {
     return this.updateProfile(corretor);
   }
 
-  // Fetch all accessible properties (Public + Partnerships + Own)
-  static async getImoveis(): Promise<Imovel[]> {
+  private static inflightGetImoveis: Promise<Imovel[]> | null = null;
+  private static inflightGetMeusImoveis: Promise<Imovel[]> | null = null;
+  private static paginationState = {
+    total: 0,
+    page: 1,
+    limit: 24,
+    totalPages: 1,
+    hasMore: false,
+    loadingMore: false
+  };
+
+  static getPaginationInfo() {
+    return { ...this.paginationState };
+  }
+
+  // Fetch accessible properties (Supports pagination and inflight request deduplication)
+  static async getImoveis(options?: { page?: number; limit?: number; append?: boolean }): Promise<Imovel[]> {
+    const page = options?.page || 1;
+    const limit = options?.limit || 24;
+    const append = Boolean(options?.append);
+
+    // Se for uma busca padrão da primeira página e já houver uma requisição em voo, reaproveitá-la para evitar requisições duplicadas
+    if (page === 1 && !append && this.inflightGetImoveis) {
+      return this.inflightGetImoveis;
+    }
+
+    const fetchPromise = (async () => {
+      try {
+        const headers = await this.getAuthHeader();
+        const url = getApiUrl(`/api/properties?page=${page}&limit=${limit}`);
+        const res = await fetch(url, { headers });
+        if (res.ok) {
+          const json = await res.json();
+          let list: Imovel[] = [];
+          if (Array.isArray(json)) {
+            list = json;
+            this.paginationState = {
+              total: list.length,
+              page,
+              limit,
+              totalPages: Math.ceil(list.length / limit) || 1,
+              hasMore: page * limit < list.length,
+              loadingMore: false
+            };
+          } else if (json && Array.isArray(json.data)) {
+            list = json.data;
+            this.paginationState = {
+              total: json.total || list.length,
+              page: json.page || page,
+              limit: json.limit || limit,
+              totalPages: json.totalPages || Math.ceil((json.total || list.length) / limit) || 1,
+              hasMore: Boolean(json.hasMore),
+              loadingMore: false
+            };
+          }
+
+          if (append && page > 1) {
+            // Anexar somente itens que ainda não estão presentes na memória
+            const existingIds = new Set(cachedImoveis.map(i => i.id));
+            const newItems = list.filter(item => !existingIds.has(item.id));
+            cachedImoveis = [...cachedImoveis, ...newItems];
+          } else {
+            // Mesclar com imóveis do cache que já possuem fotos completas carregadas
+            cachedImoveis = list.map(fresh => {
+              const existing = cachedImoveis.find(e => e.id === fresh.id);
+              if (existing && Array.isArray(existing.fotos) && existing.fotos.length > (fresh.fotos?.length || 0)) {
+                return { ...fresh, fotos: existing.fotos, descricao: existing.descricao || fresh.descricao };
+              }
+              return fresh;
+            });
+          }
+
+          notifySubscribers();
+          return cachedImoveis;
+        }
+      } catch (err) {
+        console.error('Erro ao buscar imóveis:', err);
+      } finally {
+        if (page === 1 && !append) {
+          this.inflightGetImoveis = null;
+        }
+      }
+      return cachedImoveis;
+    })();
+
+    if (page === 1 && !append) {
+      this.inflightGetImoveis = fetchPromise;
+    }
+
+    return fetchPromise;
+  }
+
+  // Helper para carregar próxima página sob demanda
+  static async loadMoreImoveis(): Promise<{ properties: Imovel[]; hasMore: boolean; page: number }> {
+    if (this.paginationState.loadingMore || !this.paginationState.hasMore) {
+      return { properties: cachedImoveis, hasMore: this.paginationState.hasMore, page: this.paginationState.page };
+    }
+    this.paginationState.loadingMore = true;
+    const nextPage = this.paginationState.page + 1;
+    await this.getImoveis({ page: nextPage, limit: this.paginationState.limit, append: true });
+    this.paginationState.loadingMore = false;
+    return { properties: cachedImoveis, hasMore: this.paginationState.hasMore, page: this.paginationState.page };
+  }
+
+  // Fetch single property with full photos and details
+  static async getImovelById(id: string): Promise<Imovel | null> {
+    const cleanId = (id || '').trim();
+    if (!cleanId) return null;
+
     try {
       const headers = await this.getAuthHeader();
-      const res = await fetch(getApiUrl('/api/properties'), { headers });
+      const res = await fetch(getApiUrl(`/api/properties/${encodeURIComponent(cleanId)}`), { headers });
       if (res.ok) {
-        const list = await res.json();
-        if (Array.isArray(list)) {
-          cachedImoveis = list;
-          safeSetLocalStorage('imobishare_imoveis', JSON.stringify(list));
+        const full: Imovel = await res.json();
+        if (full && full.id) {
+          const idx = cachedImoveis.findIndex(p => p.id === full.id);
+          if (idx >= 0) {
+            cachedImoveis[idx] = { ...cachedImoveis[idx], ...full };
+          } else {
+            cachedImoveis.unshift(full);
+          }
           notifySubscribers();
-          return list;
+          return full;
         }
       }
     } catch (err) {
-      console.error('Erro ao buscar imóveis:', err);
+      console.error(`Erro ao buscar detalhes do imóvel ${id}:`, err);
     }
-    return cachedImoveis;
+    return cachedImoveis.find(p => p.id === cleanId) || null;
   }
 
   // Fetch properties owned strictly by the logged-in user
@@ -400,7 +526,6 @@ export class DbService {
             }
           }
         }
-        safeSetLocalStorage('imobishare_imoveis', JSON.stringify(cachedImoveis));
         notifySubscribers();
         return saved;
       } else {
@@ -452,7 +577,6 @@ export class DbService {
       } else {
         cachedImoveis.unshift(fallbackImovel);
       }
-      safeSetLocalStorage('imobishare_imoveis', JSON.stringify(cachedImoveis));
       notifySubscribers();
       return fallbackImovel;
     }
@@ -468,7 +592,6 @@ export class DbService {
       });
       if (res.ok) {
         cachedImoveis = cachedImoveis.filter(p => p.id !== id);
-        safeSetLocalStorage('imobishare_imoveis', JSON.stringify(cachedImoveis));
         notifySubscribers();
         return true;
       }
@@ -477,7 +600,6 @@ export class DbService {
     }
     // Fallback local deletion
     cachedImoveis = cachedImoveis.filter(p => p.id !== id);
-    safeSetLocalStorage('imobishare_imoveis', JSON.stringify(cachedImoveis));
     notifySubscribers();
     return true;
   }
@@ -603,7 +725,6 @@ export class DbService {
     }
 
     safeSetLocalStorage('imobishare_favorites', JSON.stringify(cachedFavorites));
-    safeSetLocalStorage('imobishare_imoveis', JSON.stringify(cachedImoveis));
     notifySubscribers();
 
     // Async REST toggle

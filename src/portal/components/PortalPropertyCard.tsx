@@ -37,18 +37,42 @@ export function PortalPropertyCard({
   const hasQuartos = typeof quartosCount === 'number' && quartosCount > 0;
   const hasVagas = typeof imovel.vagas === 'number' && imovel.vagas > 0;
 
-  // Nome do empreendimento / edifício ou título
-  const nomeEmpreendimento = imovel.nomeEdificio && imovel.nomeEdificio.trim() !== ''
-    ? imovel.nomeEdificio.trim()
-    : (imovel.titulo && imovel.titulo.trim() !== '' ? imovel.titulo.trim() : '');
+  // Lógica de destaque do card:
+  // 1. Palavra destacada (se cadastrada)
+  // 2. Preço reduzido (se valor anterior for maior que o valor atual ou temDesconto)
+  // 3. Imóvel novo (se cadastrado recentemente)
+  const palavraDestacada =
+    imovel.palavraDestacada && imovel.palavraDestacada.trim() !== ''
+      ? imovel.palavraDestacada.trim()
+      : null;
 
-  // Construtora (ocultar se não existir ou se for texto genérico)
-  const construtoraValida = imovel.construtora && 
-    imovel.construtora.trim() !== '' && 
-    !imovel.construtora.toLowerCase().includes('não informada') &&
-    !imovel.construtora.toLowerCase().includes('indefinid')
-    ? imovel.construtora.trim()
-    : null;
+  const hasPrecoReduzido = Boolean(
+    (typeof imovel.valorAnterior === 'number' && imovel.valorAnterior > imovel.valor) ||
+    imovel.temDesconto
+  );
+
+  const isNovo = (() => {
+    if ((imovel as any).isNovo === true) return true;
+    if (!imovel.dataCadastro) return false;
+    const created = new Date(imovel.dataCadastro).getTime();
+    if (isNaN(created)) return false;
+    const diffDays = (Date.now() - created) / (1000 * 60 * 60 * 24);
+    return diffDays <= 45; // Cadastrado recentemente
+  })();
+
+  let badgeLabel: string | null = null;
+  let badgeClasses = 'bg-[#003366] text-white';
+
+  if (palavraDestacada) {
+    badgeLabel = palavraDestacada;
+    badgeClasses = 'bg-[#003366] text-white';
+  } else if (hasPrecoReduzido) {
+    badgeLabel = 'Preço reduzido';
+    badgeClasses = 'bg-emerald-700 text-white';
+  } else if (isNovo) {
+    badgeLabel = 'Novo';
+    badgeClasses = 'bg-blue-600 text-white';
+  }
 
   const handleClick = () => {
     onSelect?.(imovel.id);
@@ -82,11 +106,13 @@ export function PortalPropertyCard({
           referrerPolicy="no-referrer"
         />
 
-        {/* Selo LANÇAMENTO quando aplicável */}
-        {isNaPlanta && (
+        {/* Selo: Palavra destacada, Preço reduzido ou Novo */}
+        {badgeLabel && (
           <div className="absolute top-3 left-3 z-10">
-            <span className="bg-[#0F172A]/90 backdrop-blur-xs text-white text-[9.5px] font-extrabold uppercase tracking-widest px-2.5 py-1 rounded-full shadow-xs">
-              Lançamento
+            <span
+              className={`${badgeClasses} backdrop-blur-xs text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full shadow-xs`}
+            >
+              {badgeLabel}
             </span>
           </div>
         )}
@@ -112,13 +138,8 @@ export function PortalPropertyCard({
 
       {/* Conteúdo do Card */}
       <div className="p-4 space-y-2">
-        {/* Preço (com 'A partir de' para lançamentos conforme instrução 6) */}
+        {/* Preço */}
         <div>
-          {isNaPlanta && (
-            <span className="text-[11px] font-medium text-slate-500 block leading-tight">
-              A partir de
-            </span>
-          )}
           <span className="text-lg font-black text-slate-900 tracking-tight block">
             {formatCurrencyBRL(imovel.valor)}
           </span>
@@ -137,20 +158,6 @@ export function PortalPropertyCard({
         {hasVagas && (
           <p className="text-xs text-slate-500 font-normal">
             {imovel.vagas} {imovel.vagas === 1 ? 'vaga' : 'vagas'}
-          </p>
-        )}
-
-        {/* Nome do Edifício / Empreendimento */}
-        {nomeEmpreendimento && (
-          <p className="text-xs font-bold text-slate-800 tracking-tight truncate" title={nomeEmpreendimento}>
-            {nomeEmpreendimento}
-          </p>
-        )}
-
-        {/* Construtora - Ocultar quando não existir, nunca exibir "Construtora não informada" */}
-        {construtoraValida && (
-          <p className="text-[11px] font-medium text-slate-500 truncate" title={construtoraValida}>
-            {construtoraValida}
           </p>
         )}
 

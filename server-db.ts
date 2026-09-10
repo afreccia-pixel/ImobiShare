@@ -32,6 +32,31 @@ export function logBackendError(route: string, error: any) {
   }
 }
 
+export function logMemory(label: string) {
+  const memory = process.memoryUsage();
+  console.log(`[MEMORY] ${label}:`, {
+    rss: Math.round(memory.rss / 1024 / 1024) + ' MB',
+    heapUsed: Math.round(memory.heapUsed / 1024 / 1024) + ' MB',
+    heapTotal: Math.round(memory.heapTotal / 1024 / 1024) + ' MB'
+  });
+}
+
+export interface GetImoveisOptions {
+  userEmail?: string;
+  page?: number;
+  limit?: number;
+  paginate?: boolean;
+}
+
+export interface PaginatedResult<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  hasMore: boolean;
+}
+
 export class ServerDb {
   private static pool: pg.Pool | null = null;
   private static isPostgres = false;
@@ -45,6 +70,12 @@ export class ServerDb {
         this.pool = new pg.Pool({
           connectionString: dbUrl,
           ssl: { rejectUnauthorized: false },
+          max: 10,
+          idleTimeoutMillis: 30000,
+          connectionTimeoutMillis: 5000,
+        });
+        this.pool.on('error', (err) => {
+          console.error('⚠️ [Postgres Pool Error]:', err?.message || err);
         });
         await this.pool.query('SELECT NOW()');
         this.isPostgres = true;
@@ -486,12 +517,73 @@ export class ServerDb {
 
   // --- IMOVEIS ---
 
-  static async getImoveis(userEmail?: string): Promise<Imovel[]> {
-    const cleanUserEmail = userEmail ? userEmail.toLowerCase().trim() : '';
+  static async getImoveis(
+    optionsOrUserEmail?: string | GetImoveisOptions,
+    maxFotosLegacy = 1
+  ): Promise<Imovel[] | PaginatedResult<Imovel>> {
+    logMemory('ServerDb.getImoveis BEFORE');
+    let cleanUserEmail = '';
+    let page = 1;
+    let limit = 24;
+    let paginate = false;
+
+    if (typeof optionsOrUserEmail === 'string') {
+      cleanUserEmail = optionsOrUserEmail.toLowerCase().trim();
+    } else if (optionsOrUserEmail && typeof optionsOrUserEmail === 'object') {
+      cleanUserEmail = (optionsOrUserEmail.userEmail || '').toLowerCase().trim();
+      if (optionsOrUserEmail.page && optionsOrUserEmail.page > 0) {
+        page = optionsOrUserEmail.page;
+      }
+      if (optionsOrUserEmail.limit && optionsOrUserEmail.limit > 0) {
+        limit = Math.min(optionsOrUserEmail.limit, 100);
+      }
+      paginate = Boolean(optionsOrUserEmail.paginate || optionsOrUserEmail.page);
+    }
+
+    const offset = (page - 1) * limit;
 
     if (this.isPostgres && this.pool) {
       let query = `
-        SELECT i.*, c.nome as corretor_nome_db, c.foto_url as corretor_foto_db, c.telefone as corretor_telefone_db
+        SELECT 
+          COUNT(*) OVER() AS full_count,
+          i.id,
+          i.codigo,
+          i.titulo,
+          i.cidade,
+          i.bairro,
+          i.endereco,
+          i.cep,
+          i.tipo,
+          i.modalidade,
+          i.valor_venda,
+          i.status_imovel,
+          i.valor_locacao,
+          i.quartos,
+          i.bwc,
+          i.vagas,
+          i.area_privativa,
+          i.nome_edificio,
+          i.palavra_destacada,
+          i.visibilidade,
+          i.data_cadastro,
+          i.origem,
+          i.construtora,
+          i.website,
+          i.compartilhar,
+          i.latitude,
+          i.longitude,
+          i.condominio,
+          i.iptu,
+          i.corretor_email,
+          c.id as corretor_id_db,
+          c.nome as corretor_nome_db,
+          c.foto_url as corretor_foto_db,
+          c.telefone as corretor_telefone_db,
+          CASE 
+            WHEN i.imagens IS NULL OR i.imagens = '' OR i.imagens = '[]' THEN ''
+            WHEN i.imagens LIKE '[%' THEN COALESCE(i.imagens::json->>0, '')
+            ELSE COALESCE(split_part(i.imagens, ',', 1), '')
+          END as imagem_capa
         FROM imoveis i
         LEFT JOIN corretores c ON LOWER(i.corretor_email) = LOWER(c.email)
       `;
@@ -539,8 +631,34 @@ export class ServerDb {
 
       query += ` ORDER BY i.data_cadastro DESC `;
 
+      if (paginate) {
+        params.push(limit);
+        params.push(offset);
+        query += ` LIMIT $${params.length - 1} OFFSET $${params.length} `;
+      } else {
+        params.push(100);
+        query += ` LIMIT $${params.length} `;
+      }
+
       const res = await this.pool.query(query, params);
-      return res.rows.map(r => this.mapPostgresRowToImovel(r, cleanUserEmail));
+      const total = res.rows.length > 0 ? parseInt(res.rows[0].full_count || '0', 10) : 0;
+      const list = res.rows.map(r => this.mapPostgresSummaryRowToImovel(r));
+
+      logMemory('ServerDb.getImoveis AFTER');
+
+      if (paginate) {
+        const totalPages = Math.ceil(total / limit) || 1;
+        return {
+          data: list,
+          total,
+          page,
+          limit,
+          totalPages,
+          hasMore: page * limit < total
+        };
+      }
+
+      return list;
     } else {
       const db = await this.readJson();
 
@@ -564,12 +682,10 @@ export class ServerDb {
 
         const isPartner = Boolean(cleanUserEmail && allPartners.has(cleanUserEmail));
 
-        // 1. Property explicitly set to 'parceiros'
         if (vis === 'parceiros') {
           return isPartner;
         }
 
-        // 2. Property set to 'todos' but broker has partner restrictions / partner group
         if (allPartners.size > 0 || ownerBroker?.restringirParceiros) {
           return isPartner;
         }
@@ -577,38 +693,168 @@ export class ServerDb {
         return true;
       });
 
-      return filtered.map(p => {
-        const isOwner = cleanUserEmail && (p.corretorEmail || '').toLowerCase().trim() === cleanUserEmail;
+      const total = filtered.length;
+      const sliced = paginate ? filtered.slice(offset, offset + limit) : filtered.slice(0, 100);
+
+      const list: Imovel[] = sliced.map(p => {
+        const cover = (Array.isArray(p.fotos) && p.fotos.length > 0) ? [p.fotos[0]] : [];
         return {
           ...p,
           corretorId: p.corretorId || `broker-${(p.corretorEmail || '').toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
-          website: p.website === 'NAO' ? 'NAO' : 'SIM',
-          compartilhar: (p.compartilhar === 'NAO' || p.compartilhar === false) ? 'NAO' : 'SIM',
-          dadosProprietario: isOwner ? p.dadosProprietario : undefined,
-          nomeProprietario: isOwner ? p.nomeProprietario : 'Confidencial',
-          telefoneProprietario: isOwner ? p.telefoneProprietario : 'Confidencial'
+          website: (p.website === 'NAO' ? 'NAO' : 'SIM') as 'SIM' | 'NAO',
+          compartilhar: ((p.compartilhar === 'NAO' || p.compartilhar === false) ? 'NAO' : 'SIM') as 'SIM' | 'NAO',
+          descricao: '',
+          informacoes: undefined,
+          dadosProprietario: undefined,
+          nomeProprietario: 'Confidencial',
+          telefoneProprietario: 'Confidencial',
+          fotos: cover
         };
       });
+
+      logMemory('ServerDb.getImoveis (JSON) AFTER');
+
+      if (paginate) {
+        const totalPages = Math.ceil(total / limit) || 1;
+        return {
+          data: list,
+          total,
+          page,
+          limit,
+          totalPages,
+          hasMore: page * limit < total
+        };
+      }
+
+      return list;
     }
   }
 
-  static async getMeusImoveis(tokenEmail: string): Promise<Imovel[]> {
+  static async getMeusImoveis(
+    tokenEmail: string,
+    optionsOrMaxFotos?: number | { page?: number; limit?: number; paginate?: boolean }
+  ): Promise<Imovel[] | PaginatedResult<Imovel>> {
+    logMemory('ServerDb.getMeusImoveis BEFORE');
     const cleanEmail = tokenEmail.toLowerCase().trim();
     if (!cleanEmail) return [];
 
+    let page = 1;
+    let limit = 50;
+    let paginate = false;
+
+    if (typeof optionsOrMaxFotos === 'object' && optionsOrMaxFotos) {
+      if (optionsOrMaxFotos.page && optionsOrMaxFotos.page > 0) page = optionsOrMaxFotos.page;
+      if (optionsOrMaxFotos.limit && optionsOrMaxFotos.limit > 0) limit = optionsOrMaxFotos.limit;
+      paginate = Boolean(optionsOrMaxFotos.paginate || optionsOrMaxFotos.page);
+    }
+    const offset = (page - 1) * limit;
+
     if (this.isPostgres && this.pool) {
-      const query = `
-        SELECT i.*, c.nome as corretor_nome_db
+      let query = `
+        SELECT 
+          COUNT(*) OVER() AS full_count,
+          i.id,
+          i.codigo,
+          i.titulo,
+          i.cidade,
+          i.bairro,
+          i.endereco,
+          i.cep,
+          i.tipo,
+          i.modalidade,
+          i.valor_venda,
+          i.status_imovel,
+          i.valor_locacao,
+          i.quartos,
+          i.bwc,
+          i.vagas,
+          i.area_privativa,
+          i.nome_edificio,
+          i.palavra_destacada,
+          i.visibilidade,
+          i.data_cadastro,
+          i.origem,
+          i.construtora,
+          i.website,
+          i.compartilhar,
+          i.latitude,
+          i.longitude,
+          i.condominio,
+          i.iptu,
+          i.corretor_email,
+          c.id as corretor_id_db,
+          c.nome as corretor_nome_db,
+          c.foto_url as corretor_foto_db,
+          c.telefone as corretor_telefone_db,
+          CASE 
+            WHEN i.imagens IS NULL OR i.imagens = '' OR i.imagens = '[]' THEN ''
+            WHEN i.imagens LIKE '[%' THEN COALESCE(i.imagens::json->>0, '')
+            ELSE COALESCE(split_part(i.imagens, ',', 1), '')
+          END as imagem_capa
         FROM imoveis i
         LEFT JOIN corretores c ON LOWER(i.corretor_email) = LOWER(c.email)
         WHERE LOWER(i.corretor_email) = $1
         ORDER BY i.data_cadastro DESC
       `;
-      const res = await this.pool.query(query, [cleanEmail]);
-      return res.rows.map(r => this.mapPostgresRowToImovel(r, cleanEmail, true));
+      const params: any[] = [cleanEmail];
+
+      if (paginate) {
+        params.push(limit);
+        params.push(offset);
+        query += ` LIMIT $2 OFFSET $3 `;
+      } else {
+        params.push(100);
+        query += ` LIMIT $2 `;
+      }
+
+      const res = await this.pool.query(query, params);
+      const total = res.rows.length > 0 ? parseInt(res.rows[0].full_count || '0', 10) : 0;
+      const list = res.rows.map(r => this.mapPostgresSummaryRowToImovel(r));
+
+      logMemory('ServerDb.getMeusImoveis AFTER');
+
+      if (paginate) {
+        const totalPages = Math.ceil(total / limit) || 1;
+        return {
+          data: list,
+          total,
+          page,
+          limit,
+          totalPages,
+          hasMore: page * limit < total
+        };
+      }
+
+      return list;
     } else {
       const db = await this.readJson();
-      return db.properties.filter(p => (p.corretorEmail || '').toLowerCase().trim() === cleanEmail);
+      const filtered = db.properties.filter(p => (p.corretorEmail || '').toLowerCase().trim() === cleanEmail);
+      const total = filtered.length;
+      const sliced = paginate ? filtered.slice(offset, offset + limit) : filtered.slice(0, 100);
+
+      const list = sliced.map(p => {
+        const cover = (Array.isArray(p.fotos) && p.fotos.length > 0) ? [p.fotos[0]] : [];
+        return {
+          ...p,
+          fotos: cover
+        };
+      });
+
+      logMemory('ServerDb.getMeusImoveis (JSON) AFTER');
+
+      if (paginate) {
+        const totalPages = Math.ceil(total / limit) || 1;
+        return {
+          data: list,
+          total,
+          page,
+          limit,
+          totalPages,
+          hasMore: page * limit < total
+        };
+      }
+
+      return list;
     }
   }
 
@@ -616,7 +862,7 @@ export class ServerDb {
     if (this.isPostgres && this.pool) {
       const res = await this.pool.query('SELECT * FROM imoveis WHERE id = $1', [id]);
       if (res.rows.length === 0) return null;
-      return this.mapPostgresRowToImovel(res.rows[0], '', true);
+      return this.mapPostgresRowToImovel(res.rows[0], '', true, 0);
     } else {
       const db = await this.readJson();
       return db.properties.find(p => p.id === id) || null;
@@ -789,8 +1035,75 @@ export class ServerDb {
     }
   }
 
-  // Helper for PostgreSQL row conversion
-  private static mapPostgresRowToImovel(r: any, cleanUserEmail: string, forceIncludeOwnerData = false): Imovel {
+  // Helper for lightweight PostgreSQL summary row conversion (avoids heavy base64 buffers and large text fields)
+  private static mapPostgresSummaryRowToImovel(r: any): Imovel {
+    const emailClean = (r.corretor_email || '').toLowerCase().trim();
+
+    const websiteVal: 'SIM' | 'NAO' = r.website === 'NAO' ? 'NAO' : 'SIM';
+    let compartilharVal: 'SIM' | 'NAO' = 'SIM';
+    if (r.compartilhar === 'NAO' || r.compartilhar === 'false' || r.compartilhar === false) {
+      compartilharVal = 'NAO';
+    } else if (r.compartilhar === 'SIM' || r.compartilhar === 'true' || r.compartilhar === true) {
+      compartilharVal = 'SIM';
+    } else if (r.visibilidade === 'exclusivo' || r.visibilidade === 'privado') {
+      compartilharVal = 'NAO';
+    }
+
+    const coverPhoto = r.imagem_capa ? [r.imagem_capa] : [];
+    const valorVenda = r.valor_venda ? parseFloat(r.valor_venda) : 0;
+    const valorLocacao = r.valor_locacao ? parseFloat(r.valor_locacao) : undefined;
+
+    return {
+      id: r.id,
+      corretorId: r.corretor_id || `broker-${emailClean.replace(/[^a-z0-9]/g, '_')}`,
+      corretorEmail: r.corretor_email,
+      corretorNome: r.corretor_nome_db || (emailClean ? emailClean.split('@')[0] : 'Corretor'),
+      website: websiteVal,
+      compartilhar: compartilharVal,
+      cep: r.cep || '',
+      endereco: r.endereco || '',
+      localizacao: r.endereco || `${r.bairro}, ${r.cidade}`,
+      cidade: r.cidade,
+      bairro: r.bairro,
+      tipoImovel: r.tipo || 'Apartamento',
+      statusImovel: r.status_imovel || undefined,
+      tipo: r.modalidade || (valorLocacao && valorVenda ? 'ambos' : (valorLocacao ? 'locação' : 'venda')),
+      valor: valorVenda,
+      valorVenda,
+      valorAnterior: r.valor_anterior ? parseFloat(r.valor_anterior) : undefined,
+      valorLocacao,
+      valorLocacaoAnterior: r.valor_locacao_anterior ? parseFloat(r.valor_locacao_anterior) : undefined,
+      dormitorios: parseInt(r.quartos || '0', 10),
+      quartos: parseInt(r.quartos || '0', 10),
+      banheiros: parseInt(r.bwc || '0', 10),
+      vagas: parseInt(r.vagas || '0', 10),
+      metragem: r.area_privativa ? parseFloat(r.area_privativa) : 0,
+      condominio: r.condominio ? parseFloat(r.condominio) : undefined,
+      iptu: r.iptu ? parseFloat(r.iptu) : undefined,
+      nomeEdificio: r.nome_edificio || '',
+      titulo: r.titulo,
+      palavraDestacada: r.palavra_destacada || '',
+      // Campos pesados omitidos nas listagens para economizar dezenas de megabytes de RAM
+      descricao: '',
+      informacoes: undefined,
+      origem: r.origem || 'Imobishare',
+      integrado: Boolean((r.origem && r.origem.toLowerCase() !== 'imobishare' && r.origem.trim() !== '') || (r.origem && (r.origem.toLowerCase().includes('dwv') || r.origem.toLowerCase().includes('portal')))),
+      integracaoOrigem: (r.origem && r.origem.toLowerCase() !== 'imobishare') ? r.origem : undefined,
+      construtora: r.construtora || '',
+      codigo: r.codigo || undefined,
+      latitude: r.latitude !== null && r.latitude !== undefined && r.latitude !== '' ? parseFloat(r.latitude) : undefined,
+      longitude: r.longitude !== null && r.longitude !== undefined && r.longitude !== '' ? parseFloat(r.longitude) : undefined,
+      visibilidade: r.visibilidade || 'todos',
+      dadosProprietario: undefined,
+      nomeProprietario: 'Confidencial',
+      telefoneProprietario: 'Confidencial',
+      fotos: coverPhoto,
+      dataCadastro: r.data_cadastro
+    };
+  }
+
+  // Helper for PostgreSQL row conversion (detalhes completos de um imóvel individual)
+  private static mapPostgresRowToImovel(r: any, cleanUserEmail: string, forceIncludeOwnerData = false, maxFotos = 0): Imovel {
     const isOwner = forceIncludeOwnerData || (cleanUserEmail && r.corretor_email && r.corretor_email.toLowerCase().trim() === cleanUserEmail);
     const emailClean = (r.corretor_email || '').toLowerCase().trim();
     
@@ -812,6 +1125,10 @@ export class ServerDb {
     } catch {
       fotosArr = r.imagens ? r.imagens.split(',') : [];
     }
+
+    const finalFotos = (maxFotos > 0 && Array.isArray(fotosArr) && fotosArr.length > maxFotos)
+      ? fotosArr.slice(0, maxFotos)
+      : (Array.isArray(fotosArr) ? fotosArr : []);
 
     const valorVenda = r.valor_venda ? parseFloat(r.valor_venda) : 0;
     const valorLocacao = r.valor_locacao ? parseFloat(r.valor_locacao) : undefined;
@@ -859,7 +1176,7 @@ export class ServerDb {
       dadosProprietario: isOwner ? (r.dados_proprietario || '') : undefined,
       nomeProprietario: isOwner ? (r.dados_proprietario || '') : 'Confidencial',
       telefoneProprietario: isOwner ? (r.dados_proprietario || '') : 'Confidencial',
-      fotos: Array.isArray(fotosArr) ? fotosArr : [],
+      fotos: finalFotos,
       dataCadastro: r.data_cadastro
     };
   }
