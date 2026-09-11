@@ -271,7 +271,7 @@ export class DbService {
   }
 
   static getImoveisSync(): Imovel[] {
-    return cachedImoveis;
+    return [...cachedImoveis];
   }
 
   static getFavoritos(idOrEmail?: string): string[] {
@@ -463,9 +463,11 @@ export class DbService {
         if (full && full.id) {
           const idx = cachedImoveis.findIndex(p => p.id === full.id);
           if (idx >= 0) {
-            cachedImoveis[idx] = { ...cachedImoveis[idx], ...full };
+            const nextList = [...cachedImoveis];
+            nextList[idx] = { ...nextList[idx], ...full };
+            cachedImoveis = nextList;
           } else {
-            cachedImoveis.unshift(full);
+            cachedImoveis = [full, ...cachedImoveis];
           }
           notifySubscribers();
           return full;

@@ -33,8 +33,10 @@ export function PortalPropertyCard({
     : [imovel.bairro, imovel.cidade].filter(Boolean).join(' - ');
 
   const quartosCount = imovel.dormitorios || imovel.quartos;
+  const banheirosCount = imovel.banheiros;
   const hasMetragem = typeof imovel.metragem === 'number' && imovel.metragem > 0;
   const hasQuartos = typeof quartosCount === 'number' && quartosCount > 0;
+  const hasBanheiros = typeof banheirosCount === 'number' && banheirosCount > 0;
   const hasVagas = typeof imovel.vagas === 'number' && imovel.vagas > 0;
 
   // Lógica de destaque do card:
@@ -145,12 +147,16 @@ export function PortalPropertyCard({
           </span>
         </div>
 
-        {/* Área Privativa e Quartos - Oculta campos inexistentes, sem exibir undefined ou 0 quartos */}
-        {(hasMetragem || hasQuartos) && (
+        {/* Área Privativa, Quartos e Banheiros - Oculta campos inexistentes, sem exibir undefined ou 0 */}
+        {(hasMetragem || hasQuartos || hasBanheiros) && (
           <p className="text-xs font-semibold text-slate-700 tracking-tight">
-            {hasMetragem && `${imovel.metragem} m²`}
-            {hasMetragem && hasQuartos && ' • '}
-            {hasQuartos && `${quartosCount} ${quartosCount === 1 ? 'quarto' : 'quartos'}`}
+            {[
+              hasMetragem ? `${imovel.metragem} m²` : null,
+              hasQuartos ? `${quartosCount} ${quartosCount === 1 ? 'quarto' : 'quartos'}` : null,
+              hasBanheiros ? `${banheirosCount} ${banheirosCount === 1 ? 'banheiro' : 'banheiros'}` : null,
+            ]
+              .filter(Boolean)
+              .join(' • ')}
           </p>
         )}
 

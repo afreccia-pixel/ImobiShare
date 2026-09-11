@@ -21,19 +21,42 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
   const [whatsappSent, setWhatsappSent] = useState(false);
   const [touchStartPos, setTouchStartPos] = useState<{ x: number; y: number } | null>(null);
+  const [fullImovel, setFullImovel] = useState<Partial<Imovel> | null>(() => {
+    return imovel.descricao ? imovel : null;
+  });
+  const [loadingFull, setLoadingFull] = useState(!imovel.descricao);
   const [fullFotos, setFullFotos] = useState<string[]>(imovel.fotos || []);
 
   useEffect(() => {
+    let isMounted = true;
     if (imovel.id) {
-      DbService.getImovelById(imovel.id).then(full => {
-        if (full && Array.isArray(full.fotos) && full.fotos.length > 0) {
-          setFullFotos(full.fotos);
-        }
-      }).catch(() => {});
+      if (!imovel.descricao) setLoadingFull(true);
+      DbService.getImovelById(imovel.id)
+        .then(full => {
+          if (isMounted && full) {
+            setFullImovel(full);
+            if (Array.isArray(full.fotos) && full.fotos.length > 0) {
+              setFullFotos(full.fotos);
+            }
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (isMounted) setLoadingFull(false);
+        });
     }
+    return () => {
+      isMounted = false;
+    };
   }, [imovel.id]);
 
-  const fotos = fullFotos.length > 0 ? fullFotos : (imovel.fotos || []);
+  const currentImovel: Imovel = {
+    ...imovel,
+    ...(fullImovel || {}),
+    fotos: fullFotos.length > 0 ? fullFotos : (imovel.fotos || [])
+  };
+
+  const fotos = currentImovel.fotos && currentImovel.fotos.length > 0 ? currentImovel.fotos : [];
 
   const activeEmailClean = (activeCorretor?.email || '').toLowerCase().trim();
   const imovelEmailClean = (imovel.corretorEmail || '').toLowerCase().trim();
@@ -397,9 +420,19 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
 
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Descrição do Imóvel</span>
-            <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-line">
-              {imovel.descricao}
-            </p>
+            <div className="text-slate-600 text-sm leading-relaxed whitespace-pre-line">
+              {currentImovel.descricao ? (
+                currentImovel.descricao
+              ) : loadingFull ? (
+                <div className="space-y-2 animate-pulse py-1">
+                  <div className="h-3.5 bg-slate-200 rounded w-11/12" />
+                  <div className="h-3.5 bg-slate-200 rounded w-full" />
+                  <div className="h-3.5 bg-slate-200 rounded w-4/5" />
+                </div>
+              ) : (
+                <span className="text-slate-400 italic text-xs">Nenhuma descrição informada.</span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -479,9 +512,9 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
             </div>
 
             {(() => {
-              const rawN = imovel.nomeProprietario?.trim() || '';
-              const rawP = imovel.telefoneProprietario?.trim() || '';
-              const rawD = imovel.dadosProprietario?.trim() || '';
+              const rawN = currentImovel.nomeProprietario?.trim() || '';
+              const rawP = currentImovel.telefoneProprietario?.trim() || '';
+              const rawD = currentImovel.dadosProprietario?.trim() || '';
 
               // Find phone number across fields
               const combined = [rawN, rawP, rawD].filter(Boolean).join(' ');
@@ -556,11 +589,11 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
               );
             })()}
 
-            {imovel.informacoes?.trim() && (
+            {currentImovel.informacoes?.trim() && (
               <div className="pt-2.5 border-t border-slate-800 space-y-1">
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">Informações Adicionais / Controle:</span>
                 <p className="text-xs font-medium text-amber-200/95 whitespace-pre-line leading-relaxed bg-slate-800/80 p-2.5 rounded-lg border border-slate-700/60">
-                  {imovel.informacoes.trim()}
+                  {currentImovel.informacoes.trim()}
                 </p>
               </div>
             )}
@@ -568,13 +601,13 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
         )}
 
         {/* Informações do imóvel para outros corretores */}
-        {!isOwner && imovel.informacoes?.trim() && (
+        {!isOwner && currentImovel.informacoes?.trim() && (
           <div className="p-4 bg-amber-50/90 border-b border-amber-200/80 space-y-1">
             <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-900 block">
               Informações do Imóvel
             </span>
             <p className="text-xs text-amber-950 font-medium whitespace-pre-line leading-relaxed">
-              {imovel.informacoes.trim()}
+              {currentImovel.informacoes.trim()}
             </p>
           </div>
         )}
