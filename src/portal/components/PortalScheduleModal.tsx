@@ -186,14 +186,14 @@ export function PortalScheduleModal({ imovel, isOpen, onClose }: PortalScheduleM
       id="modal-agendar-visita"
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200"
     >
-      <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden border border-slate-100 relative">
+      <div className="bg-white w-full max-w-md rounded-2xl lg:rounded-3xl shadow-2xl overflow-hidden border border-slate-100 relative">
         {/* Header do Modal */}
         <div className="flex items-center justify-between px-6 pt-6 pb-2">
           <div>
-            <h2 className="text-xl font-black text-slate-900">
+            <h2 className="text-lg lg:text-xl font-bold text-slate-900">
               Agendar Visita
             </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs lg:text-[13px] text-slate-500 mt-0.5">
               {imovel.nomeEdificio || imovel.titulo} • {formatCurrencyBRL(imovel.valor)}
             </p>
           </div>
@@ -201,9 +201,9 @@ export function PortalScheduleModal({ imovel, isOpen, onClose }: PortalScheduleM
             type="button"
             onClick={onClose}
             aria-label="Fechar"
-            className="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 transition-colors cursor-pointer active:scale-95"
+            className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 transition-colors cursor-pointer active:scale-95"
           >
-            <X size={20} />
+            <X size={18} />
           </button>
         </div>
 
@@ -217,7 +217,7 @@ export function PortalScheduleModal({ imovel, isOpen, onClose }: PortalScheduleM
 
           {/* Nome */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">
+            <label className="block text-xs lg:text-[13px] font-semibold text-slate-700 mb-1.5">
               Nome
             </label>
             <div className="relative">
@@ -228,14 +228,14 @@ export function PortalScheduleModal({ imovel, isOpen, onClose }: PortalScheduleM
                 value={nome}
                 onChange={(e) => handleNameChange(e.target.value)}
                 placeholder="Seu nome"
-                className="w-full pl-9 pr-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#003366]/20 focus:border-[#003366] focus:bg-white transition-all"
+                className="w-full h-10 pl-10 pr-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs lg:text-sm font-medium text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#003366]/20 focus:border-[#003366] focus:bg-white transition-all"
               />
             </div>
           </div>
 
           {/* Telefone */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">
+            <label className="block text-xs lg:text-[13px] font-semibold text-slate-700 mb-1.5">
               Telefone
             </label>
             <div className="relative">
@@ -246,14 +246,14 @@ export function PortalScheduleModal({ imovel, isOpen, onClose }: PortalScheduleM
                 value={telefone}
                 onChange={(e) => handleTelefoneChange(e.target.value)}
                 placeholder="(47) 99999-9999"
-                className="w-full pl-9 pr-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#003366]/20 focus:border-[#003366] focus:bg-white transition-all"
+                className="w-full h-10 pl-10 pr-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs lg:text-sm font-medium text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#003366]/20 focus:border-[#003366] focus:bg-white transition-all"
               />
             </div>
           </div>
 
           {/* E-mail */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">
+            <label className="block text-xs lg:text-[13px] font-semibold text-slate-700 mb-1.5">
               E-mail
             </label>
             <div className="relative">
@@ -264,7 +264,7 @@ export function PortalScheduleModal({ imovel, isOpen, onClose }: PortalScheduleM
                 value={email}
                 onChange={(e) => handleEmailChange(e.target.value)}
                 placeholder="seu.email@exemplo.com"
-                className="w-full pl-9 pr-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#003366]/20 focus:border-[#003366] focus:bg-white transition-all"
+                className="w-full h-10 pl-10 pr-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs lg:text-sm font-medium text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#003366]/20 focus:border-[#003366] focus:bg-white transition-all"
               />
             </div>
           </div>
@@ -274,9 +274,9 @@ export function PortalScheduleModal({ imovel, isOpen, onClose }: PortalScheduleM
             <button
               type="submit"
               id="btn-falar-com-corretor"
-              className="w-full py-4 px-6 bg-[#25D366] hover:bg-[#1EBE5D] text-white text-base font-extrabold rounded-2xl shadow-lg shadow-[#25D366]/25 hover:shadow-xl hover:shadow-[#25D366]/35 transition-all duration-200 cursor-pointer active:scale-[0.99] flex items-center justify-center gap-2"
+              className="w-full h-12 px-6 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl shadow-sm transition-all duration-200 cursor-pointer active:scale-[0.99] flex items-center justify-center gap-2"
             >
-              <MessageCircle size={20} className="fill-white" />
+              <MessageCircle size={18} />
               <span>Falar com corretor</span>
             </button>
           </div>

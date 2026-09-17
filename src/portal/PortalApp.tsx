@@ -7,7 +7,7 @@
  * ============================================================================
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { PortalSearchPage } from './pages/PortalSearchPage';
 import { PortalPropertyDetailPage } from './pages/PortalPropertyDetailPage';
 import { PortalProperty } from './types';
@@ -20,6 +20,132 @@ interface PortalAppProps {
   initialPropertyId?: string | null;
   isLoggedIn?: boolean;
   onOpenAuth?: () => void;
+}
+
+export function mapImovelToPortalProperty(p: Imovel): PortalProperty {
+  const pAny = p as any;
+  const valorNum =
+    typeof p.valorVenda === 'number' && p.valorVenda > 0
+      ? p.valorVenda
+      : (typeof p.valor === 'number' ? p.valor : (p.valor ? Number(p.valor) : 0));
+
+  const metragemNum =
+    typeof p.metragem === 'number' && p.metragem > 0
+      ? p.metragem
+      : (pAny.areaPrivativa ? Number(pAny.areaPrivativa) : undefined);
+
+  const areaTotalNum = p.areaTotal ? Number(p.areaTotal) : undefined;
+
+  const lat =
+    typeof p.latitude === 'number' && !isNaN(p.latitude) && p.latitude !== 0
+      ? p.latitude
+      : (p.latitude && !isNaN(Number(p.latitude)) && Number(p.latitude) !== 0
+          ? Number(p.latitude)
+          : undefined);
+
+  const lng =
+    typeof p.longitude === 'number' && !isNaN(p.longitude) && p.longitude !== 0
+      ? p.longitude
+      : (p.longitude && !isNaN(Number(p.longitude)) && Number(p.longitude) !== 0
+          ? Number(p.longitude)
+          : undefined);
+
+  const isLancamento = p.statusImovel === 'Na planta' || pAny.isLancamento === true;
+
+  // Construtora: somente quando existir e for válida
+  const construtoraLimpa =
+    p.construtora &&
+    p.construtora.trim() !== '' &&
+    !p.construtora.toLowerCase().includes('não informada')
+      ? p.construtora.trim()
+      : undefined;
+
+  // Nome do edifício / empreendimento
+  const nomeEdificioLimpo =
+    p.nomeEdificio && p.nomeEdificio.trim() !== '' ? p.nomeEdificio.trim() : undefined;
+
+  const dorms =
+    typeof p.dormitorios === 'number' && p.dormitorios > 0
+      ? p.dormitorios
+      : (typeof p.quartos === 'number' && p.quartos > 0 ? p.quartos : undefined);
+
+  const vagasNum = typeof p.vagas === 'number' && p.vagas > 0 ? p.vagas : undefined;
+  const banheirosNum = typeof p.banheiros === 'number' && p.banheiros > 0 ? p.banheiros : undefined;
+  const suitesNum =
+    typeof pAny.suites === 'number' && pAny.suites > 0 ? pAny.suites : undefined;
+
+  const condNum =
+    typeof p.condominio === 'number' && p.condominio > 0
+      ? p.condominio
+      : (typeof pAny.condominio === 'number' && pAny.condominio > 0 ? pAny.condominio : undefined);
+
+  const iptuNum =
+    typeof p.iptu === 'number' && p.iptu > 0
+      ? p.iptu
+      : (typeof pAny.iptu === 'number' && pAny.iptu > 0 ? pAny.iptu : undefined);
+
+  // Fotos: extrai array real
+  let fotosArr: string[] = [];
+  if (Array.isArray(p.fotos) && p.fotos.length > 0) {
+    fotosArr = p.fotos;
+  } else if (pAny.imagens) {
+    try {
+      fotosArr = typeof pAny.imagens === 'string' ? JSON.parse(pAny.imagens) : pAny.imagens;
+    } catch {
+      fotosArr = [];
+    }
+  }
+
+  // Status do imóvel: preserva o status real cadastrado ('Na planta', 'Mobiliado', 'Sem mobília', etc.)
+  const status = p.statusImovel ? (p.statusImovel.trim() as Imovel['statusImovel']) : (isLancamento ? 'Na planta' : undefined);
+
+  return {
+    ...p,
+    id: p.id,
+    codigo: p.codigo || p.id,
+    titulo: p.titulo || nomeEdificioLimpo || 'Imóvel em ' + (p.cidade || 'Balneário Camboriú'),
+    nomeEdificio: nomeEdificioLimpo,
+    construtora: construtoraLimpa,
+    tipoImovel: p.tipoImovel || 'Apartamento',
+    statusImovel: status,
+    tipo: p.tipo || 'venda',
+    valor: valorNum,
+    metragem: metragemNum,
+    areaTotal: areaTotalNum,
+    dormitorios: dorms,
+    quartos: dorms,
+    banheiros: banheirosNum,
+    vagas: vagasNum,
+    suites: suitesNum,
+    condominio: condNum,
+    iptu: iptuNum,
+    condominioFormatado: condNum ? `R$ ${condNum.toLocaleString('pt-BR')} / mês` : undefined,
+    iptuFormatado: iptuNum ? `R$ ${iptuNum.toLocaleString('pt-BR')} / ano` : undefined,
+    isLancamento,
+    cidade: p.cidade ? p.cidade.trim() : 'Balneário Camboriú',
+    bairro: p.bairro ? p.bairro.trim() : '',
+    endereco: p.endereco ? p.endereco.trim() : (p.localizacao ? p.localizacao.trim() : ''),
+    latitude: lat,
+    longitude: lng,
+    fotos: fotosArr,
+    descricao: p.descricao || '',
+    dataCadastro:
+      p.dataCadastro ||
+      pAny.data_cadastro ||
+      pAny.created_at ||
+      pAny.createdAt ||
+      pAny.timestamp ||
+      undefined,
+    dataPublicacao:
+      p.dataCadastro ||
+      pAny.data_cadastro ||
+      pAny.created_at ||
+      pAny.createdAt ||
+      pAny.timestamp ||
+      undefined,
+    corretorNome: p.corretorNome,
+    corretorEmail: p.corretorEmail,
+  };
 }
 
 export function PortalApp({
@@ -72,7 +198,7 @@ export function PortalApp({
     try {
       setIsLoading(true);
       setLoadError(null);
-      const data = await DbService.getImoveis({ page: 1, limit: 24 });
+      const data = await DbService.getImoveis({ limit: 500 });
       setInternalList(data);
       setPaginationInfo(DbService.getPaginationInfo());
     } catch (err: any) {
@@ -122,128 +248,23 @@ export function PortalApp({
       return true;
     });
 
-    return validRealProperties.map((p): PortalProperty => {
-      const pAny = p as any;
-      const valorNum =
-        typeof p.valorVenda === 'number' && p.valorVenda > 0
-          ? p.valorVenda
-          : (typeof p.valor === 'number' ? p.valor : (p.valor ? Number(p.valor) : 0));
-
-      const metragemNum =
-        typeof p.metragem === 'number' && p.metragem > 0
-          ? p.metragem
-          : (pAny.areaPrivativa ? Number(pAny.areaPrivativa) : undefined);
-
-      const areaTotalNum = p.areaTotal ? Number(p.areaTotal) : undefined;
-
-      const lat =
-        typeof p.latitude === 'number' && !isNaN(p.latitude) && p.latitude !== 0
-          ? p.latitude
-          : (p.latitude && !isNaN(Number(p.latitude)) && Number(p.latitude) !== 0
-              ? Number(p.latitude)
-              : undefined);
-
-      const lng =
-        typeof p.longitude === 'number' && !isNaN(p.longitude) && p.longitude !== 0
-          ? p.longitude
-          : (p.longitude && !isNaN(Number(p.longitude)) && Number(p.longitude) !== 0
-              ? Number(p.longitude)
-              : undefined);
-
-      const isLancamento = p.statusImovel === 'Na planta' || pAny.isLancamento === true;
-
-      // Construtora: somente quando existir e for válida
-      const construtoraLimpa =
-        p.construtora &&
-        p.construtora.trim() !== '' &&
-        !p.construtora.toLowerCase().includes('não informada')
-          ? p.construtora.trim()
-          : undefined;
-
-      // Nome do edifício / empreendimento
-      const nomeEdificioLimpo =
-        p.nomeEdificio && p.nomeEdificio.trim() !== '' ? p.nomeEdificio.trim() : undefined;
-
-      const dorms =
-        typeof p.dormitorios === 'number' && p.dormitorios > 0
-          ? p.dormitorios
-          : (typeof p.quartos === 'number' && p.quartos > 0 ? p.quartos : undefined);
-
-      const vagasNum = typeof p.vagas === 'number' && p.vagas > 0 ? p.vagas : undefined;
-      const banheirosNum = typeof p.banheiros === 'number' && p.banheiros > 0 ? p.banheiros : undefined;
-      const suitesNum =
-        typeof pAny.suites === 'number' && pAny.suites > 0 ? pAny.suites : undefined;
-
-      const condNum =
-        typeof p.condominio === 'number' && p.condominio > 0
-          ? p.condominio
-          : (typeof pAny.condominio === 'number' && pAny.condominio > 0 ? pAny.condominio : undefined);
-
-      const iptuNum =
-        typeof p.iptu === 'number' && p.iptu > 0
-          ? p.iptu
-          : (typeof pAny.iptu === 'number' && pAny.iptu > 0 ? pAny.iptu : undefined);
-
-      // Fotos: extrai array real
-      let fotosArr: string[] = [];
-      if (Array.isArray(p.fotos) && p.fotos.length > 0) {
-        fotosArr = p.fotos;
-      } else if (pAny.imagens) {
-        try {
-          fotosArr = typeof pAny.imagens === 'string' ? JSON.parse(pAny.imagens) : pAny.imagens;
-        } catch {
-          fotosArr = [];
-        }
-      }
-
-      const status = p.statusImovel || 'Sem mobília';
-
-      return {
-        ...p,
-        id: p.id,
-        codigo: p.codigo || p.id,
-        titulo: p.titulo || nomeEdificioLimpo || 'Imóvel em ' + (p.cidade || 'Balneário Camboriú'),
-        nomeEdificio: nomeEdificioLimpo,
-        construtora: construtoraLimpa,
-        tipoImovel: p.tipoImovel || 'Apartamento',
-        statusImovel: status,
-        tipo: p.tipo || 'venda',
-        valor: valorNum,
-        metragem: metragemNum,
-        areaTotal: areaTotalNum,
-        dormitorios: dorms,
-        quartos: dorms,
-        banheiros: banheirosNum,
-        vagas: vagasNum,
-        suites: suitesNum,
-        condominio: condNum,
-        iptu: iptuNum,
-        condominioFormatado: condNum ? `R$ ${condNum.toLocaleString('pt-BR')} / mês` : undefined,
-        iptuFormatado: iptuNum ? `R$ ${iptuNum.toLocaleString('pt-BR')} / ano` : undefined,
-        isLancamento,
-        cidade: p.cidade ? p.cidade.trim() : 'Balneário Camboriú',
-        bairro: p.bairro ? p.bairro.trim() : '',
-        endereco: p.endereco ? p.endereco.trim() : (p.localizacao ? p.localizacao.trim() : ''),
-        latitude: lat,
-        longitude: lng,
-        fotos: fotosArr,
-        descricao: p.descricao || '',
-        dataCadastro: p.dataCadastro,
-        dataPublicacao: p.dataCadastro
-          ? new Date(p.dataCadastro).toLocaleDateString('pt-BR', {
-              day: 'numeric',
-              month: 'long',
-              year: 'numeric',
-            })
-          : undefined,
-        corretorNome: p.corretorNome,
-        corretorEmail: p.corretorEmail,
-      };
-    });
+    return validRealProperties.map(mapImovelToPortalProperty);
   }, [internalList]);
 
   // Navegação: ID do imóvel selecionado para a página de detalhes
-  const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(initialPropertyId);
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(() => {
+    if (initialPropertyId) return initialPropertyId;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const q = params.get('imovel');
+      if (q) return q;
+      const hash = window.location.hash;
+      if (hash.startsWith('#imovel/')) return hash.replace('#imovel/', '');
+    } catch {
+      // ignore
+    }
+    return null;
+  });
   // Rastreia se a visualização foi aberta a partir do clique no mapa
   const [openedFromMap, setOpenedFromMap] = useState<boolean>(false);
   const [lastSelectedPinId, setLastSelectedPinId] = useState<string | null>(null);
@@ -277,8 +298,11 @@ export function PortalApp({
       if (hash.startsWith('#imovel/')) {
         const id = hash.replace('#imovel/', '');
         setSelectedPropertyId(id);
-      } else if (hash === '' || hash === '#portal' || hash === '#' || hash === '#home') {
-        setSelectedPropertyId(null);
+      } else {
+        const params = new URLSearchParams(window.location.search);
+        if (!params.get('imovel')) {
+          setSelectedPropertyId(null);
+        }
       }
     };
 
@@ -287,25 +311,71 @@ export function PortalApp({
     if (window.location.hash.startsWith('#imovel/')) {
       const id = window.location.hash.replace('#imovel/', '');
       setSelectedPropertyId(id);
+    } else {
+      const params = new URLSearchParams(window.location.search);
+      const q = params.get('imovel');
+      if (q) setSelectedPropertyId(q);
     }
 
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
   const handleSelectProperty = (id: string, fromMap: boolean = false) => {
-    setSelectedPropertyId(id);
-    setOpenedFromMap(fromMap);
-    if (fromMap) {
-      setLastSelectedPinId(id);
+    const cleanId = id.replace('imovel-', '');
+
+    // Verifica se está no modo celular / mobile (< 1024px ou dispositivo touch/smartphone)
+    const isMobileMode =
+      typeof window !== 'undefined' &&
+      (window.innerWidth < 1024 ||
+        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+        ('ontouchstart' in window && window.innerWidth < 1024));
+
+    if (isMobileMode) {
+      // No modo celular, abre diretamente na mesma tela sem abrir nova aba
+      setSelectedPropertyId(id);
+      setOpenedFromMap(fromMap);
+      if (fromMap) {
+        setLastSelectedPinId(id);
+      }
+      window.location.hash = `#imovel/${cleanId}`;
+      window.scrollTo(0, 0);
+      return;
     }
-    window.location.hash = `#imovel/${id}`;
+
+    // No desktop, abre em nova aba
+    const targetUrl = `${window.location.origin}${window.location.pathname}?imovel=${encodeURIComponent(cleanId)}#imovel/${encodeURIComponent(cleanId)}`;
+    try {
+      const newTab = window.open(targetUrl, '_blank');
+      // Se popup for bloqueado pelo ambiente (ex.: iFrame), aplica fallback na mesma aba
+      if (!newTab || newTab.closed || typeof newTab.closed === 'undefined') {
+        setSelectedPropertyId(id);
+        setOpenedFromMap(fromMap);
+        if (fromMap) {
+          setLastSelectedPinId(id);
+        }
+        window.location.hash = `#imovel/${cleanId}`;
+      }
+    } catch {
+      setSelectedPropertyId(id);
+      setOpenedFromMap(fromMap);
+      if (fromMap) {
+        setLastSelectedPinId(id);
+      }
+      window.location.hash = `#imovel/${cleanId}`;
+    }
   };
 
   const handleCloseDetail = () => {
     setSelectedPropertyId(null);
-    if (window.history.length > 1 && window.location.hash.startsWith('#imovel/')) {
-      window.history.back();
-    } else {
+    try {
+      const url = new URL(window.location.href);
+      if (url.searchParams.has('imovel')) {
+        url.searchParams.delete('imovel');
+        window.history.replaceState({}, '', url.pathname + (url.search ? url.search : '') + '#busca');
+      } else {
+        window.location.hash = '#busca';
+      }
+    } catch {
       window.location.hash = '#busca';
     }
   };
@@ -315,11 +385,71 @@ export function PortalApp({
     window.location.hash = '#home';
   };
 
+  // Imóvel individual carregado sob demanda (GET /api/imoveis/:id) ao clicar num marcador do mapa fora da lista de cards
+  const [fetchedDetailProperty, setFetchedDetailProperty] = useState<PortalProperty | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState<boolean>(false);
+
+  const findPropertyMatch = useCallback((list: PortalProperty[], targetId: string | null): PortalProperty | null => {
+    if (!targetId || !Array.isArray(list) || list.length === 0) return null;
+    const clean = targetId.trim().toLowerCase();
+    const cleanNoPrefix = clean.replace(/^imovel-/, '').replace(/^prop-/, '');
+    return list.find((p) => {
+      const pId = (p.id || '').toLowerCase();
+      const pCod = (p.codigo || '').toLowerCase();
+      const pIdClean = pId.replace(/^imovel-/, '').replace(/^prop-/, '');
+      return (
+        pId === clean ||
+        pId === cleanNoPrefix ||
+        pIdClean === cleanNoPrefix ||
+        pCod === clean ||
+        pCod === cleanNoPrefix
+      );
+    }) || null;
+  }, []);
+
+  useEffect(() => {
+    if (!selectedPropertyId) {
+      setFetchedDetailProperty(null);
+      setLoadingDetail(false);
+      return;
+    }
+
+    const fromList = findPropertyMatch(properties, selectedPropertyId);
+    if (fromList) {
+      setFetchedDetailProperty(fromList);
+      return;
+    }
+
+    // Se o imóvel clicado não estiver carregado na página atual de 24 cards, busca dados completos via GET /api/imoveis/:id
+    let isMounted = true;
+    setLoadingDetail(true);
+
+    DbService.getImovelById(selectedPropertyId)
+      .then((fullImovel) => {
+        if (!isMounted) return;
+        if (fullImovel) {
+          const mapped = mapImovelToPortalProperty(fullImovel);
+          setFetchedDetailProperty(mapped);
+        } else {
+          setFetchedDetailProperty(null);
+        }
+      })
+      .catch((err) => {
+        console.warn('[PortalApp] Aviso ao carregar detalhes completos do imóvel:', err);
+      })
+      .finally(() => {
+        if (isMounted) {
+          setLoadingDetail(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedPropertyId, properties, findPropertyMatch]);
+
   // Encontra o imóvel ativo para a página de detalhes
-  const activeProperty = useMemo(() => {
-    if (!selectedPropertyId) return null;
-    return properties.find((p) => p.id === selectedPropertyId) || null;
-  }, [selectedPropertyId, properties]);
+  const activeProperty = fetchedDetailProperty || findPropertyMatch(properties, selectedPropertyId) || null;
 
   // Se houver erro de carregamento e nenhum imóvel em cache
   if (loadError && properties.length === 0 && !isLoading) {
@@ -357,6 +487,14 @@ export function PortalApp({
 
   return (
     <>
+      {loadingDetail && !activeProperty && (
+        <div className="fixed inset-0 z-50 bg-white flex flex-col items-center justify-center p-6 text-center">
+          <Loader2 size={32} className="animate-spin text-[#003366] mb-3" />
+          <h3 className="text-base font-bold text-slate-800">Carregando detalhes do imóvel...</h3>
+          <p className="text-xs text-slate-400 mt-1">Buscando dados completos no ImobiShare</p>
+        </div>
+      )}
+
       <div className={activeProperty ? 'hidden' : 'contents'}>
         <PortalSearchPage
           properties={properties}

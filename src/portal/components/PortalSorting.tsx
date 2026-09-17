@@ -3,9 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import { ChevronDown, Check } from 'lucide-react';
 import { PortalSortOption } from '../types';
+import { PortalFilterDropdown } from './PortalFilterDropdown';
 
 interface PortalSortingProps {
   sortBy: PortalSortOption;
@@ -23,35 +24,33 @@ const SORT_LABELS: Record<PortalSortOption, string> = {
 
 export function PortalSorting({ sortBy, onChangeSort }: PortalSortingProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   return (
-    <div className="relative inline-block" ref={containerRef}>
-      <button
-        type="button"
-        id="portal-sort-dropdown-trigger"
-        onClick={() => setIsOpen((prev) => !prev)}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200/90 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 shadow-2xs transition-all cursor-pointer focus:outline-hidden"
+    <div className="relative inline-flex items-center gap-2">
+      <span className="hidden lg:inline text-[14px] font-medium text-slate-500 whitespace-nowrap">
+        Ordenar por:
+      </span>
+      <PortalFilterDropdown
+        isOpen={isOpen}
+        onClose={() => setIsOpen(false)}
+        align="right"
+        className="w-52"
+        trigger={({ isOpen: open }) => (
+          <button
+            type="button"
+            id="portal-sort-dropdown-trigger"
+            onClick={() => setIsOpen((prev) => !prev)}
+            className="inline-flex items-center gap-2 h-9 lg:h-[44px] px-3 lg:px-4 rounded-xl border border-slate-200/90 bg-white hover:bg-slate-50 text-xs lg:text-[14px] font-semibold text-slate-700 shadow-2xs transition-all cursor-pointer focus:outline-hidden"
+          >
+            <span>{SORT_LABELS[sortBy]}</span>
+            <ChevronDown
+              size={16}
+              className={`text-slate-500 transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
+            />
+          </button>
+        )}
       >
-        <span>{SORT_LABELS[sortBy]}</span>
-        <ChevronDown size={14} className={`text-slate-500 transition-transform duration-150 ${isOpen ? 'rotate-180' : ''}`} />
-      </button>
-
-      {isOpen && (
-        <div 
-          id="portal-sort-dropdown-menu"
-          className="absolute right-0 mt-1.5 w-48 bg-white rounded-xl shadow-xl border border-slate-100 py-1.5 z-40 animate-in fade-in zoom-in-95 duration-100"
-        >
+        <div id="portal-sort-dropdown-menu">
           {(Object.keys(SORT_LABELS) as PortalSortOption[]).map((option) => {
             const isSelected = sortBy === option;
             return (
@@ -62,17 +61,17 @@ export function PortalSorting({ sortBy, onChangeSort }: PortalSortingProps) {
                   onChangeSort(option);
                   setIsOpen(false);
                 }}
-                className={`w-full text-left px-3.5 py-2 text-xs flex items-center justify-between hover:bg-slate-50 cursor-pointer transition-colors ${
-                  isSelected ? 'font-bold text-[#003366] bg-blue-50/50' : 'text-slate-700'
+                className={`w-full text-left px-4 py-2.5 text-xs lg:text-[14px] flex items-center justify-between hover:bg-slate-50 cursor-pointer transition-colors ${
+                  isSelected ? 'font-semibold text-[#003366] bg-blue-50/50' : 'text-slate-700 font-normal lg:font-medium'
                 }`}
               >
                 <span>{SORT_LABELS[option]}</span>
-                {isSelected && <Check size={14} className="text-[#003366]" />}
+                {isSelected && <Check size={16} className="text-[#003366]" />}
               </button>
             );
           })}
         </div>
-      )}
+      </PortalFilterDropdown>
     </div>
   );
 }

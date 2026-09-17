@@ -8,6 +8,33 @@ import { MapPin, Home, DollarSign, Search, Check, X, User, ChevronDown } from 'l
 import { PortalFilterState, PortalProperty } from '../types';
 import { formatCurrencyBRL } from '../data/mockPortalData';
 import { LOGO_IMAGE } from '../../assets/logo';
+import { DbService } from '../../services/db';
+
+const DEFAULT_REGIONAL_CITIES = [
+  'Balneário Camboriú',
+  'Itajaí',
+  'Camboriú',
+  'Itapema',
+  'Praia Brava',
+  'Porto Belo',
+  'Bombinhas',
+  'Navegantes',
+  'Florianópolis'
+];
+
+const DEFAULT_BC_BAIRROS = [
+  'Centro',
+  'Pioneiros',
+  'Barra Sul',
+  'Barra Norte',
+  'Nações',
+  'Vila Real',
+  'Praia dos Amores',
+  'Praia do Estaleiro',
+  'Barra',
+  'Pontal Norte',
+  'Tabuleiro'
+];
 
 export interface PortalMobileInitialSearchProps {
   properties: PortalProperty[];
@@ -63,37 +90,73 @@ export function PortalMobileInitialSearch({
       document.removeEventListener('touchstart', handleClickOutside);
     };
   }, []);
+  const [dbCities, setDbCities] = useState<{ cidade: string; count: number }[]>([]);
+
+  // Carrega contagens reais e completas de todas as cidades do banco de dados
+  useEffect(() => {
+    let isMounted = true;
+    DbService.getCidades().then((cities) => {
+      if (isMounted && Array.isArray(cities) && cities.length > 0) {
+        setDbCities(cities);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   // Lista de cidades ordenadas por quantidade de imóveis (a cidade com mais imóveis primeiro)
   const availableCidades = useMemo(() => {
     const counts: Record<string, number> = {};
-    properties.forEach((p) => {
-      if (p.cidade && p.cidade.trim()) {
-        const c = p.cidade.trim();
-        counts[c] = (counts[c] || 0) + 1;
-      }
-    });
+
+    // 1. Prioriza dados reais do banco de dados agregados de todos os imóveis
+    if (dbCities.length > 0) {
+      dbCities.forEach((c) => {
+        if (c.cidade && c.cidade.trim()) {
+          counts[c.cidade.trim()] = c.count;
+        }
+      });
+    } else {
+      // Fallback para as propriedades na memória
+      properties.forEach((p) => {
+        if (p.cidade && p.cidade.trim()) {
+          const c = p.cidade.trim();
+          counts[c] = (counts[c] || 0) + 1;
+        }
+      });
+    }
+
     return Object.entries(counts)
-      .sort((a, b) => b[1] - a[1])
+      .filter(([_, count]) => count > 0)
+      .sort((a, b) => {
+        if (b[1] !== a[1]) return b[1] - a[1];
+        return a[0].localeCompare(b[0], 'pt-BR');
+      })
       .map(([cidade, count]) => ({ cidade, count }));
-  }, [properties]);
+  }, [dbCities, properties]);
+
+  const totalPropertiesCount = useMemo(() => {
+    return availableCidades.reduce((acc, c) => acc + c.count, 0);
+  }, [availableCidades]);
 
   const currentCity = filters.cidade;
 
-  // Bairros disponíveis para a cidade selecionada
+  // Bairros disponíveis para a cidade selecionada (estritamente com dados reais)
   const availableBairros = useMemo(() => {
     const set = new Set<string>();
+
     properties.forEach((p) => {
       if (
         !currentCity ||
         currentCity === 'Todas' ||
-        p.cidade.toLowerCase() === currentCity.toLowerCase()
+        (p.cidade && p.cidade.toLowerCase() === currentCity.toLowerCase())
       ) {
         if (p.bairro && p.bairro.trim()) {
           set.add(p.bairro.trim());
         }
       }
     });
-    return Array.from(set).sort();
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'pt-BR'));
   }, [properties, currentCity]);
 
   // Opções de preço predefinidas para mobile
@@ -240,9 +303,16 @@ export function PortalMobileInitialSearch({
                       }`}
                     >
                       <span>Todas as cidades</span>
-                      {(!filters.cidade || filters.cidade === 'Todas') && (
-                        <Check size={14} className="text-[#003366]" />
-                      )}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {totalPropertiesCount > 0 && (
+                          <span className="text-[11px] text-slate-400 font-normal">
+                            {totalPropertiesCount}
+                          </span>
+                        )}
+                        {(!filters.cidade || filters.cidade === 'Todas') && (
+                          <Check size={14} className="text-[#003366]" />
+                        )}
+                      </div>
                     </button>
 
                     {availableCidades.map(({ cidade, count }) => {

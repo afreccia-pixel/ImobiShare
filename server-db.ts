@@ -46,6 +46,25 @@ export interface GetImoveisOptions {
   page?: number;
   limit?: number;
   paginate?: boolean;
+  cidade?: string;
+  bairro?: string;
+  finalidade?: string;
+  tipo?: string;
+  categoria?: string;
+  tipoImovel?: string;
+  statusImovel?: string;
+  busca?: string;
+  precoMin?: number;
+  precoMax?: number;
+  quartos?: number;
+  quartosMin?: number;
+  banheiros?: number;
+  banheirosMin?: number;
+  vagas?: number;
+  vagasMin?: number;
+  metragemMin?: number;
+  metragemMax?: number;
+  construtora?: string;
 }
 
 export interface PaginatedResult<T> {
@@ -55,6 +74,44 @@ export interface PaginatedResult<T> {
   limit: number;
   totalPages: number;
   hasMore: boolean;
+}
+
+export interface MapFilterParams {
+  cidade?: string;
+  finalidade?: string;
+  categoria?: string;
+  tipoImovel?: string;
+  statusImovel?: string;
+  busca?: string;
+  precoMin?: number;
+  precoMax?: number;
+  quartosMin?: number;
+  banheirosMin?: number;
+  vagasMin?: number;
+  metragemMin?: number;
+  metragemMax?: number;
+  bairro?: string;
+  construtora?: string;
+}
+
+export interface MapMarkerResult {
+  id: string;
+  latitude: number;
+  longitude: number;
+  valor_venda?: number;
+  valor_locacao?: number;
+  tipo?: string;
+  modalidade?: string;
+  valor?: number;
+  titulo?: string;
+  nomeEdificio?: string;
+  bairro?: string;
+  cidade?: string;
+  dormitorios?: number;
+  vagas?: number;
+  metragem?: number;
+  corretorEmail?: string;
+  fotos?: string[];
 }
 
 export class ServerDb {
@@ -517,6 +574,335 @@ export class ServerDb {
 
   // --- IMOVEIS ---
 
+  /**
+   * Retorna os marcadores ultra-leves para o mapa de todos os imóveis disponíveis.
+   * Não retorna imagens, descrição, dados do proprietário, corretor ou campos pesados.
+   * Aplica exatamente os mesmos filtros selecionados pelo usuário.
+   */
+  static async getImoveisMapa(filters: MapFilterParams = {}): Promise<MapMarkerResult[]> {
+    logMemory('ServerDb.getImoveisMapa BEFORE');
+
+    if (this.isPostgres && this.pool) {
+      let query = `
+        SELECT 
+          i.id,
+          i.latitude,
+          i.longitude,
+          i.valor_venda,
+          i.valor_locacao,
+          i.tipo,
+          i.modalidade,
+          i.titulo,
+          i.status_imovel,
+          i.bairro,
+          i.cidade,
+          i.nome_edificio,
+          i.quartos,
+          i.vagas,
+          i.area_privativa,
+          i.corretor_email
+        FROM imoveis i
+        LEFT JOIN corretores c ON LOWER(i.corretor_email) = LOWER(c.email)
+        WHERE (
+          (i.latitude IS NOT NULL AND i.longitude IS NOT NULL AND i.latitude != 0 AND i.longitude != 0)
+          OR (i.cidade IS NOT NULL AND i.cidade != '')
+        )
+          AND (i.compartilhar IS NULL OR i.compartilhar = 'SIM' OR i.compartilhar = 'true')
+          AND (i.visibilidade IS NULL OR i.visibilidade = 'todos')
+          AND (c.parceiros_emails IS NULL OR c.parceiros_emails = '' OR c.parceiros_emails = '[]')
+          AND (c.restringir_parceiros IS NOT TRUE)
+          AND (i.website IS NULL OR i.website = 'SIM' OR i.website = 'true')
+          AND (i.status_imovel IS NULL OR i.status_imovel != 'Vendido')
+      `;
+      const params: any[] = [];
+
+      // Filtro de cidade
+      if (filters.cidade && filters.cidade !== 'Todas') {
+        params.push(filters.cidade.trim());
+        query += ` AND LOWER(i.cidade) = LOWER($${params.length}) `;
+      }
+
+      // Filtro de finalidade
+      if (filters.finalidade === 'Comprar') {
+        query += ` AND (LOWER(i.tipo) IN ('venda', 'ambos') OR LOWER(i.modalidade) IN ('venda', 'ambos') OR (i.valor_venda IS NOT NULL AND i.valor_venda > 0)) `;
+      } else if (filters.finalidade === 'Alugar') {
+        query += ` AND (LOWER(i.tipo) IN ('locação', 'locacao', 'ambos') OR LOWER(i.modalidade) IN ('locação', 'locacao', 'ambos') OR (i.valor_locacao IS NOT NULL AND i.valor_locacao > 0)) `;
+      }
+
+      // Filtro de categoria
+      if (filters.categoria === 'Lançamentos') {
+        query += ` AND (i.status_imovel = 'Na planta') `;
+      } else if (filters.categoria === 'Prontos') {
+        query += ` AND (i.status_imovel IS NULL OR i.status_imovel != 'Na planta') `;
+      }
+
+      // Filtro de Tipo de Imóvel
+      if (filters.tipoImovel && filters.tipoImovel.toLowerCase() !== 'todos') {
+        const t = filters.tipoImovel.toLowerCase().trim();
+        if (t === 'casa') {
+          query += ` AND (LOWER(i.tipo) LIKE '%casa%' OR LOWER(i.tipo) LIKE '%sobrado%' OR LOWER(i.modalidade) LIKE '%casa%') `;
+        } else {
+          params.push(`%${t}%`);
+          query += ` AND (LOWER(i.tipo) LIKE $${params.length} OR LOWER(i.modalidade) LIKE $${params.length}) `;
+        }
+      }
+
+      // Filtro de Status do Imóvel
+      if (filters.statusImovel && filters.statusImovel.toLowerCase() !== 'todos') {
+        params.push(filters.statusImovel.trim());
+        query += ` AND LOWER(i.status_imovel) = LOWER($${params.length}) `;
+      }
+
+      // Busca livre
+      if (filters.busca && filters.busca.trim()) {
+        params.push(`%${filters.busca.trim().toLowerCase()}%`);
+        const idx = params.length;
+        query += ` AND (
+          LOWER(i.titulo) LIKE $${idx}
+          OR LOWER(i.bairro) LIKE $${idx}
+          OR LOWER(i.cidade) LIKE $${idx}
+          OR LOWER(i.codigo) LIKE $${idx}
+          OR LOWER(i.construtora) LIKE $${idx}
+          OR LOWER(i.nome_edificio) LIKE $${idx}
+          OR LOWER(COALESCE(i.endereco, '')) LIKE $${idx}
+          OR LOWER(i.descricao) LIKE $${idx}
+        ) `;
+      }
+
+      // Preço
+      if (filters.precoMin && filters.precoMin > 0) {
+        params.push(filters.precoMin);
+        query += ` AND COALESCE(i.valor_venda, 0) >= $${params.length} `;
+      }
+      if (filters.precoMax && filters.precoMax > 0 && filters.precoMax < 15000000) {
+        params.push(filters.precoMax);
+        query += ` AND COALESCE(i.valor_venda, 0) <= $${params.length} `;
+      }
+
+      // Quartos
+      if (filters.quartosMin && filters.quartosMin > 0) {
+        params.push(filters.quartosMin);
+        query += ` AND COALESCE(i.quartos, 0) >= $${params.length} `;
+      }
+
+      // Banheiros
+      if (filters.banheirosMin && filters.banheirosMin > 0) {
+        params.push(filters.banheirosMin);
+        query += ` AND COALESCE(i.bwc, 0) >= $${params.length} `;
+      }
+
+      // Vagas
+      if (filters.vagasMin && filters.vagasMin > 0) {
+        params.push(filters.vagasMin);
+        query += ` AND COALESCE(i.vagas, 0) >= $${params.length} `;
+      }
+
+      // Metragem
+      if (filters.metragemMin && filters.metragemMin > 0) {
+        params.push(filters.metragemMin);
+        query += ` AND COALESCE(i.area_privativa, 0) >= $${params.length} `;
+      }
+      if (filters.metragemMax && filters.metragemMax > 0) {
+        params.push(filters.metragemMax);
+        query += ` AND COALESCE(i.area_privativa, 0) <= $${params.length} `;
+      }
+
+      // Bairro
+      if (filters.bairro && filters.bairro !== 'Todos os bairros') {
+        params.push(`%${filters.bairro.trim().toLowerCase()}%`);
+        query += ` AND LOWER(i.bairro) LIKE $${params.length} `;
+      }
+
+      // Construtora
+      if (filters.construtora && filters.construtora !== 'Todas as construtoras') {
+        params.push(`%${filters.construtora.trim().toLowerCase()}%`);
+        query += ` AND LOWER(i.construtora) LIKE $${params.length} `;
+      }
+
+      query += ` ORDER BY i.data_cadastro DESC `;
+
+      const res = await this.pool.query(query, params);
+      logMemory('ServerDb.getImoveisMapa AFTER');
+
+      return res.rows.map(r => ({
+        id: r.id,
+        latitude: r.latitude ? parseFloat(r.latitude) : 0,
+        longitude: r.longitude ? parseFloat(r.longitude) : 0,
+        valor_venda: r.valor_venda ? parseFloat(r.valor_venda) : undefined,
+        valor_locacao: r.valor_locacao ? parseFloat(r.valor_locacao) : undefined,
+        tipo: r.modalidade || r.tipo,
+        modalidade: r.modalidade || r.tipo,
+        valor: r.valor_venda ? parseFloat(r.valor_venda) : (r.valor_locacao ? parseFloat(r.valor_locacao) : 0),
+        titulo: r.titulo,
+        nomeEdificio: r.nome_edificio,
+        bairro: r.bairro,
+        cidade: r.cidade,
+        statusImovel: r.status_imovel,
+        tipoImovel: r.tipo_imovel || r.tipo,
+        quartos: r.quartos ? parseInt(r.quartos, 10) : undefined,
+        dormitorios: r.quartos ? parseInt(r.quartos, 10) : undefined,
+        vagas: r.vagas ? parseInt(r.vagas, 10) : undefined,
+        metragem: r.area_privativa ? parseFloat(r.area_privativa) : undefined,
+        corretorEmail: r.corretor_email,
+      }));
+    } else {
+      // Fallback JSON DB
+      const db = await this.readJson();
+      const list = db.properties.filter(p => {
+        const lat = typeof p.latitude === 'number' ? p.latitude : (p.latitude ? parseFloat(p.latitude as any) : 0);
+        const lng = typeof p.longitude === 'number' ? p.longitude : (p.longitude ? parseFloat(p.longitude as any) : 0);
+        if (!lat || !lng || isNaN(lat) || isNaN(lng)) return false;
+
+        const isShared = p.compartilhar === 'SIM' || p.compartilhar === true || p.compartilhar === undefined || (p.compartilhar as any) === 'true';
+        if (!isShared) return false;
+        if ((p as any).visibilidade === 'meus') return false;
+        if ((p as any).statusImovel === 'Vendido') return false;
+        if (p.website === 'NAO' || (p as any).website === false) return false;
+
+        // Filtro de cidade
+        if (filters.cidade && filters.cidade !== 'Todas') {
+          if ((p.cidade || '').toLowerCase().trim() !== filters.cidade.toLowerCase().trim()) return false;
+        }
+
+        // Filtro de finalidade
+        if (filters.finalidade === 'Comprar') {
+          if (p.tipo !== 'venda' && p.tipo !== 'ambos' && (!p.valorVenda || p.valorVenda <= 0)) return false;
+        } else if (filters.finalidade === 'Alugar') {
+          if (p.tipo !== 'locação' && p.tipo !== 'ambos' && (!p.valorLocacao || p.valorLocacao <= 0)) return false;
+        }
+
+        // Categoria
+        if (filters.categoria === 'Lançamentos') {
+          if (p.statusImovel !== 'Na planta' && !(p as any).isLancamento) return false;
+        } else if (filters.categoria === 'Prontos') {
+          if (p.statusImovel === 'Na planta' || (p as any).isLancamento) return false;
+        }
+
+        // Tipo de Imóvel
+        if (filters.tipoImovel && filters.tipoImovel.toLowerCase() !== 'todos') {
+          const t = filters.tipoImovel.toLowerCase();
+          const itemTipo = (p.tipoImovel || '').toLowerCase();
+          if (t === 'casa' && (itemTipo.includes('casa') || itemTipo.includes('sobrado'))) {
+            // ok
+          } else if (!itemTipo.includes(t)) {
+            return false;
+          }
+        }
+
+        // Status
+        if (filters.statusImovel && filters.statusImovel.toLowerCase() !== 'todos') {
+          if ((p.statusImovel || '').toLowerCase() !== filters.statusImovel.toLowerCase()) return false;
+        }
+
+        // Busca livre
+        if (filters.busca && filters.busca.trim()) {
+          const q = filters.busca.toLowerCase().trim();
+          const matches =
+            (p.titulo || '').toLowerCase().includes(q) ||
+            (p.bairro || '').toLowerCase().includes(q) ||
+            (p.cidade || '').toLowerCase().includes(q) ||
+            (p.codigo || '').toLowerCase().includes(q) ||
+            (p.construtora || '').toLowerCase().includes(q) ||
+            (p.nomeEdificio || '').toLowerCase().includes(q) ||
+            (p.endereco || '').toLowerCase().includes(q) ||
+            (p.descricao || '').toLowerCase().includes(q);
+          if (!matches) return false;
+        }
+
+        const valorVal = typeof p.valorVenda === 'number' ? p.valorVenda : (p.valor || 0);
+        if (filters.precoMin && filters.precoMin > 0 && valorVal < filters.precoMin) return false;
+        if (filters.precoMax && filters.precoMax > 0 && filters.precoMax < 15000000 && valorVal > filters.precoMax) return false;
+
+        const quartosVal = p.dormitorios || p.quartos || 0;
+        if (filters.quartosMin && filters.quartosMin > 0 && quartosVal < filters.quartosMin) return false;
+
+        if (filters.banheirosMin && filters.banheirosMin > 0 && (p.banheiros || 0) < filters.banheirosMin) return false;
+        if (filters.vagasMin && filters.vagasMin > 0 && (p.vagas || 0) < filters.vagasMin) return false;
+
+        const m = p.metragem || (p as any).areaPrivativa || 0;
+        if (filters.metragemMin && filters.metragemMin > 0 && m < filters.metragemMin) return false;
+        if (filters.metragemMax && filters.metragemMax > 0 && m > filters.metragemMax) return false;
+
+        if (filters.bairro && filters.bairro !== 'Todos os bairros') {
+          if (!p.bairro || !p.bairro.toLowerCase().includes(filters.bairro.toLowerCase().trim())) return false;
+        }
+
+        if (filters.construtora && filters.construtora !== 'Todas as construtoras') {
+          if (!p.construtora || !p.construtora.toLowerCase().includes(filters.construtora.toLowerCase().trim())) return false;
+        }
+
+        return true;
+      });
+
+      logMemory('ServerDb.getImoveisMapa (JSON) AFTER');
+
+      return list.map(p => ({
+        id: p.id,
+        latitude: typeof p.latitude === 'number' ? p.latitude : parseFloat(p.latitude as any),
+        longitude: typeof p.longitude === 'number' ? p.longitude : parseFloat(p.longitude as any),
+        valor_venda: p.valorVenda || (p.tipo === 'venda' ? p.valor : undefined),
+        valor_locacao: p.valorLocacao || (p.tipo === 'locação' ? p.valor : undefined),
+        tipo: p.tipo,
+        modalidade: p.tipo,
+        valor: typeof p.valorVenda === 'number' ? p.valorVenda : (p.valor || 0),
+        titulo: p.titulo,
+        nomeEdificio: p.nomeEdificio,
+        bairro: p.bairro,
+        cidade: p.cidade,
+        dormitorios: p.dormitorios,
+        vagas: p.vagas,
+        metragem: p.metragem,
+        corretorEmail: p.corretorEmail,
+      }));
+    }
+  }
+
+  /**
+   * Retorna todas as cidades distintas e contagem real de imóveis disponíveis em cada uma.
+   */
+  static async getCidades(): Promise<{ cidade: string; count: number }[]> {
+    logMemory('ServerDb.getCidades BEFORE');
+    if (this.isPostgres && this.pool) {
+      const res = await this.pool.query(`
+        SELECT 
+          TRIM(i.cidade) as cidade, 
+          COUNT(*)::int as count 
+        FROM imoveis i
+        LEFT JOIN corretores c ON LOWER(i.corretor_email) = LOWER(c.email)
+        WHERE (i.website IS NULL OR i.website = 'SIM' OR i.website = 'true') 
+          AND (i.status_imovel IS NULL OR i.status_imovel != 'Vendido')
+          AND (i.compartilhar IS NULL OR i.compartilhar = 'SIM' OR i.compartilhar = 'true')
+          AND (i.visibilidade IS NULL OR i.visibilidade = 'todos')
+          AND (c.parceiros_emails IS NULL OR c.parceiros_emails = '' OR c.parceiros_emails = '[]')
+          AND (c.restringir_parceiros IS NOT TRUE)
+          AND i.cidade IS NOT NULL 
+          AND TRIM(i.cidade) != ''
+        GROUP BY TRIM(i.cidade) 
+        ORDER BY count DESC, TRIM(i.cidade) ASC
+      `);
+      logMemory('ServerDb.getCidades AFTER');
+      return res.rows;
+    } else {
+      const db = await this.readJson();
+      const counts: Record<string, number> = {};
+      db.properties.forEach(p => {
+        const isShared = p.compartilhar === 'SIM' || p.compartilhar === true || p.compartilhar === undefined || (p.compartilhar as any) === 'true';
+        if (!isShared) return;
+        if ((p as any).visibilidade === 'meus') return;
+        if ((p as any).statusImovel === 'Vendido') return;
+        if (p.website === 'NAO' || (p as any).website === false) return;
+        if (p.cidade && p.cidade.trim()) {
+          const c = p.cidade.trim();
+          counts[c] = (counts[c] || 0) + 1;
+        }
+      });
+      logMemory('ServerDb.getCidades (JSON) AFTER');
+      return Object.entries(counts)
+        .sort((a, b) => b[1] - a[1])
+        .map(([cidade, count]) => ({ cidade, count }));
+    }
+  }
+
   static async getImoveis(
     optionsOrUserEmail?: string | GetImoveisOptions,
     maxFotosLegacy = 1
@@ -526,18 +912,54 @@ export class ServerDb {
     let page = 1;
     let limit = 24;
     let paginate = false;
+    let filterCidade = '';
+    let filterBairro = '';
+    let filterFinalidade = '';
+    let filterCategoria = '';
+    let filterTipoImovel = '';
+    let filterStatusImovel = '';
+    let filterBusca = '';
+    let filterPrecoMin = 0;
+    let filterPrecoMax = 0;
+    let filterQuartos = 0;
+    let filterBanheiros = 0;
+    let filterVagas = 0;
+    let filterMetragemMin = 0;
+    let filterMetragemMax = 0;
+    let filterConstrutora = '';
 
     if (typeof optionsOrUserEmail === 'string') {
       cleanUserEmail = optionsOrUserEmail.toLowerCase().trim();
     } else if (optionsOrUserEmail && typeof optionsOrUserEmail === 'object') {
       cleanUserEmail = (optionsOrUserEmail.userEmail || '').toLowerCase().trim();
+      if (optionsOrUserEmail.cidade && optionsOrUserEmail.cidade.trim() && optionsOrUserEmail.cidade !== 'Todas') {
+        filterCidade = optionsOrUserEmail.cidade.trim();
+      }
       if (optionsOrUserEmail.page && optionsOrUserEmail.page > 0) {
         page = optionsOrUserEmail.page;
       }
       if (optionsOrUserEmail.limit && optionsOrUserEmail.limit > 0) {
-        limit = Math.min(optionsOrUserEmail.limit, 100);
+        limit = Math.min(optionsOrUserEmail.limit, 1000);
       }
-      paginate = Boolean(optionsOrUserEmail.paginate || optionsOrUserEmail.page);
+      paginate = optionsOrUserEmail.paginate !== undefined ? Boolean(optionsOrUserEmail.paginate) : Boolean(optionsOrUserEmail.page && optionsOrUserEmail.page > 1);
+      if (optionsOrUserEmail.bairro && optionsOrUserEmail.bairro !== 'Todos os bairros') {
+        filterBairro = optionsOrUserEmail.bairro.trim();
+      }
+      if (optionsOrUserEmail.finalidade) filterFinalidade = optionsOrUserEmail.finalidade;
+      if (optionsOrUserEmail.categoria) filterCategoria = optionsOrUserEmail.categoria;
+      if (optionsOrUserEmail.tipoImovel) filterTipoImovel = optionsOrUserEmail.tipoImovel;
+      if (optionsOrUserEmail.statusImovel) filterStatusImovel = optionsOrUserEmail.statusImovel;
+      if (optionsOrUserEmail.busca) filterBusca = optionsOrUserEmail.busca.trim();
+      if (optionsOrUserEmail.precoMin) filterPrecoMin = optionsOrUserEmail.precoMin;
+      if (optionsOrUserEmail.precoMax) filterPrecoMax = optionsOrUserEmail.precoMax;
+      if (optionsOrUserEmail.quartos || optionsOrUserEmail.quartosMin) filterQuartos = optionsOrUserEmail.quartos || optionsOrUserEmail.quartosMin || 0;
+      if (optionsOrUserEmail.banheiros || optionsOrUserEmail.banheirosMin) filterBanheiros = optionsOrUserEmail.banheiros || optionsOrUserEmail.banheirosMin || 0;
+      if (optionsOrUserEmail.vagas || optionsOrUserEmail.vagasMin) filterVagas = optionsOrUserEmail.vagas || optionsOrUserEmail.vagasMin || 0;
+      if (optionsOrUserEmail.metragemMin) filterMetragemMin = optionsOrUserEmail.metragemMin;
+      if (optionsOrUserEmail.metragemMax) filterMetragemMax = optionsOrUserEmail.metragemMax;
+      if (optionsOrUserEmail.construtora && optionsOrUserEmail.construtora !== 'Todas as construtoras') {
+        filterConstrutora = optionsOrUserEmail.construtora.trim();
+      }
     }
 
     const offset = (page - 1) * limit;
@@ -629,6 +1051,95 @@ export class ServerDb {
         `;
       }
 
+      if (filterCidade) {
+        params.push(filterCidade.toLowerCase().trim());
+        query += ` AND LOWER(TRIM(i.cidade)) = $${params.length} `;
+      }
+
+      if (filterFinalidade === 'Comprar') {
+        query += ` AND (LOWER(i.tipo) IN ('venda', 'ambos') OR LOWER(i.modalidade) IN ('venda', 'ambos') OR (i.valor_venda IS NOT NULL AND i.valor_venda > 0)) `;
+      } else if (filterFinalidade === 'Alugar') {
+        query += ` AND (LOWER(i.tipo) IN ('locação', 'locacao', 'ambos') OR LOWER(i.modalidade) IN ('locação', 'locacao', 'ambos') OR (i.valor_locacao IS NOT NULL AND i.valor_locacao > 0)) `;
+      }
+
+      if (filterCategoria === 'Lançamentos') {
+        query += ` AND (i.status_imovel = 'Na planta') `;
+      } else if (filterCategoria === 'Prontos') {
+        query += ` AND (i.status_imovel IS NULL OR i.status_imovel != 'Na planta') `;
+      }
+
+      if (filterTipoImovel && filterTipoImovel.toLowerCase() !== 'todos') {
+        const t = filterTipoImovel.toLowerCase().trim();
+        if (t === 'casa') {
+          query += ` AND (LOWER(i.tipo) LIKE '%casa%' OR LOWER(i.tipo) LIKE '%sobrado%' OR LOWER(i.modalidade) LIKE '%casa%') `;
+        } else {
+          params.push(`%${t}%`);
+          query += ` AND (LOWER(i.tipo) LIKE $${params.length} OR LOWER(i.modalidade) LIKE $${params.length}) `;
+        }
+      }
+
+      if (filterStatusImovel && filterStatusImovel.toLowerCase() !== 'todos') {
+        params.push(filterStatusImovel.trim());
+        query += ` AND LOWER(i.status_imovel) = LOWER($${params.length}) `;
+      }
+
+      if (filterBusca) {
+        params.push(`%${filterBusca.toLowerCase()}%`);
+        const idx = params.length;
+        query += ` AND (
+          LOWER(i.titulo) LIKE $${idx}
+          OR LOWER(i.bairro) LIKE $${idx}
+          OR LOWER(i.cidade) LIKE $${idx}
+          OR LOWER(i.codigo) LIKE $${idx}
+          OR LOWER(i.construtora) LIKE $${idx}
+          OR LOWER(i.nome_edificio) LIKE $${idx}
+          OR LOWER(i.descricao) LIKE $${idx}
+        ) `;
+      }
+
+      if (filterPrecoMin > 0) {
+        params.push(filterPrecoMin);
+        query += ` AND COALESCE(i.valor_venda, 0) >= $${params.length} `;
+      }
+      if (filterPrecoMax > 0 && filterPrecoMax < 15000000) {
+        params.push(filterPrecoMax);
+        query += ` AND COALESCE(i.valor_venda, 0) <= $${params.length} `;
+      }
+
+      if (filterQuartos > 0) {
+        params.push(filterQuartos);
+        query += ` AND COALESCE(i.quartos, 0) >= $${params.length} `;
+      }
+
+      if (filterBanheiros > 0) {
+        params.push(filterBanheiros);
+        query += ` AND COALESCE(i.bwc, 0) >= $${params.length} `;
+      }
+
+      if (filterVagas > 0) {
+        params.push(filterVagas);
+        query += ` AND COALESCE(i.vagas, 0) >= $${params.length} `;
+      }
+
+      if (filterMetragemMin > 0) {
+        params.push(filterMetragemMin);
+        query += ` AND COALESCE(i.area_privativa, 0) >= $${params.length} `;
+      }
+      if (filterMetragemMax > 0) {
+        params.push(filterMetragemMax);
+        query += ` AND COALESCE(i.area_privativa, 0) <= $${params.length} `;
+      }
+
+      if (filterBairro) {
+        params.push(`%${filterBairro.toLowerCase()}%`);
+        query += ` AND LOWER(i.bairro) LIKE $${params.length} `;
+      }
+
+      if (filterConstrutora) {
+        params.push(`%${filterConstrutora.toLowerCase()}%`);
+        query += ` AND LOWER(i.construtora) LIKE $${params.length} `;
+      }
+
       query += ` ORDER BY i.data_cadastro DESC `;
 
       if (paginate) {
@@ -636,7 +1147,7 @@ export class ServerDb {
         params.push(offset);
         query += ` LIMIT $${params.length - 1} OFFSET $${params.length} `;
       } else {
-        params.push(100);
+        params.push(limit || 1000);
         query += ` LIMIT $${params.length} `;
       }
 
@@ -688,6 +1199,10 @@ export class ServerDb {
 
         if (allPartners.size > 0 || ownerBroker?.restringirParceiros) {
           return isPartner;
+        }
+
+        if (filterCidade) {
+          if ((p.cidade || '').trim().toLowerCase() !== filterCidade.toLowerCase()) return false;
         }
 
         return true;
@@ -859,13 +1374,35 @@ export class ServerDb {
   }
 
   static async getImovelById(id: string): Promise<Imovel | null> {
+    const cleanId = (id || '').trim();
+    if (!cleanId) return null;
+    const cleanWithoutPrefix = cleanId.replace(/^imovel-/, '').replace(/^prop-/, '');
+    const withImovelPrefix = `imovel-${cleanWithoutPrefix}`;
+    const withPropPrefix = `prop-${cleanWithoutPrefix}`;
+
     if (this.isPostgres && this.pool) {
-      const res = await this.pool.query('SELECT * FROM imoveis WHERE id = $1', [id]);
+      const res = await this.pool.query(
+        `SELECT * FROM imoveis 
+         WHERE LOWER(id) = LOWER($1) 
+            OR LOWER(id) = LOWER($2) 
+            OR LOWER(id) = LOWER($3) 
+            OR LOWER(id) = LOWER($4) 
+            OR LOWER(codigo) = LOWER($1) 
+            OR LOWER(codigo) = LOWER($2) 
+         LIMIT 1`,
+        [cleanId, cleanWithoutPrefix, withImovelPrefix, withPropPrefix]
+      );
       if (res.rows.length === 0) return null;
       return this.mapPostgresRowToImovel(res.rows[0], '', true, 0);
     } else {
       const db = await this.readJson();
-      return db.properties.find(p => p.id === id) || null;
+      const t1 = cleanId.toLowerCase();
+      const t2 = cleanWithoutPrefix.toLowerCase();
+      return db.properties.find(p => {
+        const pId = (p.id || '').toLowerCase();
+        const pCod = (p.codigo || '').toLowerCase();
+        return pId === t1 || pId === t2 || pCod === t1 || pCod === t2 || pId === `imovel-${t2}` || pId === `prop-${t2}`;
+      }) || null;
     }
   }
 

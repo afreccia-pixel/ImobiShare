@@ -121,6 +121,29 @@ function loadInitialFromLocalStorage() {
 loadInitialFromLocalStorage();
 
 export class DbService {
+  // Helper to get optional auth header for public GET requests without forcing Content-Type or unnecessary preflight headers
+  private static async getReadAuthHeader(): Promise<Record<string, string>> {
+    const headers: Record<string, string> = {
+      'Accept': 'application/json'
+    };
+    try {
+      if (auth.currentUser) {
+        const token = await auth.currentUser.getIdToken(/* forceRefresh */ false);
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+          return headers;
+        }
+      }
+    } catch {}
+
+    const active = this.getActiveCorretor();
+    const email = (active?.email || '').toLowerCase().trim();
+    if (email) {
+      headers['X-User-Email'] = email;
+    }
+    return headers;
+  }
+
   // Helper to get fresh Firebase ID token
   private static async getAuthHeader(): Promise<Record<string, string>> {
     const headers: Record<string, string> = {
@@ -362,20 +385,64 @@ export class DbService {
   }
 
   // Fetch accessible properties (Supports pagination and inflight request deduplication)
-  static async getImoveis(options?: { page?: number; limit?: number; append?: boolean }): Promise<Imovel[]> {
+  static async getImoveis(options?: {
+    page?: number;
+    limit?: number;
+    append?: boolean;
+    cidade?: string;
+    bairro?: string;
+    finalidade?: string;
+    tipo?: string;
+    categoria?: string;
+    tipoImovel?: string;
+    statusImovel?: string;
+    busca?: string;
+    precoMin?: number;
+    precoMax?: number;
+    quartosMin?: number;
+    banheirosMin?: number;
+    vagasMin?: number;
+    metragemMin?: number;
+    metragemMax?: number;
+    construtora?: string;
+  }): Promise<Imovel[]> {
     const page = options?.page || 1;
-    const limit = options?.limit || 24;
+    const limit = options?.limit || (options?.page ? 24 : 500);
     const append = Boolean(options?.append);
+    const cidade = options?.cidade;
 
     // Se for uma busca padrão da primeira página e já houver uma requisição em voo, reaproveitá-la para evitar requisições duplicadas
-    if (page === 1 && !append && this.inflightGetImoveis) {
+    if (page === 1 && !append && !cidade && this.inflightGetImoveis) {
       return this.inflightGetImoveis;
     }
 
     const fetchPromise = (async () => {
       try {
         const headers = await this.getAuthHeader();
-        const url = getApiUrl(`/api/properties?page=${page}&limit=${limit}`);
+        let url = getApiUrl(`/api/properties?page=${page}&limit=${limit}`);
+        if (cidade && cidade.trim() && cidade !== 'Todas') {
+          url += `&cidade=${encodeURIComponent(cidade.trim())}`;
+        }
+        if (options?.bairro && options.bairro !== 'Todos os bairros') {
+          url += `&bairro=${encodeURIComponent(options.bairro.trim())}`;
+        }
+        if (options?.finalidade) url += `&finalidade=${encodeURIComponent(options.finalidade)}`;
+        if (options?.tipo) url += `&tipo=${encodeURIComponent(options.tipo)}`;
+        if (options?.categoria) url += `&categoria=${encodeURIComponent(options.categoria)}`;
+        if (options?.tipoImovel) url += `&tipoImovel=${encodeURIComponent(options.tipoImovel)}`;
+        if (options?.statusImovel) url += `&statusImovel=${encodeURIComponent(options.statusImovel)}`;
+        if (options?.busca) url += `&busca=${encodeURIComponent(options.busca.trim())}`;
+        if (options?.precoMin) url += `&precoMin=${options.precoMin}`;
+        if (options?.precoMax) url += `&precoMax=${options.precoMax}`;
+        if (options?.quartosMin) url += `&quartosMin=${options.quartosMin}`;
+        if (options?.banheirosMin) url += `&banheirosMin=${options.banheirosMin}`;
+        if (options?.vagasMin) url += `&vagasMin=${options.vagasMin}`;
+        if (options?.metragemMin) url += `&metragemMin=${options.metragemMin}`;
+        if (options?.metragemMax) url += `&metragemMax=${options.metragemMax}`;
+        if (options?.construtora && options.construtora !== 'Todas as construtoras') {
+          url += `&construtora=${encodeURIComponent(options.construtora.trim())}`;
+        }
+
         const res = await fetch(url, { headers });
         if (res.ok) {
           const json = await res.json();
@@ -407,7 +474,7 @@ export class DbService {
             const existingIds = new Set(cachedImoveis.map(i => i.id));
             const newItems = list.filter(item => !existingIds.has(item.id));
             cachedImoveis = [...cachedImoveis, ...newItems];
-          } else {
+          } else if (limit >= 100 || list.length >= cachedImoveis.length || cachedImoveis.length === 0) {
             // Mesclar com imóveis do cache que já possuem fotos completas carregadas
             cachedImoveis = list.map(fresh => {
               const existing = cachedImoveis.find(e => e.id === fresh.id);
@@ -415,6 +482,18 @@ export class DbService {
                 return { ...fresh, fotos: existing.fotos, descricao: existing.descricao || fresh.descricao };
               }
               return fresh;
+            });
+          } else {
+            // Atualiza os dados dos itens que vieram na página, sem descartar os demais imóveis do catálogo em memória
+            const freshMap = new Map(list.map(item => [item.id, item]));
+            cachedImoveis = cachedImoveis.map(existing => {
+              const fresh = freshMap.get(existing.id);
+              if (!fresh) return existing;
+              return {
+                ...fresh,
+                fotos: (Array.isArray(existing.fotos) && existing.fotos.length > (fresh.fotos?.length || 0)) ? existing.fotos : fresh.fotos,
+                descricao: existing.descricao || fresh.descricao
+              };
             });
           }
 
@@ -424,18 +503,33 @@ export class DbService {
       } catch (err) {
         console.error('Erro ao buscar imóveis:', err);
       } finally {
-        if (page === 1 && !append) {
+        if (page === 1 && !append && !cidade) {
           this.inflightGetImoveis = null;
         }
       }
       return cachedImoveis;
     })();
 
-    if (page === 1 && !append) {
+    if (page === 1 && !append && !cidade) {
       this.inflightGetImoveis = fetchPromise;
     }
 
     return fetchPromise;
+  }
+
+  /**
+   * Busca a lista completa de cidades e suas contagens de imóveis no sistema.
+   */
+  static async getCidades(): Promise<{ cidade: string; count: number }[]> {
+    try {
+      const res = await fetch(getApiUrl('/api/imoveis/cidades'));
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (err) {
+      console.error('Erro ao buscar cidades:', err);
+    }
+    return [];
   }
 
   // Helper para carregar próxima página sob demanda
@@ -450,43 +544,156 @@ export class DbService {
     return { properties: cachedImoveis, hasMore: this.paginationState.hasMore, page: this.paginationState.page };
   }
 
-  // Fetch single property with full photos and details
+  // Fetch single property with full photos and details via GET /api/imoveis/:id
   static async getImovelById(id: string): Promise<Imovel | null> {
     const cleanId = (id || '').trim();
     if (!cleanId) return null;
+    const cleanWithoutPrefix = cleanId.replace(/^imovel-/, '').replace(/^prop-/, '');
 
-    try {
-      const headers = await this.getAuthHeader();
-      const res = await fetch(getApiUrl(`/api/properties/${encodeURIComponent(cleanId)}`), { headers });
-      if (res.ok) {
-        const full: Imovel = await res.json();
-        if (full && full.id) {
-          const idx = cachedImoveis.findIndex(p => p.id === full.id);
-          if (idx >= 0) {
-            const nextList = [...cachedImoveis];
-            nextList[idx] = { ...nextList[idx], ...full };
-            cachedImoveis = nextList;
-          } else {
-            cachedImoveis = [full, ...cachedImoveis];
+    // Helper: Encontra o imóvel no cache local
+    const findInLocalList = (list: Imovel[]): Imovel | null => {
+      if (!Array.isArray(list) || list.length === 0) return null;
+      const t1 = cleanId.toLowerCase();
+      const t2 = cleanWithoutPrefix.toLowerCase();
+      return list.find(p => {
+        const pId = (p.id || '').toLowerCase();
+        const pCod = (p.codigo || '').toLowerCase();
+        const pIdClean = pId.replace(/^imovel-/, '').replace(/^prop-/, '');
+        return (
+          pId === t1 ||
+          pId === t2 ||
+          pIdClean === t2 ||
+          pCod === t1 ||
+          pCod === t2
+        );
+      }) || null;
+    };
+
+    // 1. Tenta recuperar do cache em memória ou localStorage primeiro
+    let existing = findInLocalList(cachedImoveis);
+    if (!existing) {
+      try {
+        const saved = localStorage.getItem('imobishare_cached_properties');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            existing = findInLocalList(parsed);
           }
-          notifySubscribers();
-          return full;
+        }
+      } catch {}
+    }
+
+    // 2. URLs a tentar com fallback automático
+    const primaryPath = `/api/imoveis/${encodeURIComponent(cleanWithoutPrefix)}`;
+    const primaryUrl = getApiUrl(primaryPath);
+    const urlsToTry: string[] = [primaryUrl];
+
+    if (primaryUrl.startsWith('http')) {
+      // Se a URL principal for absoluta (ex: Render), adiciona o caminho relativo local como fallback
+      urlsToTry.push(primaryPath);
+    } else {
+      // Se for caminho relativo, adiciona a URL absoluta do Render como fallback
+      urlsToTry.push(`https://imobishare.onrender.com${primaryPath}`);
+    }
+
+    if (cleanId !== cleanWithoutPrefix) {
+      urlsToTry.push(getApiUrl(`/api/imoveis/${encodeURIComponent(cleanId)}`));
+    }
+
+    const headers = await this.getReadAuthHeader();
+
+    for (const url of urlsToTry) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 7000);
+        const res = await fetch(url, { 
+          headers, 
+          signal: controller.signal 
+        });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          const full: Imovel = await res.json();
+          if (full && full.id) {
+            const idx = cachedImoveis.findIndex(p => 
+              p.id === full.id || 
+              p.id.replace(/^imovel-/, '') === full.id.replace(/^imovel-/, '')
+            );
+            if (idx >= 0) {
+              const nextList = [...cachedImoveis];
+              nextList[idx] = { ...nextList[idx], ...full };
+              cachedImoveis = nextList;
+            } else {
+              cachedImoveis = [full, ...cachedImoveis];
+            }
+            notifySubscribers();
+            return full;
+          }
+        }
+      } catch (err: any) {
+        if (err?.name !== 'AbortError') {
+          console.warn(`[DbService] Tentativa de buscar imóvel em ${url} falhou, tentando fallback:`, err?.message || err);
         }
       }
-    } catch (err) {
-      console.error(`Erro ao buscar detalhes do imóvel ${id}:`, err);
     }
-    return cachedImoveis.find(p => p.id === cleanId) || null;
+
+    // 3. Se as chamadas de rede falharem, retorna os dados conhecidos em cache local
+    if (existing) {
+      return existing;
+    }
+
+    return null;
+  }
+
+  // Fetch lightweight map markers with filters applied (no images, no heavy fields)
+  static async getImoveisMapa(filters?: Record<string, any>, signal?: AbortSignal): Promise<any[]> {
+    try {
+      const params = new URLSearchParams();
+      if (filters) {
+        Object.entries(filters).forEach(([k, v]) => {
+          if (v !== undefined && v !== null && v !== '') {
+            params.set(k, String(v));
+          }
+        });
+      }
+      const query = params.toString();
+      const url = getApiUrl(`/api/imoveis/mapa${query ? `?${query}` : ''}`);
+      const res = await fetch(url, { signal });
+      if (res.ok) {
+        const data = await res.json();
+        return Array.isArray(data) ? data : [];
+      }
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') {
+        console.error('Erro ao buscar marcadores do mapa:', err);
+      }
+    }
+    return [];
   }
 
   // Fetch properties owned strictly by the logged-in user
   static async getMeusImoveis(): Promise<Imovel[]> {
     try {
       const headers = await this.getAuthHeader();
-      const res = await fetch(getApiUrl('/api/properties/mine'), { headers });
+      const res = await fetch(getApiUrl('/api/properties/mine?limit=500'), { headers });
       if (res.ok) {
-        const list = await res.json();
-        return Array.isArray(list) ? list : [];
+        const json = await res.json();
+        const list: Imovel[] = Array.isArray(json) ? json : (json?.data || []);
+        if (list.length > 0) {
+          const existingIds = new Set(cachedImoveis.map(i => i.id));
+          const newItems = list.filter(item => !existingIds.has(item.id));
+          if (newItems.length > 0) {
+            cachedImoveis = [...cachedImoveis, ...newItems];
+          }
+          list.forEach(m => {
+            const idx = cachedImoveis.findIndex(i => i.id === m.id);
+            if (idx >= 0) {
+              cachedImoveis[idx] = { ...cachedImoveis[idx], ...m };
+            }
+          });
+          notifySubscribers();
+        }
+        return list;
       }
     } catch (err) {
       console.error('Erro ao buscar meus imóveis:', err);
@@ -633,10 +840,11 @@ export class DbService {
       try {
         const promises: Promise<any>[] = [
           this.fetchBrokers(),
-          this.getImoveis()
+          this.getImoveis({ limit: 500 })
         ];
         if (this.getActiveCorretor()) {
           promises.push(this.verifyAndFetchProfile());
+          promises.push(this.getMeusImoveis());
         }
         await Promise.allSettled(promises);
       } catch (err) {

@@ -58,7 +58,8 @@ import {
   Eye,
   WifiOff,
   ArrowUpDown,
-  Check
+  Check,
+  ChevronDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -213,18 +214,33 @@ export default function App() {
   // Uses corretorEmail (normalized) as the primary source of truth, falling back to
   // the legacy corretorId comparison for older records or active Firebase user context.
   const isMyProperty = useCallback((imovel: Imovel): boolean => {
-    if (!activeCorretor) return false;
-    const userEmail = (activeCorretor.email || '').toLowerCase().trim();
-    const userId = activeCorretor.id;
+    const authEmail = (auth.currentUser?.email || '').toLowerCase().trim();
+    const activeEmail = (activeCorretor?.email || authEmail).toLowerCase().trim();
+    const activeId = activeCorretor?.id || '';
+
+    if (!activeEmail && !activeId) return false;
 
     const propEmail = (imovel.corretorEmail || '').toLowerCase().trim();
-    const propId = imovel.corretorId;
+    const propId = (imovel.corretorId || '').toLowerCase().trim();
 
-    if (userEmail && propEmail && propEmail === userEmail) {
+    // 1. Correspondência direta por email
+    if (activeEmail && propEmail && propEmail === activeEmail) {
       return true;
     }
 
-    if (userId && propId && propId === userId) {
+    // 2. Correspondência direta por ID
+    if (activeId && propId && propId === activeId.toLowerCase().trim()) {
+      return true;
+    }
+
+    // 3. Correspondência por ID normalizado do corretor
+    if (activeEmail && propId && propId.includes(activeEmail.replace(/[^a-z0-9]/gi, '_'))) {
+      return true;
+    }
+
+    // 4. Se o usuário ativo for afreccia@gmail.com e o imóvel tiver identificador correspondente
+    if ((activeEmail === 'afreccia@gmail.com' || authEmail === 'afreccia@gmail.com') && 
+        (propEmail === 'afreccia@gmail.com' || (imovel.id && imovel.id.startsWith('FRE')))) {
       return true;
     }
 
@@ -339,38 +355,26 @@ export default function App() {
 
   const [filterBairro, setFilterBairro] = useState<string>('');
 
-  // Dynamically compute list of unique cities from properties + active broker city
+  // Dynamically compute list of unique cities strictly from properties with real data
   const availableCities = useMemo(() => {
     const citiesSet = new Set<string>();
-    if (activeCorretor?.cidade?.trim()) {
-      citiesSet.add(activeCorretor.cidade.trim());
-    }
     allImoveis.forEach((i) => {
       if (i.cidade && i.cidade.trim()) {
         citiesSet.add(i.cidade.trim());
       }
     });
-    if (citiesSet.size === 0) {
-      ['Balneário Camboriú', 'Itapema', 'Itajaí', 'Camboriú', 'Navegantes'].forEach(c => citiesSet.add(c));
-    }
     return Array.from(citiesSet).sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  }, [allImoveis, activeCorretor?.cidade]);
+  }, [allImoveis]);
 
   const availableMyCities = useMemo(() => {
     const citiesSet = new Set<string>();
-    if (activeCorretor?.cidade?.trim()) {
-      citiesSet.add(activeCorretor.cidade.trim());
-    }
     allImoveis.filter(isMyProperty).forEach((i) => {
       if (i.cidade && i.cidade.trim()) {
         citiesSet.add(i.cidade.trim());
       }
     });
-    if (citiesSet.size === 0) {
-      availableCities.forEach(c => citiesSet.add(c));
-    }
     return Array.from(citiesSet).sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  }, [allImoveis, isMyProperty, activeCorretor?.cidade, availableCities]);
+  }, [allImoveis, isMyProperty]);
 
   // Home tab filters: Venda pre-selected by default, property type 'todos'
   const [filterTipo, setFilterTipo] = useState<'comprar' | 'alugar' | 'todos'>('comprar');
@@ -465,6 +469,63 @@ export default function App() {
   const [filterMyVagas, setFilterMyVagas] = useState<number>(0);
   const [filterMyBairro, setFilterMyBairro] = useState<string>('');
 
+  // Dynamically compute list of unique neighborhoods strictly from properties with real data
+  const availableBairros = useMemo(() => {
+    const set = new Set<string>();
+    const activeCity = filterCidade;
+    const normCity = activeCity && activeCity !== 'Todas' 
+      ? activeCity.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') 
+      : '';
+
+    // Apenas bairros reais dos imóveis cadastrados que têm dados
+    allImoveis.forEach((i) => {
+      if (!normCity) {
+        if (i.bairro && i.bairro.trim()) set.add(i.bairro.trim());
+      } else if (i.cidade) {
+        const cNorm = i.cidade.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        if (cNorm === normCity || cNorm.includes(normCity) || normCity.includes(cNorm)) {
+          if (i.bairro && i.bairro.trim()) set.add(i.bairro.trim());
+        }
+      }
+    });
+
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [allImoveis, filterCidade]);
+
+  const availableMyBairros = useMemo(() => {
+    const set = new Set<string>();
+    const activeCity = filterMyCidade;
+    const normCity = activeCity && activeCity !== 'Todas' 
+      ? activeCity.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') 
+      : '';
+
+    allImoveis.filter(isMyProperty).forEach((i) => {
+      if (!normCity) {
+        if (i.bairro && i.bairro.trim()) set.add(i.bairro.trim());
+      } else if (i.cidade) {
+        const cNorm = i.cidade.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        if (cNorm === normCity || cNorm.includes(normCity) || normCity.includes(cNorm)) {
+          if (i.bairro && i.bairro.trim()) set.add(i.bairro.trim());
+        }
+      }
+    });
+
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [allImoveis, isMyProperty, filterMyCidade]);
+
+  // Se o bairro selecionado não tem dados para a cidade atual, limpa a seleção
+  useEffect(() => {
+    if (filterBairro && availableBairros.length > 0 && !availableBairros.some(b => b.toLowerCase() === filterBairro.toLowerCase())) {
+      setFilterBairro('');
+    }
+  }, [availableBairros, filterBairro]);
+
+  useEffect(() => {
+    if (filterMyBairro && availableMyBairros.length > 0 && !availableMyBairros.some(b => b.toLowerCase() === filterMyBairro.toLowerCase())) {
+      setFilterMyBairro('');
+    }
+  }, [availableMyBairros, filterMyBairro]);
+
   // Active filter count computation for Home
   const getActiveFilterCount = () => {
     let count = 0;
@@ -509,7 +570,7 @@ export default function App() {
       setSearchWord('');
       setFilterCidade(topCityAndBairro.cidade || 'Balneário Camboriú');
       setFilterBairro('');
-      setFilterTipo('comprar');
+      setFilterTipo('todos');
       setFilterTipoImovel('todos');
       setFilterStatusImovel('todos');
       setFilterValorMin(0);
@@ -1458,8 +1519,10 @@ useEffect(() => {
       }
 
       // 3. Neighborhood / Bairro filter
-      if (bairroQuery) {
-        if (!imovel.bairro || !imovel.bairro.toLowerCase().includes(bairroQuery)) {
+      if (bairroQuery && bairroQuery !== 'todos' && bairroQuery !== 'todos os bairros') {
+        const targetBairroNorm = bairroQuery.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const imovelBairroNorm = (imovel.bairro || '').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        if (!imovelBairroNorm.includes(targetBairroNorm) && !targetBairroNorm.includes(imovelBairroNorm)) {
           return false;
         }
       }
@@ -1508,23 +1571,25 @@ useEffect(() => {
 
       // 10. Broker Ownership / Integration (Portais & DWV) Filter
       const isMine = isMyProperty(imovel);
-      const isDWVOrPortal = Boolean(
-        imovel.integrado === true ||
-        (imovel.integracaoOrigem && imovel.integracaoOrigem.trim().length > 0) ||
-        (imovel.origem && imovel.origem.trim().toLowerCase() !== 'imobishare' && imovel.origem.trim().length > 0) ||
-        (imovel.origem && imovel.origem.trim().toLowerCase().includes('dwv')) ||
-        (imovel.origem && imovel.origem.trim().toLowerCase().includes('portal'))
-      );
 
-      if (isDWVOrPortal) {
-        if (!filterIntegracao) return false;
-      } else if (isMine) {
-        // If it's mine, check "Meus imóveis" switch
+      if (isMine) {
+        // Se pertence ao corretor ativo, respeita estritamente o filtro "Meus Imóveis"
         if (!filterMeusImoveis) return false;
       } else {
-        // If it belongs to someone else (Rede de Parcerias), check "Outros corretores" switch
+        // Se pertence a outros corretores (Rede de Parcerias), respeita o filtro "Outros Corretores"
         if (!filterOutrosCorretores) return false;
-        // Also must be SHARED to be visible to others
+
+        // Se for imóvel de integração externa (DWV/CRM) de terceiros, respeita o filtro de integração
+        const isDWVOrPortal = Boolean(
+          imovel.integrado === true ||
+          (imovel.integracaoOrigem && imovel.integracaoOrigem.trim().length > 0) ||
+          (imovel.origem && imovel.origem.trim().toLowerCase() !== 'imobishare' && imovel.origem.trim().length > 0) ||
+          (imovel.origem && imovel.origem.trim().toLowerCase().includes('dwv')) ||
+          (imovel.origem && imovel.origem.trim().toLowerCase().includes('portal'))
+        );
+        if (isDWVOrPortal && !filterIntegracao) return false;
+
+        // Imóveis de parceiros devem estar com compartilhamento ativo
         const isShared = imovel.compartilhar !== false && (imovel.compartilhar as any) !== 'NAO';
         if (!isShared) return false;
 
@@ -1642,6 +1707,156 @@ useEffect(() => {
     setHomePage(targetPage);
   };
 
+  // Carregamento contínuo de 24 em 24 ao rolar até o final da lista (sem descarregar tudo de uma vez)
+  const [isLoadingMoreHome, setIsLoadingMoreHome] = useState(false);
+  const homeInfiniteScrollSentinelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (searchViewMode === 'mapa' || activeTab !== 'home') return;
+    if (currentHomePage >= totalHomePages) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const first = entries[0];
+        if (first.isIntersecting && !isLoadingMoreHome) {
+          setIsLoadingMoreHome(true);
+          setTimeout(() => {
+            setHomePage((prev) => Math.min(prev + 1, totalHomePages));
+            setIsLoadingMoreHome(false);
+          }, 200);
+        }
+      },
+      { rootMargin: '300px' }
+    );
+
+    const currentEl = homeInfiniteScrollSentinelRef.current;
+    if (currentEl) {
+      observer.observe(currentEl);
+    }
+
+    return () => {
+      if (currentEl) observer.unobserve(currentEl);
+      observer.disconnect();
+    };
+  }, [currentHomePage, totalHomePages, isLoadingMoreHome, searchViewMode, activeTab]);
+
+  // Carregamento de marcadores completos para o mapa do painel do corretor (mesma lógica do portal)
+  const [mapMarkers, setMapMarkers] = useState<any[]>([]);
+  const [loadingMapMarkers, setLoadingMapMarkers] = useState(false);
+  const mapFetchAbortRef = useRef<AbortController | null>(null);
+
+  const mapFiltersSerialized = useMemo(() => {
+    return JSON.stringify({
+      cidade: filterCidade,
+      bairro: filterBairro,
+      tipo: filterTipo,
+      tipoImovel: filterTipoImovel,
+      statusImovel: filterStatusImovel,
+      precoMin: filterValorMin,
+      precoMax: filterValorMax,
+      quartosMin: filterDormitorios,
+      banheirosMin: filterBanheiros,
+      vagasMin: filterVagas,
+      metragemMin: filterMetragemMin,
+      metragemMax: filterMetragemMax,
+      busca: searchWord,
+    });
+  }, [
+    filterCidade,
+    filterBairro,
+    filterTipo,
+    filterTipoImovel,
+    filterStatusImovel,
+    filterValorMin,
+    filterValorMax,
+    filterDormitorios,
+    filterBanheiros,
+    filterVagas,
+    filterMetragemMin,
+    filterMetragemMax,
+    searchWord,
+  ]);
+
+  useEffect(() => {
+    if (mapFetchAbortRef.current) {
+      mapFetchAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    mapFetchAbortRef.current = controller;
+
+    let isMounted = true;
+    setLoadingMapMarkers(true);
+
+    const mapFilters: Record<string, any> = {
+      cidade: filterCidade && filterCidade !== 'Todas' ? filterCidade : undefined,
+      bairro: filterBairro && filterBairro !== 'Todos os bairros' ? filterBairro : undefined,
+      tipoImovel: filterTipoImovel && filterTipoImovel !== 'Todos' ? filterTipoImovel : undefined,
+      statusImovel: filterStatusImovel && filterStatusImovel !== 'todos' ? filterStatusImovel : undefined,
+      precoMin: filterValorMin > 0 ? filterValorMin : undefined,
+      precoMax: filterValorMax < 15000000 ? filterValorMax : undefined,
+      quartosMin: filterDormitorios > 0 ? filterDormitorios : undefined,
+      banheirosMin: filterBanheiros > 0 ? filterBanheiros : undefined,
+      vagasMin: filterVagas > 0 ? filterVagas : undefined,
+      metragemMin: filterMetragemMin > 0 ? filterMetragemMin : undefined,
+      metragemMax: filterMetragemMax < 1000 ? filterMetragemMax : undefined,
+      busca: searchWord ? searchWord : undefined,
+    };
+
+    if (filterTipo === 'comprar') {
+      mapFilters.finalidade = 'Comprar';
+    } else if (filterTipo === 'alugar') {
+      mapFilters.finalidade = 'Alugar';
+    }
+
+    DbService.getImoveisMapa(mapFilters, controller.signal)
+      .then((data) => {
+        if (isMounted) {
+          setMapMarkers(data || []);
+        }
+      })
+      .catch((err) => {
+        if (err?.name !== 'AbortError') {
+          console.warn('[App] Erro ao carregar marcadores do mapa:', err);
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setLoadingMapMarkers(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
+  }, [mapFiltersSerialized]);
+
+  const mapImoveis = useMemo(() => {
+    if (mapMarkers && mapMarkers.length > 0) {
+      let list = mapMarkers;
+      if (filterApenasFavoritos) {
+        list = list.filter((i) => favoritos.includes(i.id));
+      }
+      if (filterMeusImoveis && activeCorretor) {
+        const email = (activeCorretor.email || '').toLowerCase().trim();
+        list = list.filter((i) => (i.corretorEmail || '').toLowerCase().trim() === email);
+      } else if (filterOutrosCorretores && activeCorretor) {
+        const email = (activeCorretor.email || '').toLowerCase().trim();
+        list = list.filter((i) => (i.corretorEmail || '').toLowerCase().trim() !== email);
+      }
+      return list;
+    }
+    return filteredImoveis;
+  }, [
+    mapMarkers,
+    filteredImoveis,
+    filterApenasFavoritos,
+    filterMeusImoveis,
+    filterOutrosCorretores,
+    favoritos,
+    activeCorretor,
+  ]);
+
   // Check which properties are stories (registered within 24h by others and shared)
   const storyImoveis = useMemo(() => {
     const activeEmail = (activeCorretor?.email || '').toLowerCase().trim();
@@ -1718,9 +1933,12 @@ useEffect(() => {
       });
     }
 
-    if (filterMyBairro.trim()) {
-      const bTerm = filterMyBairro.toLowerCase().trim();
-      result = result.filter(i => i.bairro && i.bairro.toLowerCase().includes(bTerm));
+    if (filterMyBairro.trim() && filterMyBairro.toLowerCase().trim() !== 'todos' && filterMyBairro.toLowerCase().trim() !== 'todos os bairros') {
+      const bTermNorm = filterMyBairro.toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      result = result.filter(i => {
+        const imovelBNorm = (i.bairro || '').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        return imovelBNorm.includes(bTermNorm) || bTermNorm.includes(imovelBNorm);
+      });
     }
 
     if (filterMyTipo === 'comprar') {
@@ -1834,10 +2052,38 @@ Toque abaixo para ver a seleção completa:
   };
 
   // Active property for detail view
-  const activeDetailProperty = allImoveis.find(i => i.id === selectedPropertyId);
+  const activeDetailProperty = useMemo(() => {
+    if (!selectedPropertyId) return null;
+    return allImoveis.find(i => i.id === selectedPropertyId) ||
+           mapMarkers.find(i => i.id === selectedPropertyId) ||
+           null;
+  }, [allImoveis, mapMarkers, selectedPropertyId]);
 
-  // If user is opening simulated public page
-  if (publicViewProperty) {
+  // Se o imóvel foi selecionado a partir do mapa, garante que todos os dados completos estejam carregados
+  useEffect(() => {
+    if (!selectedPropertyId) return;
+    const existing = allImoveis.find(i => i.id === selectedPropertyId);
+    if (!existing || !existing.fotos || existing.fotos.length <= 1) {
+      DbService.getImovelById(selectedPropertyId).then(full => {
+        if (full) {
+          setAllImoveis(prev => {
+            const idx = prev.findIndex(p => p.id === full.id);
+            if (idx >= 0) {
+              const updated = [...prev];
+              updated[idx] = { ...updated[idx], ...full };
+              return updated;
+            }
+            return [full, ...prev];
+          });
+        }
+      }).catch(err => {
+        console.warn('[App] Erro ao carregar detalhes completos do imóvel:', err);
+      });
+    }
+  }, [selectedPropertyId, allImoveis]);
+
+  // If user is opening simulated public page from broker mode
+  if (publicViewProperty && appMode === 'broker') {
     return (
       <PublicView 
         imovel={publicViewProperty}
@@ -2004,9 +2250,14 @@ Toque abaixo para ver a seleção completa:
 
   // --- PUBLIC REAL ESTATE PORTAL (IMOBISHARE PORTAL ETAPA 1) ---
   if (appMode === 'portal') {
+    const params = new URLSearchParams(window.location.search);
+    const hash = window.location.hash;
+    const urlImovelId = params.get('imovel') || (hash.startsWith('#imovel/') ? hash.replace('#imovel/', '') : null);
+
     return (
       <PortalApp
         realProperties={allImoveis}
+        initialPropertyId={urlImovelId}
         isLoggedIn={isAuthenticated}
         onOpenAuth={() => {
           if (isAuthenticated) {
@@ -2733,12 +2984,13 @@ Toque abaixo para ver a seleção completa:
                   {searchViewMode === 'mapa' ? (
                     <div className="flex-1 w-full relative min-h-0 overflow-hidden" id="full-screen-map-container">
                       <MapView
-                        imoveis={filteredImoveis}
+                        imoveis={mapImoveis}
                         selectedIds={selectedPropertyIds}
                         onSelectToggle={handleSelectToggle}
                         onViewDetails={setSelectedPropertyId}
                         isFullScreen
                         onClusterChange={setIsMapClusterOpen}
+                        loading={loadingMapMarkers}
                       />
                     </div>
                   ) : (
@@ -2857,16 +3109,34 @@ Toque abaixo para ver a seleção completa:
                         </div>
                       )}
 
-                      {/* CONTROLE "VER MAIS" (carregamento contínuo sem barra de paginação) */}
-                      {filteredImoveis.length > PAGE_SIZE && currentHomePage < totalHomePages && (
+                      {/* Sentinela de Infinite Scroll para carregar automaticamente mais 24 imóveis ao rolar até o fim */}
+                      <div ref={homeInfiniteScrollSentinelRef} className="h-6 w-full" />
+
+                      {/* Feedback suave ao carregar o próximo lote de 24 imóveis */}
+                      {isLoadingMoreHome && (
+                        <div className="flex items-center justify-center gap-2 py-4 text-slate-500 text-xs font-semibold">
+                          <div className="w-4 h-4 border-2 border-[#003366] border-t-transparent rounded-full animate-spin" />
+                          <span>Carregando mais 24 imóveis...</span>
+                        </div>
+                      )}
+
+                      {/* Botão de fallback/manual para carregar mais 24 imóveis */}
+                      {!isLoadingMoreHome && filteredImoveis.length > PAGE_SIZE && currentHomePage < totalHomePages && (
                         <div className="pt-2 pb-6" id="home-pagination-controls">
                           <button
                             type="button"
                             onClick={() => handleHomePageChange(currentHomePage + 1)}
-                            className="w-full py-3 px-6 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm rounded-full shadow-sm flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-[0.99] border border-blue-500/30"
+                            className="w-full py-3 px-6 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs sm:text-sm rounded-full shadow-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-[0.99] border border-slate-200"
                           >
-                            <span>Ver mais imóveis</span>
+                            <span>Carregar mais 24 imóveis</span>
                           </button>
+                        </div>
+                      )}
+
+                      {/* Fim da lista atingido */}
+                      {currentHomePage >= totalHomePages && filteredImoveis.length > PAGE_SIZE && (
+                        <div className="py-6 text-center text-xs text-slate-400 font-medium">
+                          Você visualizou todos os {filteredImoveis.length} imóveis encontrados.
                         </div>
                       )}
                     </div>
@@ -3040,7 +3310,7 @@ Toque abaixo para ver a seleção completa:
         {activeTab === 'home' && !selectedPropertyId && !isAddingProperty && selectedPropertyIds.length === 0 && (
           <div className={`absolute ${
             searchViewMode === 'mapa'
-              ? (isMapClusterOpen ? 'bottom-72' : 'bottom-5')
+              ? 'bottom-5'
               : 'bottom-20'
           } left-1/2 -translate-x-1/2 z-30 pointer-events-auto transition-all duration-300`}>
             <button
@@ -3101,187 +3371,162 @@ Toque abaixo para ver a seleção completa:
           </div>
         )}
 
-        {/* COMPREHENSIVE SEARCH FILTER MODAL */}
+        {/* COMPREHENSIVE SEARCH FILTER MODAL (REDESENHADO AIRBNB / QUINTOANDAR) */}
         <AnimatePresence>
           {isFilterModalOpen && (
             <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-xs">
               <motion.div
-                initial={{ opacity: 0, y: 100 }}
+                initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 100 }}
+                exit={{ opacity: 0, y: 30 }}
                 transition={{ duration: 0.2 }}
-                className="bg-white w-full max-w-lg max-h-[90vh] rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-100"
+                className="bg-white w-full max-w-xl max-h-[90vh] rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden"
               >
-                {/* Modal Header */}
-                <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-[#003366]/10 text-[#003366] flex items-center justify-center">
-                      <SlidersHorizontal size={18} />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900">
-                        {filterModalTab === 'home' ? 'Filtro da Tela Início' : 'Filtro dos Meus Imóveis'}
-                      </h3>
-                      <p className="text-[11px] text-slate-500">
-                        {filterModalTab === 'home' ? 'Refine os imóveis exibidos na tela inicial' : 'Refine a busca nos seus imóveis cadastrados'}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {(filterModalTab === 'home' ? getActiveFilterCount() : getMyPropertiesActiveFilterCount()) > 0 && (
-                      <button
-                        onClick={handleResetFilters}
-                        className="text-xs text-rose-600 font-bold hover:underline cursor-pointer"
-                      >
-                        Limpar tudo
-                      </button>
-                    )}
-                    <button
-                      onClick={() => setIsFilterModalOpen(false)}
-                      className="p-1.5 rounded-full hover:bg-slate-200/60 text-slate-500 transition-all cursor-pointer"
-                    >
-                      <X size={18} />
-                    </button>
-                  </div>
+                {/* Topo Limpo / Botão de Fechar sem poluição ou textos longos */}
+                <div className="px-5 sm:px-7 pt-4 pb-2 flex items-center justify-end bg-white sticky top-0 z-10">
+                  <button
+                    type="button"
+                    onClick={() => setIsFilterModalOpen(false)}
+                    className="w-9 h-9 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                    aria-label="Fechar"
+                  >
+                    <X size={20} />
+                  </button>
                 </div>
 
-                {/* Modal Scrollable Form */}
-                <div className="p-4 sm:p-5 overflow-y-auto space-y-5 text-xs">
-                  {/* Busca por Palavra-Chave / Código */}
-                  <div className="space-y-1.5">
-                    <label className="font-bold text-slate-700 block uppercase tracking-wider text-[10px]">
-                      Buscar por termo, edifício ou código
-                    </label>
-                    <div className="relative">
-                      <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                      <input
-                        type="text"
-                        placeholder="Ex: frente mar, piscina, FRE01..."
-                        value={filterModalTab === 'home' ? searchWord : myPropertiesSearch}
-                        onChange={(e) => filterModalTab === 'home' ? setSearchWord(e.target.value) : setMyPropertiesSearch(e.target.value)}
-                        className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-hidden focus:border-[#003366]"
-                      />
-                      {(filterModalTab === 'home' ? searchWord : myPropertiesSearch) && (
-                        <button
-                          type="button"
-                          onClick={() => filterModalTab === 'home' ? setSearchWord('') : setMyPropertiesSearch('')}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                        >
-                          <X size={14} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* 1. Tipo de Negócio */}
-                  <div className="space-y-1.5">
-                    <label className="font-bold text-slate-700 block uppercase tracking-wider text-[10px]">1. Tipo de Negócio</label>
-                    <div className="grid grid-cols-3 gap-2 bg-slate-100 p-1 rounded-xl font-bold">
+                {/* Conteúdo com Scroll e Espaçamento Generoso (~24px) */}
+                <div className="flex-1 overflow-y-auto px-5 sm:px-7 pb-6 space-y-6">
+                  {/* 1. Negócio */}
+                  <div className="space-y-3">
+                    <span className="text-[15px] sm:text-[16px] font-semibold text-slate-800 block">Negócio</span>
+                    <div className="grid grid-cols-2 gap-3">
                       <button
                         type="button"
-                        onClick={() => filterModalTab === 'home' ? setFilterTipo('todos') : setFilterMyTipo('todos')}
-                        className={`py-2 rounded-lg text-xs transition-all ${(filterModalTab === 'home' ? filterTipo : filterMyTipo) === 'todos' ? 'bg-white text-[#003366] shadow-xs' : 'text-slate-500'}`}
-                      >
-                        Todos
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => filterModalTab === 'home' ? setFilterTipo('comprar') : setFilterMyTipo('comprar')}
-                        className={`py-2 rounded-lg text-xs transition-all ${(filterModalTab === 'home' ? filterTipo : filterMyTipo) === 'comprar' ? 'bg-white text-[#003366] shadow-xs' : 'text-slate-500'}`}
+                        onClick={() => {
+                          const current = filterModalTab === 'home' ? filterTipo : filterMyTipo;
+                          const next = current === 'comprar' ? 'todos' : 'comprar';
+                          if (filterModalTab === 'home') setFilterTipo(next);
+                          else setFilterMyTipo(next);
+                        }}
+                        className={`h-12 px-4 rounded-xl font-medium text-[15px] transition-all cursor-pointer flex items-center justify-center ${
+                          (filterModalTab === 'home' ? filterTipo : filterMyTipo) === 'comprar'
+                            ? 'bg-[#003366] text-white'
+                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        }`}
                       >
                         Venda
                       </button>
                       <button
                         type="button"
-                        onClick={() => filterModalTab === 'home' ? setFilterTipo('alugar') : setFilterMyTipo('alugar')}
-                        className={`py-2 rounded-lg text-xs transition-all ${(filterModalTab === 'home' ? filterTipo : filterMyTipo) === 'alugar' ? 'bg-white text-[#003366] shadow-xs' : 'text-slate-500'}`}
+                        onClick={() => {
+                          const current = filterModalTab === 'home' ? filterTipo : filterMyTipo;
+                          const next = current === 'alugar' ? 'todos' : 'alugar';
+                          if (filterModalTab === 'home') setFilterTipo(next);
+                          else setFilterMyTipo(next);
+                        }}
+                        className={`h-12 px-4 rounded-xl font-medium text-[15px] transition-all cursor-pointer flex items-center justify-center ${
+                          (filterModalTab === 'home' ? filterTipo : filterMyTipo) === 'alugar'
+                            ? 'bg-[#003366] text-white'
+                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        }`}
                       >
-                        Alugar (Locação)
+                        Aluguel
                       </button>
                     </div>
                   </div>
 
-                  {/* 2. Cidade e Bairro */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="font-bold text-slate-700 block uppercase tracking-wider text-[10px]">2. Cidade</label>
-                      <select
-                        value={filterModalTab === 'home' ? filterCidade : filterMyCidade}
-                        onChange={(e) => filterModalTab === 'home' ? setFilterCidade(e.target.value) : setFilterMyCidade(e.target.value)}
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 focus:outline-hidden focus:border-[#003366]"
-                      >
-                        {(filterModalTab === 'home' ? availableCities : availableMyCities).map((city) => (
-                          <option key={city} value={city}>
-                            {city}
-                          </option>
-                        ))}
-                        <option value="Todas">Todas As Cidades</option>
-                      </select>
-                    </div>
+                  {/* 2. Localização */}
+                  <div className="space-y-3">
+                    <span className="text-[15px] sm:text-[16px] font-semibold text-slate-800 block">Localização</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="relative">
+                        <select
+                          value={filterModalTab === 'home' ? filterCidade : filterMyCidade}
+                          onChange={(e) => {
+                            const newCity = e.target.value;
+                            if (filterModalTab === 'home') {
+                              setFilterCidade(newCity);
+                              setFilterBairro('');
+                            } else {
+                              setFilterMyCidade(newCity);
+                              setFilterMyBairro('');
+                            }
+                          }}
+                          className="w-full h-12 px-4 pr-10 bg-slate-50 border border-slate-200 rounded-xl text-[16px] text-slate-800 focus:outline-none focus:border-[#003366] focus:bg-white appearance-none cursor-pointer"
+                        >
+                          {(filterModalTab === 'home' ? availableCities : availableMyCities).length > 0 ? (
+                            <>
+                              <option value="Todas">Todas as cidades</option>
+                              {(filterModalTab === 'home' ? availableCities : availableMyCities).map((city) => (
+                                <option key={city} value={city}>
+                                  {city}
+                                </option>
+                              ))}
+                            </>
+                          ) : (
+                            <option value="Todas">Nenhuma cidade com imóveis</option>
+                          )}
+                        </select>
+                        <ChevronDown size={18} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                      </div>
 
-                    <div className="space-y-1">
-                      <label className="font-bold text-slate-700 block uppercase tracking-wider text-[10px]">3. Bairro / Região</label>
-                      <input
-                        type="text"
-                        placeholder="Ex: Todos os bairros, ou digite Barra Sul, Meia Praia..."
-                        value={filterModalTab === 'home' ? filterBairro : filterMyBairro}
-                        onChange={(e) => filterModalTab === 'home' ? setFilterBairro(e.target.value) : setFilterMyBairro(e.target.value)}
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-hidden focus:border-[#003366]"
-                      />
+                      <div className="relative">
+                        <select
+                          value={filterModalTab === 'home' ? filterBairro : filterMyBairro}
+                          disabled={(filterModalTab === 'home' ? availableBairros : availableMyBairros).length === 0}
+                          onChange={(e) => {
+                            const newBairro = e.target.value;
+                            if (filterModalTab === 'home') setFilterBairro(newBairro);
+                            else setFilterMyBairro(newBairro);
+                          }}
+                          className={`w-full h-12 px-4 pr-10 border rounded-xl text-[16px] focus:outline-none focus:border-[#003366] focus:bg-white appearance-none cursor-pointer ${
+                            (filterModalTab === 'home' ? availableBairros : availableMyBairros).length === 0
+                              ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                              : 'bg-slate-50 border-slate-200 text-slate-800'
+                          }`}
+                        >
+                          {(filterModalTab === 'home' ? availableBairros : availableMyBairros).length > 0 ? (
+                            <>
+                              <option value="">Todos os bairros</option>
+                              {(filterModalTab === 'home' ? availableBairros : availableMyBairros).map((b) => (
+                                <option key={b} value={b}>
+                                  {b}
+                                </option>
+                              ))}
+                            </>
+                          ) : (
+                            <option value="">Nenhum bairro com imóveis</option>
+                          )}
+                        </select>
+                        <ChevronDown size={18} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                      </div>
                     </div>
                   </div>
 
-                  {/* 3. Tipo de Imóvel */}
-                  <div className="space-y-1.5">
-                    <label className="font-bold text-slate-700 block uppercase tracking-wider text-[10px]">4. Tipo de Imóvel</label>
-                    <div className="flex flex-wrap gap-1.5">
+                  {/* 3. Status do Imóvel */}
+                  <div className="space-y-2 sm:space-y-2.5">
+                    <span className="text-[15px] sm:text-[16px] font-semibold text-slate-800 block">Status do imóvel</span>
+                    <div className="grid grid-cols-3 gap-2">
                       {[
-                        { id: 'todos', label: 'Todos' },
-                        { id: 'Apartamento', label: 'Apartamento' },
-                        { id: 'Casa', label: 'Casa / Sobrado' },
-                        { id: 'Cobertura', label: 'Cobertura' },
-                        { id: 'Terreno', label: 'Terreno / Lote' },
-                        { id: 'Comercial', label: 'Comercial' },
-                      ].map((t) => {
-                        const cur = filterModalTab === 'home' ? filterTipoImovel : filterMyTipoImovel;
-                        return (
-                          <button
-                            key={t.id}
-                            type="button"
-                            onClick={() => filterModalTab === 'home' ? setFilterTipoImovel(t.id) : setFilterMyTipoImovel(t.id)}
-                            className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
-                              cur === t.id
-                                ? 'bg-blue-600 text-white border-blue-600'
-                                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                            }`}
-                          >
-                            {t.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Status do Imóvel */}
-                  <div className="space-y-1.5 border-t border-slate-100 pt-3">
-                    <label className="font-bold text-slate-700 block uppercase tracking-wider text-[10px]">Status do Imóvel</label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {[
-                        { id: 'todos', label: 'Todos os Status' },
                         { id: 'Na planta', label: 'Na Planta' },
                         { id: 'Mobiliado', label: 'Mobiliado' },
                         { id: 'Sem mobília', label: 'Sem Mobília' },
                       ].map((st) => {
                         const cur = filterModalTab === 'home' ? filterStatusImovel : filterMyStatusImovel;
+                        const isSelected = cur === st.id;
                         return (
                           <button
                             key={st.id}
                             type="button"
-                            onClick={() => filterModalTab === 'home' ? setFilterStatusImovel(st.id) : setFilterMyStatusImovel(st.id)}
-                            className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
-                              cur === st.id
-                                ? 'bg-blue-600 text-white border-blue-600'
-                                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                            onClick={() => {
+                              const next = isSelected ? 'todos' : st.id;
+                              if (filterModalTab === 'home') setFilterStatusImovel(next);
+                              else setFilterMyStatusImovel(next);
+                            }}
+                            className={`h-11 px-1.5 sm:px-3 rounded-xl font-medium text-[13.5px] sm:text-[15px] whitespace-nowrap transition-all cursor-pointer flex items-center justify-center ${
+                              isSelected
+                                ? 'bg-[#003366] text-white'
+                                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                             }`}
                           >
                             {st.label}
@@ -3291,253 +3536,311 @@ Toque abaixo para ver a seleção completa:
                     </div>
                   </div>
 
-                  {/* 5. Faixa de Preço */}
-                  <div className="space-y-2 border-t border-slate-100 pt-3">
-                    <div className="flex items-center justify-between">
-                      <label className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">5. Faixa de Valor (R$)</label>
-                      {((filterModalTab === 'home' ? filterValorMin : filterMyValorMin) > 0 || (filterModalTab === 'home' ? filterValorMax : filterMyValorMax) < 15000000) && (
-                        <button
-                          onClick={() => {
-                            if (filterModalTab === 'home') {
-                              setFilterValorMin(0); setFilterValorMax(15000000);
-                            } else {
-                              setFilterMyValorMin(0); setFilterMyValorMax(15000000);
-                            }
-                          }}
-                          className="text-[10px] text-slate-400 hover:text-slate-600 font-semibold cursor-pointer"
-                        >
-                          Redefinir preço
-                        </button>
-                      )}
+                  {/* 4. Tipo de Imóvel */}
+                  <div className="space-y-2 sm:space-y-2.5">
+                    <span className="text-[15px] sm:text-[16px] font-semibold text-slate-800 block">Tipo de imóvel</span>
+                    <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                      {[
+                        { id: 'Apartamento', label: 'Apartamento' },
+                        { id: 'Casa', label: 'Casa' },
+                        { id: 'Cobertura', label: 'Cobertura' },
+                        { id: 'Terreno', label: 'Terreno' },
+                        { id: 'Comercial', label: 'Comercial' },
+                      ].map((t) => {
+                        const cur = filterModalTab === 'home' ? filterTipoImovel : filterMyTipoImovel;
+                        const isSelected = cur === t.id;
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => {
+                              const next = isSelected ? 'todos' : t.id;
+                              if (filterModalTab === 'home') setFilterTipoImovel(next);
+                              else setFilterMyTipoImovel(next);
+                            }}
+                            className={`h-11 px-1.5 sm:px-2 rounded-xl font-medium text-[13.5px] sm:text-[15px] whitespace-nowrap transition-all cursor-pointer flex items-center justify-center ${
+                              isSelected
+                                ? 'bg-[#003366] text-white'
+                                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                            }`}
+                          >
+                            {t.label}
+                          </button>
+                        );
+                      })}
                     </div>
+                  </div>
 
+                  {/* 5. Faixa de Valor */}
+                  <div className="space-y-2 sm:space-y-2.5">
+                    <span className="text-[15px] sm:text-[16px] font-semibold text-slate-800 block">Faixa de valor</span>
                     <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <span className="text-[10px] font-semibold text-slate-500 block mb-0.5">Mínimo</span>
-                        <input
-                          type="number"
-                          placeholder="R$ Mínimo"
-                          value={(filterModalTab === 'home' ? filterValorMin : filterMyValorMin) === 0 ? '' : (filterModalTab === 'home' ? filterValorMin : filterMyValorMin)}
-                          onChange={(e) => {
-                            const val = e.target.value === '' ? 0 : Number(e.target.value);
-                            if (filterModalTab === 'home') setFilterValorMin(val);
-                            else setFilterMyValorMin(val);
-                          }}
-                          className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-hidden"
-                        />
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-semibold text-slate-500 block mb-0.5">Máximo</span>
-                        <input
-                          type="number"
-                          placeholder="R$ Máximo"
-                          value={((filterModalTab === 'home' ? filterValorMax : filterMyValorMax) === 15000000 || (filterModalTab === 'home' ? filterValorMax : filterMyValorMax) === 0) ? '' : (filterModalTab === 'home' ? filterValorMax : filterMyValorMax)}
-                          onChange={(e) => {
-                            const val = e.target.value === '' ? 0 : Number(e.target.value);
-                            if (filterModalTab === 'home') setFilterValorMax(val);
-                            else setFilterMyValorMax(val);
-                          }}
-                          className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-hidden"
-                        />
-                      </div>
+                      <input
+                        type="number"
+                        placeholder="Valor mínimo"
+                        value={
+                          (filterModalTab === 'home' ? filterValorMin : filterMyValorMin) === 0
+                            ? ''
+                            : (filterModalTab === 'home' ? filterValorMin : filterMyValorMin)
+                        }
+                        onChange={(e) => {
+                          const val = e.target.value === '' ? 0 : Number(e.target.value);
+                          if (filterModalTab === 'home') setFilterValorMin(val);
+                          else setFilterMyValorMin(val);
+                        }}
+                        className="w-full h-12 px-4 bg-slate-50 border border-slate-200 rounded-xl text-[16px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#003366] focus:bg-white font-normal"
+                      />
+                      <input
+                        type="number"
+                        placeholder="Valor máximo"
+                        value={
+                          ((filterModalTab === 'home' ? filterValorMax : filterMyValorMax) === 15000000 ||
+                            (filterModalTab === 'home' ? filterValorMax : filterMyValorMax) === 0)
+                            ? ''
+                            : (filterModalTab === 'home' ? filterValorMax : filterMyValorMax)
+                        }
+                        onChange={(e) => {
+                          const val = e.target.value === '' ? 0 : Number(e.target.value);
+                          if (filterModalTab === 'home') setFilterValorMax(val);
+                          else setFilterMyValorMax(val);
+                        }}
+                        className="w-full h-12 px-4 bg-slate-50 border border-slate-200 rounded-xl text-[16px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#003366] focus:bg-white font-normal"
+                      />
                     </div>
 
-                    {/* Shortcuts for price */}
-                    <div className="flex flex-wrap gap-1 pt-1">
+                    {/* Atalhos discretos em cinza claro */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
                       {[
                         { label: 'Até R$ 1 Mio', min: 0, max: 1000000 },
                         { label: 'R$ 1M a 3M', min: 1000000, max: 3000000 },
                         { label: 'R$ 3M a 5M', min: 3000000, max: 5000000 },
                         { label: 'R$ 5M+', min: 5000000, max: 15000000 },
-                      ].map((shortcut) => (
+                      ].map((shortcut) => {
+                        const curMin = filterModalTab === 'home' ? filterValorMin : filterMyValorMin;
+                        const curMax = filterModalTab === 'home' ? filterValorMax : filterMyValorMax;
+                        const isActive = curMin === shortcut.min && curMax === shortcut.max;
+                        return (
+                          <button
+                            key={shortcut.label}
+                            type="button"
+                            onClick={() => {
+                              if (isActive) {
+                                if (filterModalTab === 'home') {
+                                  setFilterValorMin(0);
+                                  setFilterValorMax(15000000);
+                                } else {
+                                  setFilterMyValorMin(0);
+                                  setFilterMyValorMax(15000000);
+                                }
+                              } else {
+                                if (filterModalTab === 'home') {
+                                  setFilterValorMin(shortcut.min);
+                                  setFilterValorMax(shortcut.max);
+                                } else {
+                                  setFilterMyValorMin(shortcut.min);
+                                  setFilterMyValorMax(shortcut.max);
+                                }
+                              }
+                            }}
+                            className={`py-2 px-2 rounded-lg text-[13px] sm:text-[14px] font-medium whitespace-nowrap text-center transition-all cursor-pointer ${
+                              isActive
+                                ? 'bg-[#003366] text-white'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            {shortcut.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Quartos */}
+                  <div className="space-y-2 sm:space-y-2.5">
+                    <span className="text-[15px] sm:text-[16px] font-semibold text-slate-800 block">Quartos</span>
+                    <div className="grid grid-cols-4 gap-2">
+                      {[1, 2, 3, 4].map((num) => {
+                        const cur = filterModalTab === 'home' ? filterDormitorios : filterMyDormitorios;
+                        const isSelected = cur === num;
+                        return (
+                          <button
+                            key={num}
+                            type="button"
+                            onClick={() => {
+                              const next = isSelected ? 0 : num;
+                              if (filterModalTab === 'home') setFilterDormitorios(next);
+                              else setFilterMyDormitorios(next);
+                            }}
+                            className={`h-11 rounded-xl font-medium text-[15px] transition-all cursor-pointer flex items-center justify-center ${
+                              isSelected
+                                ? 'bg-[#003366] text-white'
+                                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                            }`}
+                          >
+                            {num === 4 ? '4+' : num}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Banheiros */}
+                  <div className="space-y-2 sm:space-y-2.5">
+                    <span className="text-[15px] sm:text-[16px] font-semibold text-slate-800 block">Banheiros</span>
+                    <div className="grid grid-cols-4 gap-2">
+                      {[1, 2, 3, 4].map((num) => {
+                        const cur = filterModalTab === 'home' ? filterBanheiros : filterMyBanheiros;
+                        const isSelected = cur === num;
+                        return (
+                          <button
+                            key={num}
+                            type="button"
+                            onClick={() => {
+                              const next = isSelected ? 0 : num;
+                              if (filterModalTab === 'home') setFilterBanheiros(next);
+                              else setFilterMyBanheiros(next);
+                            }}
+                            className={`h-11 rounded-xl font-medium text-[15px] transition-all cursor-pointer flex items-center justify-center ${
+                              isSelected
+                                ? 'bg-[#003366] text-white'
+                                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                            }`}
+                          >
+                            {num === 4 ? '4+' : num}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Vagas */}
+                  <div className="space-y-2 sm:space-y-2.5">
+                    <span className="text-[15px] sm:text-[16px] font-semibold text-slate-800 block">Vagas</span>
+                    <div className="grid grid-cols-4 gap-2">
+                      {[1, 2, 3, 4].map((num) => {
+                        const cur = filterModalTab === 'home' ? filterVagas : filterMyVagas;
+                        const isSelected = cur === num;
+                        return (
+                          <button
+                            key={num}
+                            type="button"
+                            onClick={() => {
+                              const next = isSelected ? 0 : num;
+                              if (filterModalTab === 'home') setFilterVagas(next);
+                              else setFilterMyVagas(next);
+                            }}
+                            className={`h-11 rounded-xl font-medium text-[15px] transition-all cursor-pointer flex items-center justify-center ${
+                              isSelected
+                                ? 'bg-[#003366] text-white'
+                                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                            }`}
+                          >
+                            {num === 4 ? '4+' : num}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Área Privativa */}
+                  <div className="space-y-2 sm:space-y-2.5">
+                    <span className="text-[15px] sm:text-[16px] font-semibold text-slate-800 block">Área privativa</span>
+                    <div className="grid grid-cols-2 gap-3">
+                      <input
+                        type="number"
+                        placeholder="Área mínima"
+                        value={filterMetragemMin === 0 ? '' : filterMetragemMin}
+                        onChange={(e) => setFilterMetragemMin(e.target.value === '' ? 0 : Number(e.target.value))}
+                        className="w-full h-12 px-4 bg-slate-50 border border-slate-200 rounded-xl text-[16px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#003366] focus:bg-white font-normal"
+                      />
+                      <input
+                        type="number"
+                        placeholder="Área máxima"
+                        value={filterMetragemMax === 0 ? '' : filterMetragemMax}
+                        onChange={(e) => setFilterMetragemMax(e.target.value === '' ? 0 : Number(e.target.value))}
+                        className="w-full h-12 px-4 bg-slate-50 border border-slate-200 rounded-xl text-[16px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#003366] focus:bg-white font-normal"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Origem do Imóvel (Apenas Home) */}
+                  {filterModalTab === 'home' && (
+                    <div className="space-y-2 sm:space-y-2.5">
+                      <span className="text-[15px] sm:text-[16px] font-semibold text-slate-800 block">Origem do imóvel</span>
+                      <div className="grid grid-cols-4 gap-2">
                         <button
-                          key={shortcut.label}
                           type="button"
-                          onClick={() => {
-                            if (filterModalTab === 'home') {
-                              setFilterValorMin(shortcut.min); setFilterValorMax(shortcut.max);
-                            } else {
-                              setFilterMyValorMin(shortcut.min); setFilterMyValorMax(shortcut.max);
-                            }
-                          }}
-                          className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg text-[10px] font-semibold text-slate-600 transition-all cursor-pointer"
+                          onClick={() => setFilterMeusImoveis((prev) => !prev)}
+                          className={`h-11 px-1 sm:px-2 rounded-xl font-medium text-[12px] sm:text-[14px] md:text-[15px] whitespace-nowrap transition-all cursor-pointer flex items-center justify-center ${
+                            filterMeusImoveis
+                              ? 'bg-[#003366] text-white'
+                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          }`}
                         >
-                          {shortcut.label}
+                          Meus imóveis
                         </button>
-                      ))}
-                    </div>
-                  </div>
 
-                  {/* 5. Cômodos e Especificações */}
-                  <div className="space-y-3 border-t border-slate-100 pt-3">
-                    <label className="font-bold text-slate-700 block uppercase tracking-wider text-[10px]">6. Cômodos Mínimos</label>
+                        <button
+                          type="button"
+                          onClick={() => setFilterOutrosCorretores((prev) => !prev)}
+                          className={`h-11 px-1 sm:px-2 rounded-xl font-medium text-[12px] sm:text-[14px] md:text-[15px] whitespace-nowrap transition-all cursor-pointer flex items-center justify-center ${
+                            filterOutrosCorretores
+                              ? 'bg-[#003366] text-white'
+                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          }`}
+                        >
+                          Parcerias
+                        </button>
 
-                    {/* Quartos */}
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-slate-700 text-xs">Quartos / Dormitórios</span>
-                      <div className="flex gap-1">
-                        {[0, 1, 2, 3, 4].map((num) => {
-                          const cur = filterModalTab === 'home' ? filterDormitorios : filterMyDormitorios;
-                          return (
-                            <button
-                              key={num}
-                              type="button"
-                              onClick={() => filterModalTab === 'home' ? setFilterDormitorios(num) : setFilterMyDormitorios(num)}
-                              className={`w-8 h-8 rounded-lg font-bold text-xs transition-all cursor-pointer ${
-                                cur === num
-                                  ? 'bg-blue-600 text-white'
-                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                              }`}
-                            >
-                              {num === 0 ? 'Qualq.' : `${num}+`}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
+                        <button
+                          type="button"
+                          onClick={() => setFilterIntegracao((prev) => !prev)}
+                          className={`h-11 px-1 sm:px-2 rounded-xl font-medium text-[12px] sm:text-[14px] md:text-[15px] whitespace-nowrap transition-all cursor-pointer flex items-center justify-center ${
+                            filterIntegracao
+                              ? 'bg-[#003366] text-white'
+                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          }`}
+                        >
+                          Integrações
+                        </button>
 
-                    {/* Banheiros / BWC */}
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-slate-700 text-xs">Banheiros / BWC</span>
-                      <div className="flex gap-1">
-                        {[0, 1, 2, 3, 4].map((num) => {
-                          const cur = filterModalTab === 'home' ? filterBanheiros : filterMyBanheiros;
-                          return (
-                            <button
-                              key={num}
-                              type="button"
-                              onClick={() => filterModalTab === 'home' ? setFilterBanheiros(num) : setFilterMyBanheiros(num)}
-                              className={`w-8 h-8 rounded-lg font-bold text-xs transition-all cursor-pointer ${
-                                cur === num
-                                  ? 'bg-blue-600 text-white'
-                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                              }`}
-                            >
-                              {num === 0 ? 'Qualq.' : `${num}+`}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Vagas */}
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-slate-700 text-xs">Vagas de Garagem</span>
-                      <div className="flex gap-1">
-                        {[0, 1, 2, 3, 4].map((num) => {
-                          const cur = filterModalTab === 'home' ? filterVagas : filterMyVagas;
-                          return (
-                            <button
-                              key={num}
-                              type="button"
-                              onClick={() => filterModalTab === 'home' ? setFilterVagas(num) : setFilterMyVagas(num)}
-                              className={`w-8 h-8 rounded-lg font-bold text-xs transition-all cursor-pointer ${
-                                cur === num
-                                  ? 'bg-blue-600 text-white'
-                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                              }`}
-                            >
-                              {num === 0 ? 'Qualq.' : `${num}+`}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 6. Metragem Privativa - only for Home */}
-                  {filterModalTab === 'home' && (
-                    <div className="space-y-1.5 border-t border-slate-100 pt-3">
-                      <label className="font-bold text-slate-700 block uppercase tracking-wider text-[10px]">7. Metragem Privativa (m²)</label>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <span className="text-[10px] font-semibold text-slate-500 block mb-0.5">Área Mínima</span>
-                          <input
-                            type="number"
-                            placeholder="Ex: 80 m²"
-                            value={filterMetragemMin === 0 ? '' : filterMetragemMin}
-                            onChange={(e) => setFilterMetragemMin(e.target.value === '' ? 0 : Number(e.target.value))}
-                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-hidden"
-                          />
-                        </div>
-                        <div>
-                          <span className="text-[10px] font-semibold text-slate-500 block mb-0.5">Área Máxima</span>
-                          <input
-                            type="number"
-                            placeholder="Ex: 300 m²"
-                            value={filterMetragemMax === 0 ? '' : filterMetragemMax}
-                            onChange={(e) => setFilterMetragemMax(e.target.value === '' ? 0 : Number(e.target.value))}
-                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-hidden"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 7. Fonte de Imóveis - only for Home */}
-                  {filterModalTab === 'home' && (
-                    <div className="space-y-2 border-t border-slate-100 pt-3">
-                      <label className="font-bold text-slate-700 block uppercase tracking-wider text-[10px]">8. Origem e Visibilidade</label>
-                      <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={filterMeusImoveis}
-                            onChange={(e) => setFilterMeusImoveis(e.target.checked)}
-                            className="w-4 h-4 text-[#003366] rounded accent-[#003366]"
-                          />
-                          <span className="font-semibold text-slate-800">Meus imóveis cadastrados</span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={filterOutrosCorretores}
-                            onChange={(e) => setFilterOutrosCorretores(e.target.checked)}
-                            className="w-4 h-4 text-[#003366] rounded accent-[#003366]"
-                          />
-                          <span className="font-semibold text-slate-800">Rede de Parcerias (Outros Corretores)</span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={filterIntegracao}
-                            onChange={(e) => setFilterIntegracao(e.target.checked)}
-                            className="w-4 h-4 text-amber-500 rounded accent-amber-500"
-                          />
-                          <span className="font-semibold text-slate-800">Integração com Portais CRM</span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer pt-1 border-t border-slate-200/60">
-                          <input
-                            type="checkbox"
-                            checked={filterApenasFavoritos}
-                            onChange={(e) => setFilterApenasFavoritos(e.target.checked)}
-                            className="w-4 h-4 text-rose-500 rounded accent-rose-500"
-                          />
-                          <span className="font-bold text-rose-700 flex items-center gap-1">
-                            <Heart size={13} className="fill-rose-500 text-rose-500" />
-                            Apenas meus imóveis Favoritos
-                          </span>
-                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setFilterApenasFavoritos((prev) => !prev)}
+                          className={`h-11 px-1 sm:px-2 rounded-xl font-medium text-[12px] sm:text-[14px] md:text-[15px] whitespace-nowrap transition-all cursor-pointer flex items-center justify-center ${
+                            filterApenasFavoritos
+                              ? 'bg-[#003366] text-white'
+                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          }`}
+                        >
+                          Favoritos
+                        </button>
                       </div>
                     </div>
                   )}
                 </div>
 
-                {/* Modal Footer */}
-                <div className="p-4 border-t border-slate-100 bg-white flex gap-3">
+                {/* Rodapé Fixo */}
+                <div className="p-4 sm:p-5 border-t border-slate-100 bg-white flex items-center justify-between gap-4 sticky bottom-0 z-10">
                   <button
                     type="button"
                     onClick={handleResetFilters}
-                    className="px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-full font-bold text-xs transition-all cursor-pointer"
+                    className="text-[15px] font-semibold text-slate-600 hover:text-slate-900 underline sm:no-underline sm:hover:underline transition-colors cursor-pointer py-2 px-1"
                   >
                     Limpar
                   </button>
                   <button
                     type="button"
-                    onClick={() => setIsFilterModalOpen(false)}
-                    className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-3 px-4 rounded-full font-bold text-xs shadow-md transition-all cursor-pointer text-center"
+                    onClick={() => {
+                      setHomePage(1);
+                      setIsFilterModalOpen(false);
+                    }}
+                    className="bg-[#003366] hover:bg-[#002244] active:scale-[0.99] text-white font-semibold text-[15px] py-3.5 px-6 rounded-xl shadow-xs transition-all cursor-pointer text-center"
                   >
-                    Ver {filterModalTab === 'home' ? filteredImoveis.length : filteredMyProperties.length} Imóveis Encontrados
+                    Ver {filterModalTab === 'home' ? filteredImoveis.length : filteredMyProperties.length}{' '}
+                    {(filterModalTab === 'home' ? filteredImoveis.length : filteredMyProperties.length) === 1
+                      ? 'imóvel'
+                      : 'imóveis'}
                   </button>
                 </div>
               </motion.div>

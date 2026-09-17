@@ -45,4 +45,32 @@ export interface PortalProperty extends Imovel {
   dataEntrega?: string;
   dataPublicacao?: string;
   isLancamento?: boolean;
+  corretorNome?: string;
+  corretorTelefone?: string;
+}
+
+/**
+ * Estrutura ultra-leve para os marcadores do mapa (retornada por /api/imoveis/mapa)
+ * Não contém imagens, descrição, dados do proprietário, etc.
+ */
+export interface MapPropertyMarker {
+  id: string;
+  latitude: number;
+  longitude: number;
+  valor_venda?: number;
+  valor_locacao?: number;
+  tipo?: string;
+  modalidade?: string;
+  valor?: number;
+  titulo?: string;
+  cidade?: string;
+  bairro?: string;
+  statusImovel?: string;
+  tipoImovel?: string;
+  quartos?: number;
+  dormitorios?: number;
+  vagas?: number;
+  metragem?: number;
+  area_privativa?: number;
+  nomeEdificio?: string;
 }

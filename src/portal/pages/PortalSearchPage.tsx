@@ -14,7 +14,8 @@ import { PortalAlertModal } from '../components/PortalAlertModal';
 import { PortalMoreFiltersModal } from '../components/PortalMoreFiltersModal';
 import { PortalMobileInitialSearch } from '../components/PortalMobileInitialSearch';
 import { PortalMobileSearchBar } from '../components/PortalMobileSearchBar';
-import { PortalFilterState, PortalSortOption, PortalProperty } from '../types';
+import { PortalFilterState, PortalSortOption, PortalProperty, MapPropertyMarker } from '../types';
+import { DbService } from '../../services/db';
 
 const FALLBACK_HERO_IMAGE = 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=1600&auto=format&fit=crop&q=80';
 
@@ -74,6 +75,15 @@ export function PortalSearchPage({
     return best;
   }, [properties]);
 
+  // Cidades únicas extraídas estritamente dos imóveis com dados reais
+  const availableCities = useMemo(() => {
+    const set = new Set<string>();
+    properties.forEach((p) => {
+      if (p.cidade && p.cidade.trim()) set.add(p.cidade.trim());
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [properties]);
+
   // Filtros padrão: inicializa com os filtros passados da tela de abertura ou padrão
   // "categoria: 'Todos'" e "finalidade: 'Comprar'" garantem que, ao selecionar apenas a cidade, todos os imóveis daquela cidade sejam exibidos sem restrições
   const [filters, setFilters] = useState<PortalFilterState>(() => ({
@@ -102,9 +112,10 @@ export function PortalSearchPage({
     }
   }, [topCity]);
 
-  // Estado de busca: ao entrar no site a primeira tela é a inicial básica (hasSearched = false)
+  // Estado de busca: no desktop (>=1024px) exibe diretamente o portal com a barra de filtros centralizada; no mobile, exibe os cards iniciais
   const [hasSearched, setHasSearched] = useState<boolean>(() => {
     if (initialMobileViewMode === 'map' || openedFromMap) return true;
+    if (typeof window !== 'undefined' && window.innerWidth >= 1024) return true;
     return false;
   });
   const [mobileViewMode, setMobileViewMode] = useState<'list' | 'map'>(() => initialMobileViewMode || 'list');
@@ -116,8 +127,9 @@ export function PortalSearchPage({
   useEffect(() => {
     const handleHash = () => {
       const hash = window.location.hash;
+      const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
       if (hash === '#home' || hash === '' || hash === '#') {
-        setHasSearched(false);
+        setHasSearched(isDesktop);
         setMobileViewMode('list');
       } else if (hash.startsWith('#busca') || hash.startsWith('#imoveis')) {
         setHasSearched(true);
@@ -163,9 +175,106 @@ export function PortalSearchPage({
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null);
 
+  // Marcadores do mapa: todos os imóveis disponíveis respeitando os filtros (via /api/imoveis/mapa)
+  const [mapMarkers, setMapMarkers] = useState<MapPropertyMarker[]>([]);
+  const [loadingMapMarkers, setLoadingMapMarkers] = useState<boolean>(false);
+
+  // Serializa filtros para evitar requisições repetidas ou loops desnecessários
+  const filterSerialized = useMemo(() => {
+    return JSON.stringify({
+      cidade: filters.cidade || '',
+      finalidade: filters.finalidade || '',
+      categoria: filters.categoria || '',
+      tipoImovel: filters.tipoImovel || '',
+      statusImovel: filters.statusImovel || '',
+      busca: (filters.busca || '').trim().toLowerCase(),
+      precoMin: filters.precoMin || 0,
+      precoMax: filters.precoMax || 0,
+      quartosMin: filters.quartosMin || 0,
+      banheirosMin: filters.banheirosMin || 0,
+      vagasMin: filters.vagasMin || 0,
+      metragemMin: filters.metragemMin || 0,
+      metragemMax: filters.metragemMax || 0,
+      bairro: filters.bairro || '',
+      construtora: filters.construtora || '',
+    });
+  }, [
+    filters.cidade,
+    filters.finalidade,
+    filters.categoria,
+    filters.tipoImovel,
+    filters.statusImovel,
+    filters.busca,
+    filters.precoMin,
+    filters.precoMax,
+    filters.quartosMin,
+    filters.banheirosMin,
+    filters.vagasMin,
+    filters.metragemMin,
+    filters.metragemMax,
+    filters.bairro,
+    filters.construtora,
+  ]);
+
+  const activeFetchAbortRef = useRef<AbortController | null>(null);
+  const lastFetchedFilterRef = useRef<string>('');
+
+  useEffect(() => {
+    if (lastFetchedFilterRef.current === filterSerialized && mapMarkers.length > 0) {
+      return;
+    }
+    lastFetchedFilterRef.current = filterSerialized;
+
+    if (activeFetchAbortRef.current) {
+      activeFetchAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    activeFetchAbortRef.current = controller;
+
+    let isMounted = true;
+    setLoadingMapMarkers(true);
+
+    DbService.getImoveisMapa(filters, controller.signal)
+      .then((data) => {
+        if (isMounted) {
+          setMapMarkers(data);
+        }
+      })
+      .catch((err) => {
+        if (err?.name !== 'AbortError') {
+          console.warn('[PortalSearchPage] Erro ao carregar marcadores do mapa:', err);
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setLoadingMapMarkers(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
+  }, [filterSerialized]);
+
+  // Quando o filtro de cidade mudar, sincroniza os imóveis dessa cidade a partir do banco de dados
+  const selectedCity = filters.cidade;
+  useEffect(() => {
+    if (selectedCity && selectedCity !== 'Todas') {
+      DbService.getImoveis({ limit: 500, cidade: selectedCity });
+    }
+  }, [selectedCity]);
+
   // Modais de alerta e mais filtros
   const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
   const [isMoreFiltersOpen, setIsMoreFiltersOpen] = useState(false);
+
+  // Paginação progressiva dos cards na interface
+  const [displayCount, setDisplayCount] = useState(24);
+
+  useEffect(() => {
+    setDisplayCount(24);
+  }, [filterSerialized, sortBy]);
 
   const handleUpdateFilters = useCallback((newFilters: Partial<PortalFilterState>) => {
     setFilters((prev) => ({ ...prev, ...newFilters }));
@@ -214,7 +323,7 @@ export function PortalSearchPage({
       list = list.filter((p) => (p.statusImovel || '').toLowerCase() === s);
     }
 
-    // Busca livre (palavra-chave, empreendimento, condomínio, bairro, código ou construtora)
+    // Busca livre combinada (empreendimento, condomínio, bairro, código, construtora, título, endereço, etc.)
     if (filters.busca && filters.busca.trim()) {
       const q = filters.busca.toLowerCase().trim();
       list = list.filter((p) =>
@@ -223,7 +332,11 @@ export function PortalSearchPage({
         (p.cidade || '').toLowerCase().includes(q) ||
         (p.codigo || '').toLowerCase().includes(q) ||
         (p.construtora || '').toLowerCase().includes(q) ||
-        (p.descricao || '').toLowerCase().includes(q)
+        ((p as any).nomeEdificio || '').toLowerCase().includes(q) ||
+        (p.descricao || '').toLowerCase().includes(q) ||
+        (p.endereco || '').toLowerCase().includes(q) ||
+        (p.tipoImovel || '').toLowerCase().includes(q) ||
+        (p.statusImovel || '').toLowerCase().includes(q)
       );
     }
 
@@ -297,6 +410,20 @@ export function PortalSearchPage({
     return list;
   }, [properties, filters, sortBy]);
 
+  const displayedProperties = useMemo(() => {
+    return filteredAndSortedProperties.slice(0, displayCount);
+  }, [filteredAndSortedProperties, displayCount]);
+
+  const canLoadMore = displayCount < filteredAndSortedProperties.length || hasMore;
+
+  const handleShowMoreCards = useCallback(() => {
+    if (displayCount < filteredAndSortedProperties.length) {
+      setDisplayCount((prev) => Math.min(prev + 24, filteredAndSortedProperties.length));
+    } else if (hasMore && onLoadMore) {
+      onLoadMore();
+    }
+  }, [displayCount, filteredAndSortedProperties.length, hasMore, onLoadMore]);
+
   // Sincronização ao clicar no marcador do mapa:
   // "no mapa ao clicar no imovel vai para a vizualizacao, apos clicar no botao fechar volta para o map"
   const handleSelectFromMap = useCallback((id: string) => {
@@ -312,6 +439,25 @@ export function PortalSearchPage({
           isLoggedIn={isLoggedIn}
           onOpenAuth={onOpenAuth}
           onGoHome={() => {
+            // Limpa todos os filtros para o padrão original
+            setFilters({
+              cidade: topCity || 'Balneário Camboriú',
+              finalidade: 'Comprar',
+              categoria: 'Todos',
+              busca: '',
+              bairro: undefined,
+              construtora: undefined,
+              precoMin: undefined,
+              precoMax: undefined,
+              quartosMin: undefined,
+              banheirosMin: undefined,
+              vagasMin: undefined,
+              metragemMin: undefined,
+              metragemMax: undefined,
+              tipoImovel: undefined,
+              statusImovel: undefined,
+            });
+            // Reseta a tela para a tela inicial
             setHasSearched(false);
             setMobileViewMode('list');
             window.location.hash = '#home';
@@ -376,9 +522,10 @@ export function PortalSearchPage({
           {/* ========================================================================= */}
           <div className="hidden lg:flex flex-col flex-1 min-h-0 w-full overflow-hidden relative">
             {/* 6. FILTROS HORIZONTAIS DESKTOP FIXOS */}
-            <div className="shrink-0 z-30">
+            <div className="shrink-0 z-40">
               <PortalFilters
                 filters={filters}
+                availableCities={availableCities}
                 onChangeFilters={handleUpdateFilters}
                 onOpenAlertModal={() => setIsAlertModalOpen(true)}
                 onOpenMoreFilters={() => setIsMoreFiltersOpen(true)}
@@ -390,9 +537,9 @@ export function PortalSearchPage({
               {/* COLUNA ESQUERDA: ~60% Imóveis */}
               <div className="w-full lg:w-[60%] h-full flex flex-col min-h-0 overflow-hidden bg-white">
                 {/* Subcabeçalho de navegação e ordenação 100% FIXO no topo (não se move ao rolar os cards) */}
-                <div className="shrink-0 px-4 sm:px-6 lg:px-8 py-3.5 bg-white border-b border-slate-100 flex items-center justify-between gap-3 flex-wrap z-10 shadow-2xs">
+                <div className="shrink-0 px-4 sm:px-6 lg:px-8 py-3.5 bg-white border-b border-slate-100 flex items-center justify-between gap-3 flex-wrap relative z-40 shadow-2xs">
                   <nav aria-label="Navegação estrutural" className="min-w-0">
-                    <ol className="flex items-center gap-1.5 text-xs text-slate-500 flex-wrap">
+                    <ol className="flex items-center gap-1.5 text-xs lg:text-[13px] text-slate-500 flex-wrap">
                       <li>
                         <button
                           type="button"
@@ -429,6 +576,12 @@ export function PortalSearchPage({
                           </li>
                         </>
                       )}
+                      <li className="text-slate-400">›</li>
+                      <li>
+                        <span className="text-slate-700 font-semibold">
+                          {filteredAndSortedProperties.length} {filteredAndSortedProperties.length === 1 ? 'imóvel' : 'imóveis'}
+                        </span>
+                      </li>
                     </ol>
                   </nav>
 
@@ -443,7 +596,7 @@ export function PortalSearchPage({
                   {filteredAndSortedProperties.length > 0 ? (
                     <div className="pb-12">
                       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5 pb-6">
-                        {filteredAndSortedProperties.map((imovel) => (
+                        {displayedProperties.map((imovel) => (
                           <PortalPropertyCard
                             key={imovel.id}
                             imovel={imovel}
@@ -456,13 +609,13 @@ export function PortalSearchPage({
                         ))}
                       </div>
 
-                      {hasMore && (
+                      {canLoadMore && (
                         <div className="flex justify-center pt-2 pb-6">
                           <button
                             type="button"
-                            onClick={onLoadMore}
+                            onClick={handleShowMoreCards}
                             disabled={loadingMore}
-                            className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#003366] hover:bg-[#002244] disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
+                            className="inline-flex items-center justify-center gap-2 h-11 lg:h-12 px-6 lg:px-7 bg-[#003366] hover:bg-[#002244] disabled:opacity-50 text-white text-xs lg:text-sm font-semibold rounded-xl shadow-sm transition-all cursor-pointer active:scale-[0.99]"
                           >
                             {loadingMore ? (
                               <>
@@ -470,7 +623,9 @@ export function PortalSearchPage({
                                 <span>Carregando mais imóveis...</span>
                               </>
                             ) : (
-                              <span>Carregar mais imóveis</span>
+                              <span>
+                                Carregar mais imóveis ({displayedProperties.length} de {filteredAndSortedProperties.length})
+                              </span>
                             )}
                           </button>
                         </div>
@@ -478,10 +633,10 @@ export function PortalSearchPage({
                     </div>
                   ) : (
                     <div className="text-center py-20 bg-slate-50 rounded-2xl border border-slate-100 p-8 space-y-3">
-                      <p className="text-sm font-bold text-slate-700">
+                      <p className="text-sm lg:text-base font-semibold text-slate-800">
                         Nenhum imóvel encontrado com os filtros selecionados
                       </p>
-                      <p className="text-xs text-slate-400">
+                      <p className="text-xs lg:text-sm text-slate-500 max-w-md mx-auto">
                         Tente ajustar a faixa de valor, número de quartos ou remover filtros adicionais.
                       </p>
                       <button
@@ -493,7 +648,7 @@ export function PortalSearchPage({
                             categoria: 'Lançamentos',
                           });
                         }}
-                        className="px-4 py-2 bg-[#003366] text-white text-xs font-bold rounded-lg hover:bg-[#002244] transition-all cursor-pointer"
+                        className="h-10 px-5 bg-[#003366] text-white text-xs lg:text-sm font-semibold rounded-xl hover:bg-[#002244] transition-all cursor-pointer active:scale-[0.99]"
                       >
                         Redefinir Filtros
                       </button>
@@ -505,7 +660,7 @@ export function PortalSearchPage({
         {/* COLUNA DIREITA DESKTOP: ~40% Mapa Permanente 100% Fixo */}
         <aside className="w-full lg:w-[40%] h-full shrink-0 border-l border-slate-200 relative overflow-hidden" id="portal-map-wrapper">
           <PortalMap
-            imoveis={filteredAndSortedProperties}
+            imoveis={mapMarkers}
             hoveredId={hoveredId}
             selectedId={selectedPinId}
             onHover={setHoveredId}
@@ -543,7 +698,7 @@ export function PortalSearchPage({
             {mobileViewMode === 'list' && (
               <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
                 {/* Cabeçalho resumido com contagem e ordenação FIXADO NO TOPO */}
-                <div className="shrink-0 px-4 py-2.5 bg-white border-b border-slate-100 flex items-center justify-between gap-2 z-20 shadow-2xs">
+                <div className="shrink-0 px-4 py-2.5 bg-white border-b border-slate-100 flex items-center justify-between gap-2 relative z-40 shadow-2xs">
                   <div className="text-xs font-bold text-slate-700">
                     <span>{filteredAndSortedProperties.length} imóveis</span>
                     <span className="text-slate-400 font-normal ml-1">
@@ -559,7 +714,7 @@ export function PortalSearchPage({
                 <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3.5 space-y-4 pb-28 scroll-smooth">
                   {filteredAndSortedProperties.length > 0 ? (
                     <div className="space-y-4">
-                      {filteredAndSortedProperties.map((imovel) => (
+                      {displayedProperties.map((imovel) => (
                         <PortalPropertyCard
                           key={imovel.id}
                           imovel={imovel}
@@ -571,11 +726,11 @@ export function PortalSearchPage({
                         />
                       ))}
 
-                      {hasMore && (
+                      {canLoadMore && (
                         <div className="flex justify-center pt-2 pb-6">
                           <button
                             type="button"
-                            onClick={onLoadMore}
+                            onClick={handleShowMoreCards}
                             disabled={loadingMore}
                             className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#003366] hover:bg-[#002244] disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
                           >
@@ -585,7 +740,9 @@ export function PortalSearchPage({
                                 <span>Carregando mais...</span>
                               </>
                             ) : (
-                              <span>Carregar mais imóveis</span>
+                              <span>
+                                Carregar mais imóveis ({displayedProperties.length} de {filteredAndSortedProperties.length})
+                              </span>
                             )}
                           </button>
                         </div>
@@ -656,7 +813,7 @@ export function PortalSearchPage({
                 {/* CONTAINER DO MAPA 100% DA TELA */}
                 <div className="flex-1 relative w-full h-full">
                   <PortalMap
-                    imoveis={filteredAndSortedProperties}
+                    imoveis={mapMarkers}
                     hoveredId={hoveredId}
                     selectedId={selectedPinId}
                     onHover={setHoveredId}
@@ -697,7 +854,7 @@ export function PortalSearchPage({
         isOpen={isMoreFiltersOpen}
         onClose={() => setIsMoreFiltersOpen(false)}
         onApply={handleUpdateFilters}
-        properties={properties}
+        properties={properties.length >= DbService.getImoveisSync().length ? properties : (DbService.getImoveisSync() as any)}
       />
     </div>
   );

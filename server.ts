@@ -43,7 +43,8 @@ try {
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-User-Email, X-Corretor-Email, x-user-email, x-corretor-email, Accept, Origin, X-Requested-With');
+  res.setHeader('Access-Control-Expose-Headers', 'X-Total-Count, X-Page, X-Limit, X-Total-Pages');
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
   }
@@ -527,21 +528,51 @@ app.get(['/api/brokers', '/api/corretores'], async (req: Request, res: Response)
   }
 });
 
+// List available cities with properties count
+app.get(['/api/imoveis/cidades', '/api/cidades', '/api/properties/cities'], async (req: Request, res: Response) => {
+  try {
+    const cidades = await ServerDb.getCidades();
+    return res.json(cidades);
+  } catch (err: any) {
+    logBackendError('/api/imoveis/cidades', err);
+    return res.status(500).json({ error: 'Erro ao buscar cidades.' });
+  }
+});
+
 // List Properties (Public + Partnerships filter, owner data stripped unless owner, paginated & summary)
 app.get(['/api/properties', '/api/imoveis'], optionalAuthToken, async (req: AuthenticatedRequest, res: Response) => {
   logMemory('GET /api/properties BEFORE');
   try {
     const pageParam = req.query.page;
     const limitParam = req.query.limit;
+    const cidadeParam = req.query.cidade ? String(req.query.cidade) : undefined;
     const page = pageParam ? Math.max(1, parseInt(pageParam as string, 10)) : undefined;
-    const limit = limitParam ? Math.min(100, Math.max(1, parseInt(limitParam as string, 10))) : 24;
     const isPaginated = page !== undefined || req.query.format === 'paginated';
+    const limit = limitParam 
+      ? Math.min(1000, Math.max(1, parseInt(limitParam as string, 10))) 
+      : (isPaginated ? 24 : 1000);
 
     const result = await ServerDb.getImoveis({
       userEmail: req.userEmail,
       page: page || 1,
       limit,
-      paginate: isPaginated
+      paginate: isPaginated,
+      cidade: cidadeParam,
+      bairro: req.query.bairro ? String(req.query.bairro) : undefined,
+      finalidade: req.query.finalidade ? String(req.query.finalidade) : undefined,
+      tipo: req.query.tipo ? String(req.query.tipo) : undefined,
+      categoria: req.query.categoria ? String(req.query.categoria) : undefined,
+      tipoImovel: req.query.tipoImovel ? String(req.query.tipoImovel) : undefined,
+      statusImovel: req.query.statusImovel ? String(req.query.statusImovel) : undefined,
+      busca: req.query.busca ? String(req.query.busca) : (req.query.q ? String(req.query.q) : undefined),
+      precoMin: req.query.precoMin ? parseFloat(req.query.precoMin as string) : undefined,
+      precoMax: req.query.precoMax ? parseFloat(req.query.precoMax as string) : undefined,
+      quartos: req.query.quartos ? parseInt(req.query.quartos as string, 10) : (req.query.quartosMin ? parseInt(req.query.quartosMin as string, 10) : undefined),
+      banheiros: req.query.banheiros ? parseInt(req.query.banheiros as string, 10) : (req.query.banheirosMin ? parseInt(req.query.banheirosMin as string, 10) : undefined),
+      vagas: req.query.vagas ? parseInt(req.query.vagas as string, 10) : (req.query.vagasMin ? parseInt(req.query.vagasMin as string, 10) : undefined),
+      metragemMin: req.query.metragemMin ? parseFloat(req.query.metragemMin as string) : undefined,
+      metragemMax: req.query.metragemMax ? parseFloat(req.query.metragemMax as string) : undefined,
+      construtora: req.query.construtora ? String(req.query.construtora) : undefined,
     });
 
     logMemory('GET /api/properties AFTER');
@@ -600,8 +631,41 @@ app.get('/api/properties/mine', verifyAuthToken, async (req: AuthenticatedReques
   }
 });
 
+// Lightweight Map markers endpoint (All markers matching filters, no heavy fields)
+app.get(['/api/imoveis/mapa', '/api/properties/mapa', '/api/properties/map'], optionalAuthToken, async (req: AuthenticatedRequest, res: Response) => {
+  logMemory('GET /api/imoveis/mapa BEFORE');
+  try {
+    const filters = {
+      cidade: req.query.cidade as string,
+      finalidade: req.query.finalidade as string,
+      categoria: req.query.categoria as string,
+      tipoImovel: req.query.tipoImovel as string,
+      statusImovel: req.query.statusImovel as string,
+      busca: req.query.busca as string,
+      precoMin: req.query.precoMin ? Number(req.query.precoMin) : undefined,
+      precoMax: req.query.precoMax ? Number(req.query.precoMax) : undefined,
+      quartosMin: req.query.quartosMin ? Number(req.query.quartosMin) : undefined,
+      banheirosMin: req.query.banheirosMin ? Number(req.query.banheirosMin) : undefined,
+      vagasMin: req.query.vagasMin ? Number(req.query.vagasMin) : undefined,
+      metragemMin: req.query.metragemMin ? Number(req.query.metragemMin) : undefined,
+      metragemMax: req.query.metragemMax ? Number(req.query.metragemMax) : undefined,
+      bairro: req.query.bairro as string,
+      construtora: req.query.construtora as string,
+    };
+
+    const markers = await ServerDb.getImoveisMapa(filters);
+    logMemory('GET /api/imoveis/mapa AFTER');
+    return res.json(markers);
+  } catch (err: any) {
+    logMemory('GET /api/imoveis/mapa ERROR');
+    logBackendError('/api/imoveis/mapa', err);
+    return res.status(500).json({ error: 'Erro ao listar marcadores do mapa.' });
+  }
+});
+
 // Get Single Property with full photos & details
-app.get(['/api/properties/:id', '/api/imoveis/:id'], optionalAuthToken, async (req: AuthenticatedRequest, res: Response) => {
+app.get(['/api/properties/:id', '/api/imoveis/:id'], optionalAuthToken, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  if (req.params.id === 'mapa' || req.params.id === 'mine' || req.params.id === 'cidades') return next();
   logMemory(`GET /api/properties/${req.params.id} BEFORE`);
   try {
     const property = await ServerDb.getImovelById(req.params.id);

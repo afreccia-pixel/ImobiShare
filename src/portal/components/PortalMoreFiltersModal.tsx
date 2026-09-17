@@ -4,8 +4,10 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Check, SlidersHorizontal, Building, MapPin, DollarSign, Home, BedDouble, Bath, Car, Maximize2 } from 'lucide-react';
+import { X, ChevronDown } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { PortalFilterState, PortalProperty } from '../types';
+import { DbService } from '../../services/db';
 
 interface PortalMoreFiltersModalProps {
   filters: PortalFilterState;
@@ -23,11 +25,9 @@ export function PortalMoreFiltersModal({
   properties = [],
 }: PortalMoreFiltersModalProps) {
   // Local state initialized from incoming filters
-  const [cidade, setCidade] = useState<string>(filters.cidade || 'Balneário Camboriú');
-  const [bairro, setBairro] = useState<string>(filters.bairro || '');
   const [finalidade, setFinalidade] = useState<'Comprar' | 'Alugar' | 'Todos'>(filters.finalidade || 'Comprar');
-  const [tipoImovel, setTipoImovel] = useState<string>(filters.tipoImovel || 'todos');
-  const [statusImovel, setStatusImovel] = useState<string>(filters.statusImovel || 'todos');
+  const [tipoImovel, setTipoImovel] = useState<string>(filters.tipoImovel || '');
+  const [statusImovel, setStatusImovel] = useState<string>(filters.statusImovel || '');
   const [precoMin, setPrecoMin] = useState<number>(filters.precoMin || 0);
   const [precoMax, setPrecoMax] = useState<number>(filters.precoMax || 15000000);
   const [quartos, setQuartos] = useState<number>(filters.quartosMin || 0);
@@ -40,11 +40,9 @@ export function PortalMoreFiltersModal({
   // Keep local state in sync whenever modal opens with new external filters
   useEffect(() => {
     if (isOpen) {
-      setCidade(filters.cidade || 'Balneário Camboriú');
-      setBairro(filters.bairro || '');
       setFinalidade(filters.finalidade || 'Comprar');
-      setTipoImovel(filters.tipoImovel || 'todos');
-      setStatusImovel(filters.statusImovel || 'todos');
+      setTipoImovel(filters.tipoImovel && filters.tipoImovel !== 'todos' ? filters.tipoImovel : '');
+      setStatusImovel(filters.statusImovel && filters.statusImovel !== 'todos' ? filters.statusImovel : '');
       setPrecoMin(filters.precoMin || 0);
       setPrecoMax(filters.precoMax || 15000000);
       setQuartos(filters.quartosMin || 0);
@@ -56,56 +54,47 @@ export function PortalMoreFiltersModal({
     }
   }, [isOpen, filters]);
 
-  // Dynamically extract unique cities from properties
-  const availableCities = useMemo(() => {
-    const set = new Set<string>();
-    properties.forEach((p) => {
-      if (p.cidade && p.cidade.trim()) set.add(p.cidade.trim());
-    });
-    if (set.size === 0) {
-      ['Balneário Camboriú', 'Itapema', 'Itajaí', 'Praia Brava', 'Navegantes', 'Porto Belo'].forEach((c) => set.add(c));
+  // Garante que o modal utilize todo o acervo disponível em memória para cálculo exato do total do filtro
+  const effectiveProperties = useMemo(() => {
+    const syncList = DbService.getImoveisSync();
+    if (properties && properties.length >= syncList.length && properties.length > 0) {
+      return properties;
     }
-    return Array.from(set).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    return syncList.length > 0 ? (syncList as any) : properties;
   }, [properties]);
 
   // Dynamically extract unique construtoras from properties
   const availableConstrutoras = useMemo(() => {
     const set = new Set<string>();
-    properties.forEach((p) => {
+    effectiveProperties.forEach((p: any) => {
       if (p.construtora && p.construtora.trim()) set.add(p.construtora.trim());
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  }, [properties]);
-
-  // Popular neighborhoods for quick chips
-  const popularNeighborhoods = [
-    'Centro',
-    'Barra Sul',
-    'Pioneiros',
-    'Nações',
-    'Praia Brava',
-    'Meia Praia',
-    'Fazenda',
-  ];
+  }, [effectiveProperties]);
 
   // Dynamic preview count of properties matching the modal state
   const matchingCount = useMemo(() => {
-    if (!properties || properties.length === 0) return 0;
-    return properties.filter((p) => {
-      // Cidade (correspondência precisa para diferenciar Camboriú de Balneário Camboriú)
-      if (cidade && cidade !== 'Todas') {
-        const c = cidade.toLowerCase().trim();
+    if (!effectiveProperties || effectiveProperties.length === 0) return 0;
+    return effectiveProperties.filter((p: any) => {
+      // Cidade já definida externamente (preserva o filtro da tela inicial)
+      if (filters.cidade && filters.cidade !== 'Todas') {
+        const c = filters.cidade.toLowerCase().trim();
         const pCity = (p.cidade || '').toLowerCase().trim();
         if (pCity !== c) {
           return false;
         }
       }
 
-      // Finalidade
+      // Bairro já definido externamente (preserva se houver)
+      if (filters.bairro && filters.bairro.trim() && filters.bairro !== 'Todos os bairros') {
+        if (!(p.bairro || '').toLowerCase().includes(filters.bairro.toLowerCase().trim())) return false;
+      }
+
+      // Finalidade: se for 'Todos' ou vazio, não restringe
       if (finalidade === 'Comprar' && p.tipo !== 'venda' && p.tipo !== 'ambos') return false;
       if (finalidade === 'Alugar' && p.tipo !== 'locação' && p.tipo !== 'ambos') return false;
 
-      // Tipo de imóvel
+      // Tipo de imóvel: se vazio, é todos (não filtra)
       if (tipoImovel && tipoImovel !== 'todos') {
         const t = tipoImovel.toLowerCase();
         const pType = (p.tipoImovel || '').toLowerCase();
@@ -116,7 +105,7 @@ export function PortalMoreFiltersModal({
         }
       }
 
-      // Status
+      // Status do imóvel: se vazio, é todos (não filtra)
       if (statusImovel && statusImovel !== 'todos') {
         const s = statusImovel.toLowerCase();
         if ((p.statusImovel || '').toLowerCase() !== s) return false;
@@ -126,34 +115,30 @@ export function PortalMoreFiltersModal({
       if (precoMin > 0 && p.valor < precoMin) return false;
       if (precoMax > 0 && precoMax < 15000000 && p.valor > precoMax) return false;
 
-      // Quartos
+      // Quartos: se 0, é todos (não filtra)
       if (quartos > 0 && (p.dormitorios || p.quartos || 0) < quartos) return false;
 
-      // Banheiros
+      // Banheiros: se 0, é todos (não filtra)
       if (banheiros > 0 && (p.banheiros || 0) < banheiros) return false;
 
-      // Vagas
+      // Vagas: se 0, é todos (não filtra)
       if (vagas > 0 && (p.vagas || 0) < vagas) return false;
 
       // Metragem
       if (metragemMin > 0 && (p.metragem || 0) < metragemMin) return false;
       if (metragemMax > 0 && (p.metragem || 0) > metragemMax) return false;
 
-      // Bairro
-      if (bairro && bairro.trim() && bairro !== 'Todos os bairros') {
-        if (!p.bairro.toLowerCase().includes(bairro.toLowerCase().trim())) return false;
-      }
-
-      // Construtora
-      if (construtora && construtora.trim() && construtora !== 'Todas as construtoras') {
+      // Construtora: se vazio, é todos (não filtra)
+      if (construtora && construtora.trim()) {
         if (!(p.construtora || '').toLowerCase().includes(construtora.toLowerCase().trim())) return false;
       }
 
       return true;
     }).length;
   }, [
-    properties,
-    cidade,
+    effectiveProperties,
+    filters.cidade,
+    filters.bairro,
     finalidade,
     tipoImovel,
     statusImovel,
@@ -164,18 +149,13 @@ export function PortalMoreFiltersModal({
     vagas,
     metragemMin,
     metragemMax,
-    bairro,
     construtora,
   ]);
 
-  if (!isOpen) return null;
-
   const handleClear = () => {
-    setCidade('Balneário Camboriú');
-    setBairro('');
     setFinalidade('Comprar');
-    setTipoImovel('todos');
-    setStatusImovel('todos');
+    setTipoImovel('');
+    setStatusImovel('');
     setPrecoMin(0);
     setPrecoMax(15000000);
     setQuartos(0);
@@ -186,11 +166,9 @@ export function PortalMoreFiltersModal({
     setConstrutora('');
 
     onApply({
-      cidade: 'Balneário Camboriú',
-      bairro: undefined,
       finalidade: 'Comprar',
-      tipoImovel: 'todos',
-      statusImovel: 'todos',
+      tipoImovel: undefined,
+      statusImovel: undefined,
       precoMin: undefined,
       precoMax: undefined,
       quartosMin: undefined,
@@ -205,11 +183,9 @@ export function PortalMoreFiltersModal({
 
   const handleApply = () => {
     onApply({
-      cidade,
-      bairro: bairro.trim() || undefined,
       finalidade,
-      tipoImovel: tipoImovel !== 'todos' ? tipoImovel : undefined,
-      statusImovel: statusImovel !== 'todos' ? statusImovel : undefined,
+      tipoImovel: tipoImovel && tipoImovel !== 'todos' ? tipoImovel : undefined,
+      statusImovel: statusImovel && statusImovel !== 'todos' ? statusImovel : undefined,
       precoMin: precoMin > 0 ? precoMin : undefined,
       precoMax: precoMax > 0 && precoMax < 15000000 ? precoMax : undefined,
       quartosMin: quartos > 0 ? quartos : undefined,
@@ -217,432 +193,344 @@ export function PortalMoreFiltersModal({
       vagasMin: vagas > 0 ? vagas : undefined,
       metragemMin: metragemMin > 0 ? metragemMin : undefined,
       metragemMax: metragemMax > 0 ? metragemMax : undefined,
-      construtora: construtora.trim() || undefined,
+      construtora: construtora.trim() ? construtora.trim() : undefined,
     });
     onClose();
   };
 
   return (
-    <div
-      id="modal-mais-filtros"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden border border-slate-100 relative flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-150"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Modal Header */}
-        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-blue-50 text-[#003366] flex items-center justify-center">
-              <SlidersHorizontal size={18} />
-            </div>
-            <div>
-              <h2 className="text-base sm:text-lg font-black text-slate-900 leading-tight">
-                Filtros de Busca
-              </h2>
-              <p className="text-[11px] text-slate-500 font-medium">
-                Personalize os critérios para encontrar o imóvel ideal
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Fechar filtros avançados"
-            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition-colors cursor-pointer"
+    <AnimatePresence>
+      {isOpen && (
+        <div
+          id="modal-mais-filtros"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-xs"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 50, scale: 0.98 }}
+            transition={{ duration: 0.2 }}
+            className="bg-white w-full max-w-xl max-h-[90vh] rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
           >
-            <X size={16} />
-          </button>
-        </div>
-
-        {/* Modal Scrollable Content - Segue exatamente o modelo do ImobiShare */}
-        <div className="p-4 sm:p-6 space-y-5 overflow-y-auto flex-1">
-          {/* 1. Modalidade / Finalidade (Comprar / Alugar / Todos) */}
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-              1. Modalidade de Negócio
-            </label>
-            <div className="grid grid-cols-3 gap-1.5 bg-slate-100 p-1 rounded-xl">
-              {[
-                { id: 'Todos', label: 'Todos' },
-                { id: 'Comprar', label: 'Venda' },
-                { id: 'Alugar', label: 'Alugar (Locação)' },
-              ].map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => setFinalidade(opt.id as 'Comprar' | 'Alugar' | 'Todos')}
-                  className={`py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    finalidade === opt.id
-                      ? 'bg-white text-[#003366] shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* 2. Cidade e Bairro */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-slate-100 pt-3">
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block flex items-center gap-1">
-                <MapPin size={12} className="text-[#003366]" />
-                2. Cidade
-              </label>
-              <select
-                value={cidade}
-                onChange={(e) => setCidade(e.target.value)}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs sm:text-sm focus:outline-hidden focus:border-[#003366] cursor-pointer"
+            {/* Topo Limpo / Botão de Fechar e Título */}
+            <div className="px-5 sm:px-7 pt-4 pb-3 flex items-center justify-between bg-white sticky top-0 z-10 border-b border-slate-100">
+              <h2 className="text-[16px] sm:text-[17px] font-bold text-slate-900 tracking-tight">
+                Filtros de busca
+              </h2>
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-9 h-9 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                aria-label="Fechar"
               >
-                {availableCities.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-                <option value="Todas">Todas As Cidades</option>
-              </select>
+                <X size={20} />
+              </button>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                3. Bairro / Região
-              </label>
-              <input
-                type="text"
-                placeholder="Ex: Barra Sul, Pioneiros, Centro..."
-                value={bairro}
-                onChange={(e) => setBairro(e.target.value)}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 text-xs sm:text-sm focus:outline-hidden focus:border-[#003366]"
-              />
-            </div>
-          </div>
-
-          {/* Atalhos de Bairros populares */}
-          <div className="space-y-1">
-            <span className="text-[10px] font-medium text-slate-400 block">Bairros mais buscados:</span>
-            <div className="flex flex-wrap gap-1.5">
-              {popularNeighborhoods.map((n) => {
-                const isSelected = bairro.toLowerCase() === n.toLowerCase();
-                return (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => setBairro(isSelected ? '' : n)}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer border ${
-                      isSelected
-                        ? 'bg-blue-50 border-[#003366] text-[#003366]'
-                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    {n}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 3. Tipo de Imóvel */}
-          <div className="space-y-1.5 border-t border-slate-100 pt-3">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block flex items-center gap-1">
-              <Home size={12} className="text-[#003366]" />
-              4. Tipo de Imóvel
-            </label>
-            <div className="flex flex-wrap gap-1.5">
-              {[
-                { id: 'todos', label: 'Todos' },
-                { id: 'Apartamento', label: 'Apartamento' },
-                { id: 'Casa', label: 'Casa / Sobrado' },
-                { id: 'Cobertura', label: 'Cobertura' },
-                { id: 'Terreno', label: 'Terreno / Lote' },
-                { id: 'Comercial', label: 'Comercial' },
-                { id: 'Diferenciado', label: 'Diferenciado' },
-                { id: 'Outro', label: 'Outro' },
-              ].map((t) => {
-                const isSelected = tipoImovel.toLowerCase() === t.id.toLowerCase();
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => setTipoImovel(t.id)}
-                    className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
-                      isSelected
-                        ? 'bg-[#003366] text-white border-[#003366] shadow-xs'
-                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 4. Status do Imóvel */}
-          <div className="space-y-1.5 border-t border-slate-100 pt-3">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-              Status do Imóvel
-            </label>
-            <div className="flex flex-wrap gap-1.5">
-              {[
-                { id: 'todos', label: 'Todos os Status' },
-                { id: 'Na planta', label: 'Na Planta / Lançamento' },
-                { id: 'Mobiliado', label: 'Mobiliado' },
-                { id: 'Sem mobília', label: 'Sem Mobília' },
-              ].map((st) => {
-                const isSelected = statusImovel.toLowerCase() === st.id.toLowerCase();
-                return (
-                  <button
-                    key={st.id}
-                    type="button"
-                    onClick={() => setStatusImovel(st.id)}
-                    className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
-                      isSelected
-                        ? 'bg-[#003366] text-white border-[#003366] shadow-xs'
-                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    {st.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 5. Faixa de Preço */}
-          <div className="space-y-2 border-t border-slate-100 pt-3">
-            <div className="flex items-center justify-between">
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block flex items-center gap-1">
-                <DollarSign size={12} className="text-[#003366]" />
-                5. Faixa de Valor (R$)
-              </label>
-              {(precoMin > 0 || (precoMax > 0 && precoMax < 15000000)) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPrecoMin(0);
-                    setPrecoMax(15000000);
-                  }}
-                  className="text-[10px] text-slate-400 hover:text-slate-700 font-semibold cursor-pointer"
-                >
-                  Redefinir preço
-                </button>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <span className="text-[10px] font-semibold text-slate-500 block mb-0.5">Mínimo</span>
-                <input
-                  type="number"
-                  placeholder="R$ Mínimo"
-                  value={precoMin === 0 ? '' : precoMin}
-                  onChange={(e) => setPrecoMin(e.target.value === '' ? 0 : Number(e.target.value))}
-                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs sm:text-sm focus:outline-hidden focus:border-[#003366]"
-                />
-              </div>
-              <div>
-                <span className="text-[10px] font-semibold text-slate-500 block mb-0.5">Máximo</span>
-                <input
-                  type="number"
-                  placeholder="R$ Máximo"
-                  value={precoMax >= 15000000 || precoMax === 0 ? '' : precoMax}
-                  onChange={(e) => setPrecoMax(e.target.value === '' ? 15000000 : Number(e.target.value))}
-                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs sm:text-sm focus:outline-hidden focus:border-[#003366]"
-                />
-              </div>
-            </div>
-
-            {/* Shortcuts for price */}
-            <div className="flex flex-wrap gap-1 pt-1">
-              {[
-                { label: 'Até R$ 1 Mio', min: 0, max: 1000000 },
-                { label: 'R$ 1M a 2.5M', min: 1000000, max: 2500000 },
-                { label: 'R$ 2.5M a 4M', min: 2500000, max: 4000000 },
-                { label: 'R$ 4M+', min: 4000000, max: 15000000 },
-              ].map((sc) => (
-                <button
-                  key={sc.label}
-                  type="button"
-                  onClick={() => {
-                    setPrecoMin(sc.min);
-                    setPrecoMax(sc.max);
-                  }}
-                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg text-[10px] font-semibold text-slate-700 transition-all cursor-pointer"
-                >
-                  {sc.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* 6. Cômodos Mínimos (Quartos, Banheiros, Vagas) */}
-          <div className="space-y-3 border-t border-slate-100 pt-3">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-              6. Cômodos Mínimos
-            </label>
-
-            {/* Quartos */}
-            <div className="flex items-center justify-between">
-              <span className="font-semibold text-slate-700 text-xs flex items-center gap-1.5">
-                <BedDouble size={14} className="text-slate-400" />
-                Quartos / Dormitórios
-              </span>
-              <div className="flex gap-1">
-                {[0, 1, 2, 3, 4].map((num) => (
-                  <button
-                    key={num}
-                    type="button"
-                    onClick={() => setQuartos(num)}
-                    className={`w-8 h-8 rounded-lg font-bold text-xs transition-all cursor-pointer ${
-                      quartos === num
-                        ? 'bg-[#003366] text-white shadow-xs'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    {num === 0 ? 'Qualq.' : `${num}+`}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Banheiros */}
-            <div className="flex items-center justify-between">
-              <span className="font-semibold text-slate-700 text-xs flex items-center gap-1.5">
-                <Bath size={14} className="text-slate-400" />
-                Banheiros / BWC
-              </span>
-              <div className="flex gap-1">
-                {[0, 1, 2, 3, 4].map((num) => (
-                  <button
-                    key={num}
-                    type="button"
-                    onClick={() => setBanheiros(num)}
-                    className={`w-8 h-8 rounded-lg font-bold text-xs transition-all cursor-pointer ${
-                      banheiros === num
-                        ? 'bg-[#003366] text-white shadow-xs'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    {num === 0 ? 'Qualq.' : `${num}+`}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Vagas */}
-            <div className="flex items-center justify-between">
-              <span className="font-semibold text-slate-700 text-xs flex items-center gap-1.5">
-                <Car size={14} className="text-slate-400" />
-                Vagas de Garagem
-              </span>
-              <div className="flex gap-1">
-                {[0, 1, 2, 3, 4].map((num) => (
-                  <button
-                    key={num}
-                    type="button"
-                    onClick={() => setVagas(num)}
-                    className={`w-8 h-8 rounded-lg font-bold text-xs transition-all cursor-pointer ${
-                      vagas === num
-                        ? 'bg-[#003366] text-white shadow-xs'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    {num === 0 ? 'Qualq.' : `${num}+`}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* 7. Metragem Privativa (m²) */}
-          <div className="space-y-1.5 border-t border-slate-100 pt-3">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block flex items-center gap-1">
-              <Maximize2 size={12} className="text-[#003366]" />
-              7. Metragem Privativa (m²)
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <span className="text-[10px] font-semibold text-slate-500 block mb-0.5">Área Mínima</span>
-                <input
-                  type="number"
-                  placeholder="Ex: 80 m²"
-                  value={metragemMin === 0 ? '' : metragemMin}
-                  onChange={(e) => setMetragemMin(e.target.value === '' ? 0 : Number(e.target.value))}
-                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs sm:text-sm focus:outline-hidden focus:border-[#003366]"
-                />
-              </div>
-              <div>
-                <span className="text-[10px] font-semibold text-slate-500 block mb-0.5">Área Máxima</span>
-                <input
-                  type="number"
-                  placeholder="Ex: 300 m²"
-                  value={metragemMax === 0 ? '' : metragemMax}
-                  onChange={(e) => setMetragemMax(e.target.value === '' ? 0 : Number(e.target.value))}
-                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs sm:text-sm focus:outline-hidden focus:border-[#003366]"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* 8. Construtora / Incorporadora */}
-          <div className="space-y-1.5 border-t border-slate-100 pt-3">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block flex items-center gap-1">
-              <Building size={12} className="text-[#003366]" />
-              8. Construtora / Incorporadora
-            </label>
-            <div className="flex flex-wrap gap-1.5">
-              {[
-                'Todas as construtoras',
-                ...availableConstrutoras.slice(0, 6),
-                'FG Empreendimentos',
-                'Embraed',
-                'Baggio',
-              ]
-                .filter((val, idx, self) => self.indexOf(val) === idx)
-                .map((c) => {
-                  const isSelected = (!construtora && c === 'Todas as construtoras') || construtora.toLowerCase() === c.toLowerCase();
-                  return (
+            {/* Conteúdo com Scroll e Espaçamento Generoso (~24px) */}
+            <div className="flex-1 overflow-y-auto px-5 sm:px-7 py-5 space-y-6">
+              {/* 1. Negócio: Venda e Aluguel (sem botão Todos) */}
+              <div className="space-y-3">
+                <span className="text-[15px] sm:text-[16px] font-semibold text-slate-800 block">Negócio</span>
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { id: 'Comprar', label: 'Venda' },
+                    { id: 'Alugar', label: 'Aluguel' },
+                  ].map((opt) => (
                     <button
-                      key={c}
+                      key={opt.id}
                       type="button"
-                      onClick={() => setConstrutora(c === 'Todas as construtoras' ? '' : c)}
-                      className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
-                        isSelected
-                          ? 'bg-[#003366] text-white border-[#003366] shadow-xs'
-                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      onClick={() => setFinalidade(finalidade === opt.id ? 'Todos' : (opt.id as 'Comprar' | 'Alugar'))}
+                      className={`h-12 px-4 rounded-xl font-medium text-[15px] transition-all cursor-pointer flex items-center justify-center ${
+                        finalidade === opt.id
+                          ? 'bg-[#003366] text-white'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                       }`}
                     >
-                      {c}
+                      {opt.label}
                     </button>
-                  );
-                })}
-            </div>
-          </div>
-        </div>
+                  ))}
+                </div>
+              </div>
 
-        {/* Modal Footer (Idêntico ao ImobiShare) */}
-        <div className="p-4 border-t border-slate-100 bg-white flex items-center gap-3 shrink-0">
-          <button
-            type="button"
-            onClick={handleClear}
-            className="px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-full font-bold text-xs transition-all cursor-pointer"
-          >
-            Limpar
-          </button>
-          <button
-            type="button"
-            id="btn-aplicar-mais-filtros"
-            onClick={handleApply}
-            className="flex-1 bg-[#003366] hover:bg-[#002244] text-white py-3 px-4 rounded-full font-bold text-xs shadow-md transition-all active:scale-[0.98] cursor-pointer text-center flex items-center justify-center gap-2"
-          >
-            Ver {matchingCount} {matchingCount === 1 ? 'Imóvel Encontrado' : 'Imóveis Encontrados'}
-          </button>
+              {/* 2. Status do Imóvel (sem botão Todos; desmarcado = todos) */}
+              <div className="space-y-2 sm:space-y-2.5">
+                <span className="text-[15px] sm:text-[16px] font-semibold text-slate-800 block">Status do imóvel</span>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'Na planta', label: 'Na Planta' },
+                    { id: 'Mobiliado', label: 'Mobiliado' },
+                    { id: 'Sem mobília', label: 'Sem Mobília' },
+                  ].map((st) => {
+                    const isSelected = statusImovel.toLowerCase() === st.id.toLowerCase();
+                    return (
+                      <button
+                        key={st.id}
+                        type="button"
+                        onClick={() => setStatusImovel(isSelected ? '' : st.id)}
+                        className={`h-11 px-2 rounded-xl font-medium text-[13.5px] sm:text-[15px] whitespace-nowrap transition-all cursor-pointer flex items-center justify-center ${
+                          isSelected
+                            ? 'bg-[#003366] text-white'
+                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        }`}
+                      >
+                        {st.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 3. Tipo de Imóvel (sem botão Todos; desmarcado = todos) */}
+              <div className="space-y-2 sm:space-y-2.5">
+                <span className="text-[15px] sm:text-[16px] font-semibold text-slate-800 block">Tipo de imóvel</span>
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                  {[
+                    { id: 'Apartamento', label: 'Apartamento' },
+                    { id: 'Casa', label: 'Casa' },
+                    { id: 'Cobertura', label: 'Cobertura' },
+                    { id: 'Terreno', label: 'Terreno' },
+                    { id: 'Comercial', label: 'Comercial' },
+                    { id: 'Diferenciado', label: 'Diferenciado' },
+                    { id: 'Outro', label: 'Outro' },
+                  ].map((t) => {
+                    const isSelected = tipoImovel.toLowerCase() === t.id.toLowerCase();
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setTipoImovel(isSelected ? '' : t.id)}
+                        className={`h-11 px-1.5 sm:px-2 rounded-xl font-medium text-[13.5px] sm:text-[15px] whitespace-nowrap transition-all cursor-pointer flex items-center justify-center ${
+                          isSelected
+                            ? 'bg-[#003366] text-white'
+                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        }`}
+                      >
+                        {t.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 4. Faixa de Valor */}
+              <div className="space-y-2 sm:space-y-2.5">
+                <span className="text-[15px] sm:text-[16px] font-semibold text-slate-800 block">Faixa de valor</span>
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="number"
+                    placeholder="Valor mínimo"
+                    value={precoMin === 0 ? '' : precoMin}
+                    onChange={(e) => setPrecoMin(e.target.value === '' ? 0 : Number(e.target.value))}
+                    className="w-full h-12 px-4 bg-slate-50 border border-slate-200 rounded-xl text-[16px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#003366] focus:bg-white font-normal"
+                  />
+                  <input
+                    type="number"
+                    placeholder="Valor máximo"
+                    value={precoMax >= 15000000 || precoMax === 0 ? '' : precoMax}
+                    onChange={(e) => setPrecoMax(e.target.value === '' ? 15000000 : Number(e.target.value))}
+                    className="w-full h-12 px-4 bg-slate-50 border border-slate-200 rounded-xl text-[16px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#003366] focus:bg-white font-normal"
+                  />
+                </div>
+
+                {/* Atalhos discretos em cinza claro */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                  {[
+                    { label: 'Até R$ 1 Mio', min: 0, max: 1000000 },
+                    { label: 'R$ 1M a 2.5M', min: 1000000, max: 2500000 },
+                    { label: 'R$ 2.5M a 4M', min: 2500000, max: 4000000 },
+                    { label: 'R$ 4M+', min: 4000000, max: 15000000 },
+                  ].map((shortcut) => {
+                    const isActive = precoMin === shortcut.min && precoMax === shortcut.max;
+                    return (
+                      <button
+                        key={shortcut.label}
+                        type="button"
+                        onClick={() => {
+                          if (isActive) {
+                            setPrecoMin(0);
+                            setPrecoMax(15000000);
+                          } else {
+                            setPrecoMin(shortcut.min);
+                            setPrecoMax(shortcut.max);
+                          }
+                        }}
+                        className={`py-2 px-2 rounded-lg text-[13px] sm:text-[14px] font-medium whitespace-nowrap text-center transition-all cursor-pointer ${
+                          isActive
+                            ? 'bg-[#003366] text-white'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        {shortcut.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 5. Quartos (sem botão Todos; desmarcado = todos) */}
+              <div className="space-y-2 sm:space-y-2.5">
+                <span className="text-[15px] sm:text-[16px] font-semibold text-slate-800 block">Quartos</span>
+                <div className="grid grid-cols-4 gap-2">
+                  {[
+                    { val: 1, label: '1+' },
+                    { val: 2, label: '2+' },
+                    { val: 3, label: '3+' },
+                    { val: 4, label: '4+' },
+                  ].map((item) => {
+                    const isSelected = quartos === item.val;
+                    return (
+                      <button
+                        key={item.label}
+                        type="button"
+                        onClick={() => setQuartos(isSelected ? 0 : item.val)}
+                        className={`h-11 rounded-xl font-medium text-[15px] transition-all cursor-pointer flex items-center justify-center ${
+                          isSelected
+                            ? 'bg-[#003366] text-white'
+                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 6. Banheiros (sem botão Todos; desmarcado = todos) */}
+              <div className="space-y-2 sm:space-y-2.5">
+                <span className="text-[15px] sm:text-[16px] font-semibold text-slate-800 block">Banheiros</span>
+                <div className="grid grid-cols-4 gap-2">
+                  {[
+                    { val: 1, label: '1+' },
+                    { val: 2, label: '2+' },
+                    { val: 3, label: '3+' },
+                    { val: 4, label: '4+' },
+                  ].map((item) => {
+                    const isSelected = banheiros === item.val;
+                    return (
+                      <button
+                        key={item.label}
+                        type="button"
+                        onClick={() => setBanheiros(isSelected ? 0 : item.val)}
+                        className={`h-11 rounded-xl font-medium text-[15px] transition-all cursor-pointer flex items-center justify-center ${
+                          isSelected
+                            ? 'bg-[#003366] text-white'
+                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 7. Vagas (sem botão Todos; desmarcado = todos) */}
+              <div className="space-y-2 sm:space-y-2.5">
+                <span className="text-[15px] sm:text-[16px] font-semibold text-slate-800 block">Vagas</span>
+                <div className="grid grid-cols-4 gap-2">
+                  {[
+                    { val: 1, label: '1+' },
+                    { val: 2, label: '2+' },
+                    { val: 3, label: '3+' },
+                    { val: 4, label: '4+' },
+                  ].map((item) => {
+                    const isSelected = vagas === item.val;
+                    return (
+                      <button
+                        key={item.label}
+                        type="button"
+                        onClick={() => setVagas(isSelected ? 0 : item.val)}
+                        className={`h-11 rounded-xl font-medium text-[15px] transition-all cursor-pointer flex items-center justify-center ${
+                          isSelected
+                            ? 'bg-[#003366] text-white'
+                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 8. Área Privativa */}
+              <div className="space-y-2 sm:space-y-2.5">
+                <span className="text-[15px] sm:text-[16px] font-semibold text-slate-800 block">Área privativa</span>
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="number"
+                    placeholder="Área mínima (m²)"
+                    value={metragemMin === 0 ? '' : metragemMin}
+                    onChange={(e) => setMetragemMin(e.target.value === '' ? 0 : Number(e.target.value))}
+                    className="w-full h-12 px-4 bg-slate-50 border border-slate-200 rounded-xl text-[16px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#003366] focus:bg-white font-normal"
+                  />
+                  <input
+                    type="number"
+                    placeholder="Área máxima (m²)"
+                    value={metragemMax === 0 ? '' : metragemMax}
+                    onChange={(e) => setMetragemMax(e.target.value === '' ? 0 : Number(e.target.value))}
+                    className="w-full h-12 px-4 bg-slate-50 border border-slate-200 rounded-xl text-[16px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#003366] focus:bg-white font-normal"
+                  />
+                </div>
+              </div>
+
+              {/* 9. Construtora / Incorporadora (sem botão Todas; desmarcado = todas) */}
+              <div className="space-y-2 sm:space-y-2.5">
+                <span className="text-[15px] sm:text-[16px] font-semibold text-slate-800 block">Construtora / Incorporadora</span>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    ...availableConstrutoras.slice(0, 6),
+                    'FG Empreendimentos',
+                    'Embraed',
+                    'Baggio',
+                  ]
+                    .filter((val, idx, self) => self.indexOf(val) === idx)
+                    .map((c) => {
+                      const isSelected = construtora.toLowerCase() === c.toLowerCase();
+                      return (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => setConstrutora(isSelected ? '' : c)}
+                          className={`h-11 px-3.5 rounded-xl font-medium text-[13.5px] sm:text-[14px] whitespace-nowrap transition-all cursor-pointer flex items-center justify-center ${
+                            isSelected
+                              ? 'bg-[#003366] text-white'
+                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          }`}
+                        >
+                          {c}
+                        </button>
+                      );
+                    })}
+                </div>
+              </div>
+            </div>
+
+            {/* Rodapé Fixo */}
+            <div className="p-4 sm:p-5 border-t border-slate-100 bg-white flex items-center justify-between gap-4 sticky bottom-0 z-10">
+              <button
+                type="button"
+                onClick={handleClear}
+                className="text-[15px] font-semibold text-slate-600 hover:text-slate-900 underline sm:no-underline sm:hover:underline transition-colors cursor-pointer py-2 px-1"
+              >
+                Limpar
+              </button>
+              <button
+                type="button"
+                id="btn-aplicar-mais-filtros"
+                onClick={handleApply}
+                className="flex-1 sm:flex-initial bg-[#003366] hover:bg-[#002244] active:scale-[0.99] text-white font-semibold text-[15px] py-3.5 px-6 rounded-xl shadow-xs transition-all cursor-pointer text-center flex items-center justify-center gap-2"
+              >
+                Ver {matchingCount} {matchingCount === 1 ? 'imóvel encontrado' : 'imóveis encontrados'}
+              </button>
+            </div>
+          </motion.div>
         </div>
-      </div>
-    </div>
+      )}
+    </AnimatePresence>
   );
 }

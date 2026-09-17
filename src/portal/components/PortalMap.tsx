@@ -6,12 +6,12 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { PortalProperty } from '../types';
+import { PortalProperty, MapPropertyMarker } from '../types';
 import { RefreshCw } from 'lucide-react';
 import { safePatchLeaflet } from '../../utils/leafletPatch';
 
 interface PortalMapProps {
-  imoveis: PortalProperty[];
+  imoveis: Array<PortalProperty | MapPropertyMarker>;
   hoveredId: string | null;
   selectedId: string | null;
   onHover: (id: string | null) => void;
@@ -23,7 +23,7 @@ interface ClusterGroup {
   id: string;
   lat: number;
   lng: number;
-  items: PortalProperty[];
+  items: Array<PortalProperty | MapPropertyMarker>;
 }
 
 /**
@@ -49,7 +49,7 @@ function formatMapPrice(val?: number): string {
  * os imóveis individualmente com o badge de valor conforme a visualização padrão.
  */
 function computeClusters(
-  imoveis: PortalProperty[],
+  imoveis: Array<PortalProperty | MapPropertyMarker>,
   map: L.Map,
   clusterRadiusPixels: number = 65,
   maxClusterZoom: number = 16
@@ -93,7 +93,7 @@ function computeClusters(
       continue;
     }
 
-    const clusterItems: PortalProperty[] = [item];
+    const clusterItems: Array<PortalProperty | MapPropertyMarker> = [item];
     visited.add(item.id);
 
     let sumLat = lat1;
@@ -161,7 +161,8 @@ export function PortalMap({
       if (cluster.items.length === 1) {
         // Marcador individual: mostra o preço real do imóvel conforme instrução 13
         const imovel = cluster.items[0];
-        const precoBadge = formatMapPrice(imovel.valor);
+        const rawPrice = imovel.valor || (imovel as any).valor_venda || (imovel as any).valor_locacao;
+        const precoBadge = formatMapPrice(rawPrice);
 
         const markerHtml = `
           <div 
@@ -190,7 +191,7 @@ export function PortalMap({
               position: relative;
               z-index: 10;
             "
-            title="${imovel.titulo} - ${precoBadge}"
+            title="${imovel.titulo || 'Imóvel'} - ${precoBadge}"
           >
             <span>${precoBadge}</span>
           </div>

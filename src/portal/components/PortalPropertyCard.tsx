@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { Heart, MapPin } from 'lucide-react';
+import { MapPin } from 'lucide-react';
 import { PortalProperty } from '../types';
 import { formatCurrencyBRL } from '../data/mockPortalData';
 import { getValidImage, handleImageError } from '../../utils/imageUtils';
@@ -27,22 +27,19 @@ export function PortalPropertyCard({
   onToggleFavorite,
 }: PortalPropertyCardProps) {
   const mainPhoto = getValidImage(imovel.fotos?.[0]);
-  const isNaPlanta = imovel.statusImovel === 'Na planta' || imovel.isLancamento;
   const enderecoFormatado = imovel.endereco
     ? (imovel.bairro ? `${imovel.endereco} - ${imovel.bairro}` : imovel.endereco)
     : [imovel.bairro, imovel.cidade].filter(Boolean).join(' - ');
 
   const quartosCount = imovel.dormitorios || imovel.quartos;
-  const banheirosCount = imovel.banheiros;
+  const rawBanheiros = imovel.banheiros ?? (imovel as any).bwc;
+  const banheirosCount = typeof rawBanheiros === 'number' ? rawBanheiros : (rawBanheiros ? parseInt(String(rawBanheiros), 10) : undefined);
   const hasMetragem = typeof imovel.metragem === 'number' && imovel.metragem > 0;
   const hasQuartos = typeof quartosCount === 'number' && quartosCount > 0;
   const hasBanheiros = typeof banheirosCount === 'number' && banheirosCount > 0;
   const hasVagas = typeof imovel.vagas === 'number' && imovel.vagas > 0;
 
   // Lógica de destaque do card:
-  // 1. Palavra destacada (se cadastrada)
-  // 2. Preço reduzido (se valor anterior for maior que o valor atual ou temDesconto)
-  // 3. Imóvel novo (se cadastrado recentemente)
   const palavraDestacada =
     imovel.palavraDestacada && imovel.palavraDestacada.trim() !== ''
       ? imovel.palavraDestacada.trim()
@@ -59,7 +56,7 @@ export function PortalPropertyCard({
     const created = new Date(imovel.dataCadastro).getTime();
     if (isNaN(created)) return false;
     const diffDays = (Date.now() - created) / (1000 * 60 * 60 * 24);
-    return diffDays <= 45; // Cadastrado recentemente
+    return diffDays <= 45;
   })();
 
   let badgeLabel: string | null = null;
@@ -80,11 +77,6 @@ export function PortalPropertyCard({
     onSelect?.(imovel.id);
   };
 
-  const handleFavoriteClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onToggleFavorite?.(imovel.id, e);
-  };
-
   return (
     <article
       id={`portal-card-${imovel.id}`}
@@ -94,11 +86,11 @@ export function PortalPropertyCard({
       className={`group bg-white rounded-2xl overflow-hidden cursor-pointer transition-all duration-200 border ${
         isHovered
           ? 'border-[#003366] shadow-lg ring-2 ring-[#003366]/10 -translate-y-0.5'
-          : 'border-slate-100/90 hover:border-slate-200 hover:shadow-md hover:-translate-y-0.5'
+          : 'border-slate-200/90 hover:border-slate-300 hover:shadow-md hover:-translate-y-0.5'
       }`}
     >
-      {/* Container da Imagem com Aspect Ratio elegante */}
-      <div className="relative aspect-4/3 sm:aspect-16/11 bg-slate-100 overflow-hidden">
+      {/* Container da Imagem com Proporção 4:3 rigorosa e uniforme */}
+      <div className="relative aspect-4/3 bg-slate-100 overflow-hidden">
         <img
           src={mainPhoto}
           alt={imovel.titulo}
@@ -108,75 +100,69 @@ export function PortalPropertyCard({
           referrerPolicy="no-referrer"
         />
 
-        {/* Selo: Palavra destacada, Preço reduzido ou Novo */}
+        {/* Selo: Palavra destacada, Preço reduzido ou Novo (12px / 600 Desktop) */}
         {badgeLabel && (
-          <div className="absolute top-3 left-3 z-10">
+          <div className="absolute top-3 left-3 z-1 pointer-events-none">
             <span
-              className={`${badgeClasses} backdrop-blur-xs text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full shadow-xs`}
+              className={`${badgeClasses} backdrop-blur-xs text-[10px] lg:text-xs font-semibold uppercase tracking-wider px-2.5 py-1 rounded-lg shadow-xs inline-block`}
             >
               {badgeLabel}
             </span>
           </div>
         )}
-
-        {/* Botão Coração ♡ / ♥ */}
-        <button
-          type="button"
-          id={`btn-fav-card-${imovel.id}`}
-          onClick={handleFavoriteClick}
-          aria-label={isFavorite ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}
-          className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-white/90 backdrop-blur-xs hover:bg-white flex items-center justify-center transition-transform duration-150 active:scale-90 shadow-sm cursor-pointer"
-        >
-          <Heart
-            size={16}
-            className={`transition-colors ${
-              isFavorite
-                ? 'fill-rose-500 text-rose-500'
-                : 'text-slate-600 hover:text-rose-500'
-            }`}
-          />
-        </button>
       </div>
 
-      {/* Conteúdo do Card */}
-      <div className="p-4 space-y-2">
-        {/* Preço */}
-        <div>
-          <span className="text-lg font-black text-slate-900 tracking-tight block">
-            {formatCurrencyBRL(imovel.valor)}
-          </span>
+      {/* Conteúdo do Card: Padding 14px a 16px, Hierarquia Desktop padronizada */}
+      <div className="p-3.5 sm:p-4 space-y-2">
+        {/* Título do Imóvel (16px / 600 Desktop) - Quebra de linha permitida para títulos longos */}
+        <h3 className="text-sm lg:text-base font-semibold text-slate-900 tracking-tight leading-snug break-words">
+          {imovel.titulo}
+        </h3>
+
+        {/* Localização (13px / 400-500 Desktop) */}
+        {enderecoFormatado && (
+          <div className="flex items-center gap-1.5 text-slate-500 min-w-0">
+            <MapPin size={14} className="shrink-0 text-slate-400" />
+            <p className="text-xs lg:text-[13px] text-slate-500 font-normal lg:font-medium truncate" title={enderecoFormatado}>
+              {enderecoFormatado}
+            </p>
+          </div>
+        )}
+
+        {/* Preço Principal (18px / 700 Desktop) + Preço Anterior (12px / 400-500) */}
+        <div className="pt-1 flex items-baseline justify-between gap-2 flex-wrap">
+          <div className="flex items-baseline gap-2">
+            <span className="text-base lg:text-lg font-bold text-slate-900 tracking-tight block">
+              {formatCurrencyBRL(imovel.valor)}
+            </span>
+            {imovel.valorAnterior && imovel.valorAnterior > imovel.valor && (
+              <span className="text-xs font-normal lg:font-medium text-slate-400 line-through">
+                De {formatCurrencyBRL(imovel.valorAnterior)}
+              </span>
+            )}
+          </div>
         </div>
 
-        {/* Área Privativa, Quartos e Banheiros - Oculta campos inexistentes, sem exibir undefined ou 0 */}
-        {(hasMetragem || hasQuartos || hasBanheiros) && (
-          <p className="text-xs font-semibold text-slate-700 tracking-tight">
+        {/* Características / Métricas (Números 13px / 600, Labels 11-12px) */}
+        {(hasMetragem || hasQuartos || hasBanheiros || hasVagas) && (
+          <div className="pt-1.5 border-t border-slate-100/90 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs lg:text-[13px] font-semibold text-slate-700">
             {[
               hasMetragem ? `${imovel.metragem} m²` : null,
               hasQuartos ? `${quartosCount} ${quartosCount === 1 ? 'quarto' : 'quartos'}` : null,
               hasBanheiros ? `${banheirosCount} ${banheirosCount === 1 ? 'banheiro' : 'banheiros'}` : null,
+              hasVagas ? `${imovel.vagas} ${imovel.vagas === 1 ? 'vaga' : 'vagas'}` : null,
             ]
               .filter(Boolean)
-              .join(' • ')}
-          </p>
-        )}
-
-        {/* Vagas - Oculta quando não existir ou for 0 */}
-        {hasVagas && (
-          <p className="text-xs text-slate-500 font-normal">
-            {imovel.vagas} {imovel.vagas === 1 ? 'vaga' : 'vagas'}
-          </p>
-        )}
-
-        {/* Localização */}
-        {enderecoFormatado && (
-          <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5 text-slate-500 min-w-0">
-            <MapPin size={13} className="shrink-0 text-slate-400" />
-            <p className="text-xs text-slate-500 font-medium truncate" title={enderecoFormatado}>
-              {enderecoFormatado}
-            </p>
+              .map((item, index, arr) => (
+                <React.Fragment key={index}>
+                  <span>{item}</span>
+                  {index < arr.length - 1 && <span className="text-slate-300 font-normal">•</span>}
+                </React.Fragment>
+              ))}
           </div>
         )}
       </div>
     </article>
   );
 }
+
