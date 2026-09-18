@@ -69,23 +69,6 @@ export function PortalFilters({
     }
   }, [openDropdown]);
 
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  // Fecha dropdown ao clicar fora
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpenDropdown(null);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('touchstart', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('touchstart', handleClickOutside);
-    };
-  }, []);
-
   const toggleDropdown = (name: 'cidade' | 'finalidade' | 'categoria' | 'valor' | 'quartos') => {
     setOpenDropdown((prev) => (prev === name ? null : name));
   };
@@ -173,7 +156,6 @@ export function PortalFilters({
   return (
     <nav
       id="portal-filters-bar"
-      ref={containerRef}
       aria-label="Barra de busca e filtros do ImobiShare"
       className="bg-white border-b border-slate-100 sticky top-16 relative z-40 py-3 px-4 sm:px-6 lg:px-8 shadow-2xs transition-all font-sans"
     >

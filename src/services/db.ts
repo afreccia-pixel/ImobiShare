@@ -474,6 +474,21 @@ export class DbService {
             const existingIds = new Set(cachedImoveis.map(i => i.id));
             const newItems = list.filter(item => !existingIds.has(item.id));
             cachedImoveis = [...cachedImoveis, ...newItems];
+          } else if (cidade || options?.busca || options?.bairro) {
+            // Quando busca com filtro específico, mescla os resultados garantindo que todos os imóveis da cidade existam no cache sem descartar os das outras cidades
+            const freshMap = new Map(list.map(item => [item.id, item]));
+            const updated = cachedImoveis.map(existing => {
+              const fresh = freshMap.get(existing.id);
+              if (!fresh) return existing;
+              freshMap.delete(existing.id);
+              return {
+                ...fresh,
+                fotos: (Array.isArray(existing.fotos) && existing.fotos.length > (fresh.fotos?.length || 0)) ? existing.fotos : fresh.fotos,
+                descricao: existing.descricao || fresh.descricao
+              };
+            });
+            // Adiciona quaisquer imóveis novos retornados que ainda não constavam no cache
+            cachedImoveis = [...updated, ...Array.from(freshMap.values())];
           } else if (limit >= 100 || list.length >= cachedImoveis.length || cachedImoveis.length === 0) {
             // Mesclar com imóveis do cache que já possuem fotos completas carregadas
             cachedImoveis = list.map(fresh => {

@@ -45,9 +45,18 @@ export interface Imovel {
   
   // Tipo e Modalidade
   tipoImovel: 'Apartamento' | 'Casa' | 'Casa em condomínio' | 'Cobertura' | 'Terreno' | 'Comercial' | 'Outro';
-  statusImovel?: 'Na planta' | 'Mobiliado' | 'Sem mobília';
+  // Condição do imóvel (antigo statusImovel mantido para retrocompatibilidade)
+  condicaoImovel?: 'Na planta' | 'Em obras' | 'Pronto para morar' | 'Mobiliado' | 'Sem mobília';
+  statusImovel?: 'Disponível' | 'Vendido' | 'Reservado' | 'Na planta' | 'Mobiliado' | 'Sem mobília' | string;
+  // Status comercial do imóvel
+  statusComercial?: 'Disponível' | 'Vendido' | 'Reservado';
   tipo: 'venda' | 'locação' | 'ambos'; // Modalidade
   
+  // Dados de unidade / identificação física
+  unidade?: string; // Ex: 1201, 1301, 1501
+  bloco?: string; // Ex: Bloco A, Torre 1
+  andar?: number | string;
+
   // Valores
   valor: number; // Valor de Venda (principal)
   valorAnterior?: number; // Valor anterior caso o preço tenha sido reduzido
