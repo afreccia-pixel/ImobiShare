@@ -7,12 +7,42 @@
 }
 
 /* Custom scrollbar hiding helper */
-.scrollbar-none::-webkit-scrollbar {
-  display: none;
+.scrollbar-none::-webkit-scrollbar,
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
-.scrollbar-none {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+.scrollbar-none,
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
+/* Ocultar barra de movimento/rolagem na lateral no modo celular */
+@media (max-width: 768px) {
+  html, body, #root, #app-viewport, #main-app-content-container, * {
+    -ms-overflow-style: none !important;
+    scrollbar-width: none !important;
+  }
+  *::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+}
+
+/* Garante que o container do frame do app mobile nunca exiba barra lateral */
+#main-app-content-container::-webkit-scrollbar,
+#app-viewport::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+#main-app-content-container,
+#app-viewport {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
 }
 
 @keyframes progressRtl {
@@ -52,4 +82,10 @@
 .leaflet-container {
   font-family: inherit !important;
 }
+
+/* Painel do Corretor: todos os botões com border-radius: 24px e estilo ImobiShare */
+#app-viewport button:not(#tab-home):not(#tab-my-properties):not(#tab-support):not(#tab-profile):not([data-no-rounded="true"]) {
+  border-radius: 24px !important;
+}
+
 

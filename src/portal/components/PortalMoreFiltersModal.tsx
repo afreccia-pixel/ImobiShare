@@ -105,10 +105,19 @@ export function PortalMoreFiltersModal({
         }
       }
 
-      // Status do imóvel: se vazio, é todos (não filtra)
+      // Condição do imóvel: se vazio, é todos (não filtra)
       if (statusImovel && statusImovel !== 'todos') {
-        const s = statusImovel.toLowerCase();
-        if ((p.statusImovel || '').toLowerCase() !== s) return false;
+        const s = statusImovel.toLowerCase().trim();
+        const pCond = (p.condicaoImovel || p.statusImovel || '').toLowerCase().trim();
+        if (s.includes('planta')) {
+          if (!pCond.includes('planta') && !pCond.includes('obra') && !pCond.includes('constru')) return false;
+        } else if (s.includes('sem')) {
+          if (!pCond.includes('sem')) return false;
+        } else if (s.includes('mobil')) {
+          if (!pCond.includes('mobil') || pCond.includes('sem')) return false;
+        } else if (pCond !== s) {
+          return false;
+        }
       }
 
       // Valor
@@ -255,14 +264,14 @@ export function PortalMoreFiltersModal({
                 </div>
               </div>
 
-              {/* 2. Status do Imóvel (sem botão Todos; desmarcado = todos) */}
+              {/* 2. Condição do Imóvel (sem botão Todos; desmarcado = todos) */}
               <div className="space-y-2 sm:space-y-2.5">
-                <span className="text-[15px] sm:text-[16px] font-semibold text-slate-800 block">Status do imóvel</span>
+                <span className="text-[15px] sm:text-[16px] font-semibold text-slate-800 block">Condição do imóvel</span>
                 <div className="grid grid-cols-3 gap-2">
                   {[
-                    { id: 'Na planta', label: 'Na Planta' },
+                    { id: 'Na Planta', label: 'Na Planta' },
                     { id: 'Mobiliado', label: 'Mobiliado' },
-                    { id: 'Sem mobília', label: 'Sem Mobília' },
+                    { id: 'Sem Mobília', label: 'Sem Mobília' },
                   ].map((st) => {
                     const isSelected = statusImovel.toLowerCase() === st.id.toLowerCase();
                     return (

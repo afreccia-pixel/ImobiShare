@@ -75,9 +75,12 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
   const [longitude, setLongitude] = useState<number | undefined>(undefined);
   const [geoLoading, setGeoLoading] = useState(false);
 
-  // 3. Tipo de imóvel, Status, Negócio e Valor
+  // 3. Tipo de imóvel, Condição, Status Comercial, Negócio e Valor
   const [tipoImovel, setTipoImovel] = useState<PropertyTypeOption | ''>('Apartamento');
-  const [statusImovel, setStatusImovel] = useState<'Na planta' | 'Mobiliado' | 'Sem mobília' | ''>('');
+  const [condicaoImovel, setCondicaoImovel] = useState<string>('Na Planta');
+  const [statusComercial, setStatusComercial] = useState<'Disponível' | 'Vendido' | 'Reservado'>('Disponível');
+  const [unidade, setUnidade] = useState<string>('');
+  const [bloco, setBloco] = useState<string>('');
   const [tipo, setTipo] = useState<'venda' | 'locação' | 'ambos'>('venda');
   const [valor, setValor] = useState<number | ''>('');
   const [valorLocacao, setValorLocacao] = useState<number | ''>('');
@@ -101,6 +104,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
   // 9. Nome do edifício e Construtora
   const [nomeEdificio, setNomeEdificio] = useState('');
   const [construtora, setConstrutora] = useState('');
+  const [telefoneConstrutora, setTelefoneConstrutora] = useState('');
 
   // 10. Título e Palavra Destacada
   const [titulo, setTitulo] = useState('');
@@ -160,7 +164,17 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         setLatitude(found.latitude);
         setLongitude(found.longitude);
         setTipoImovel((found.tipoImovel as PropertyTypeOption) || 'Apartamento');
-        setStatusImovel((found.statusImovel as any) || '');
+        const rawCond = (found.condicaoImovel || found.statusImovel || '').toLowerCase().trim();
+        if (rawCond.includes('sem')) {
+          setCondicaoImovel('Sem Mobília');
+        } else if (rawCond.includes('mobil')) {
+          setCondicaoImovel('Mobiliado');
+        } else {
+          setCondicaoImovel('Na Planta');
+        }
+        setStatusComercial((found.statusComercial as any) || 'Disponível');
+        setUnidade(found.unidade || '');
+        setBloco(found.bloco || '');
         const isLocacaoOnly = found.tipo === 'locação' || (found.valorLocacao && !found.valorVenda && (!found.valor || found.valor === found.valorLocacao));
         const currentTipo = isLocacaoOnly ? 'locação' : 'venda';
         setTipo(currentTipo);
@@ -176,6 +190,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         setIptu(found.iptu ?? '');
         setNomeEdificio(found.nomeEdificio || '');
         setConstrutora(found.construtora || '');
+        setTelefoneConstrutora(found.telefoneConstrutora || '');
         setTitulo(found.titulo || '');
         setPalavraDestacada(found.palavraDestacada || '');
         setDescricao(found.descricao || '');
@@ -660,9 +675,9 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
       return;
     }
 
-    // 12. Status do imóvel validation
-    if (!statusImovel) {
-      setErrorMsg('Status do imóvel (Na planta, Mobiliado, Sem mobília) é obrigatório.');
+    // 12. Condição do imóvel validation
+    if (!condicaoImovel) {
+      setErrorMsg('Condição do imóvel (Na planta, Pronto para morar, Mobiliado, etc.) é obrigatória.');
       return;
     }
 
@@ -742,7 +757,11 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         valorLocacaoAnterior: valorLocacaoAnteriorCalculado,
         tipo: finalTipo,
         tipoImovel: tipoImovel as any,
-        statusImovel: statusImovel || undefined,
+        condicaoImovel: condicaoImovel,
+        statusImovel: condicaoImovel,
+        statusComercial: statusComercial,
+        unidade: unidade.trim() || undefined,
+        bloco: bloco.trim() || undefined,
         cidade,
         bairro: bairro || 'Centro',
         endereco: localizacao.trim() || undefined,
@@ -752,6 +771,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         cep: cep.trim() || undefined,
         nomeEdificio: nomeEdificio.trim() || undefined,
         construtora: construtora.trim() || undefined,
+        telefoneConstrutora: telefoneConstrutora.trim() || undefined,
         origem: existingImovel?.origem || 'Imobishare',
         integrado: existingImovel?.integrado ?? (existingImovel?.origem && existingImovel.origem.toLowerCase() !== 'imobishare' ? true : false),
         integracaoOrigem: existingImovel?.integracaoOrigem || (existingImovel?.origem && existingImovel.origem.toLowerCase() !== 'imobishare' ? existingImovel.origem : undefined),
@@ -1045,18 +1065,54 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
             </div>
 
             <div>
-              <span className="text-[10px] text-[#003366] font-bold block mb-0.5 whitespace-nowrap">Status do imóvel *:</span>
+              <span className="text-[10px] text-[#003366] font-bold block mb-0.5 whitespace-nowrap">Condição do imóvel *:</span>
               <select
-                value={statusImovel}
-                onChange={(e) => setStatusImovel(e.target.value as any)}
+                value={condicaoImovel}
+                onChange={(e) => setCondicaoImovel(e.target.value)}
                 className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-slate-50 font-bold text-slate-800 focus:outline-hidden focus:border-[#003366]"
                 required
               >
-                <option value="">Selecione o status *</option>
-                <option value="Na planta">Na planta</option>
+                <option value="Na Planta">Na Planta</option>
                 <option value="Mobiliado">Mobiliado</option>
-                <option value="Sem mobília">Sem mobília</option>
+                <option value="Sem Mobília">Sem Mobília</option>
               </select>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div>
+                <span className="text-[10px] text-slate-700 font-bold block mb-0.5 whitespace-nowrap">Status comercial:</span>
+                <select
+                  value={statusComercial}
+                  onChange={(e) => setStatusComercial(e.target.value as any)}
+                  className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-slate-50 font-bold text-slate-800 focus:outline-hidden focus:border-[#003366]"
+                >
+                  <option value="Disponível">Disponível</option>
+                  <option value="Vendido">Vendido</option>
+                  <option value="Reservado">Reservado</option>
+                </select>
+              </div>
+
+              <div>
+                <span className="text-[10px] text-slate-700 font-bold block mb-0.5 whitespace-nowrap">Unidade / Apto:</span>
+                <input
+                  type="text"
+                  placeholder="Ex: 1201"
+                  value={unidade}
+                  onChange={(e) => setUnidade(e.target.value)}
+                  className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-slate-50 font-bold text-slate-800 focus:outline-hidden focus:border-[#003366]"
+                />
+              </div>
+
+              <div>
+                <span className="text-[10px] text-slate-700 font-bold block mb-0.5 whitespace-nowrap">Bloco / Torre:</span>
+                <input
+                  type="text"
+                  placeholder="Ex: Torre A"
+                  value={bloco}
+                  onChange={(e) => setBloco(e.target.value)}
+                  className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-slate-50 font-bold text-slate-800 focus:outline-hidden focus:border-[#003366]"
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-end">
@@ -1290,7 +1346,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         </div>
 
         {/* 6. CONSTRUTORA (opcional) */}
-        <div className="bg-white p-3 rounded-lg border border-slate-100 space-y-1.5">
+        <div className="bg-white p-3 rounded-lg border border-slate-100 space-y-2">
           <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 whitespace-nowrap">
             6. CONSTRUTORA <span className="text-slate-400 font-normal lowercase">(opcional)</span>
           </label>
@@ -1313,6 +1369,21 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
             <p className="text-[10px] text-slate-400">
               💡 Dica: {construtorasCadastradas.length} construtora{construtorasCadastradas.length > 1 ? 's já cadastradas' : ' já cadastrada'} no sistema. Selecione da lista ou digite uma nova.
             </p>
+          )}
+
+          {construtora && (
+            <div className="pt-1">
+              <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                Telefone da Construtora <span className="text-slate-400 font-normal lowercase">(opcional)</span>
+              </label>
+              <input
+                type="text"
+                placeholder="Ex: (47) 3367-0000"
+                value={telefoneConstrutora}
+                onChange={(e) => setTelefoneConstrutora(e.target.value)}
+                className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366]"
+              />
+            </div>
           )}
         </div>
 
@@ -1532,7 +1603,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         <button
           type="submit"
           disabled={isSaving}
-          className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-3.5 px-4 rounded-full shadow-md transition-all active:scale-[0.98] uppercase tracking-wider text-[11px] flex items-center justify-center min-h-[44px]"
+          className="w-full bg-[#003366] hover:bg-[#002244] text-white text-xs font-bold py-3.5 px-4 rounded-[24px] shadow-md transition-all active:scale-[0.98] uppercase tracking-wider text-[11px] flex items-center justify-center min-h-[44px] cursor-pointer"
         >
           {isSaving ? (
             <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />

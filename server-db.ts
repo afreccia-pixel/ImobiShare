@@ -7,13 +7,16 @@ import pg from 'pg';
 import fs from 'fs/promises';
 import path from 'path';
 import bcrypt from 'bcryptjs';
-import { Imovel, Corretor } from './src/types';
+import { Imovel, Corretor, CorretorImovel, ImovelOrigem, ImovelHistorico } from './src/types';
 
 interface DbSchema {
   brokers: Corretor[];
   properties: Imovel[];
   partnerships: { corretorEmail: string; corretorParceiroEmail: string }[];
   favorites: { corretorEmail: string; imovelId: string }[];
+  corretorImoveis?: CorretorImovel[];
+  imovelOrigens?: ImovelOrigem[];
+  imovelHistorico?: ImovelHistorico[];
 }
 
 // In-memory log store for recent backend errors
@@ -230,10 +233,20 @@ export class ServerDb {
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS website VARCHAR(10) DEFAULT 'SIM';`);
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS compartilhar VARCHAR(10) DEFAULT 'SIM';`);
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS codigo VARCHAR(50);`);
+    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS codigo_im VARCHAR(50);`);
+    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS unidade VARCHAR(50);`);
+    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS bloco_torre VARCHAR(50);`);
+    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS condicao_imovel VARCHAR(50);`);
+    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS status_global VARCHAR(50) DEFAULT 'Disponivel';`);
+    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS escopo VARCHAR(20) DEFAULT 'CARTEIRA';`);
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS latitude NUMERIC;`);
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS longitude NUMERIC;`);
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS condominio NUMERIC;`);
     await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS iptu NUMERIC;`);
+    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS telefone_construtora VARCHAR(100);`);
+
+    // Ensure role on corretores
+    await this.pool.query(`ALTER TABLE corretores ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'corretor';`);
 
     // 3. Tabela parcerias
     await this.pool.query(`
@@ -253,7 +266,129 @@ export class ServerDb {
       );
     `);
 
+    // 5. Nova Tabela corretor_imoveis (Relação Corretor ↔ Imóvel Central)
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS corretor_imoveis (
+        id VARCHAR(100) PRIMARY KEY,
+        corretor_email VARCHAR(255) NOT NULL REFERENCES corretores(email) ON DELETE CASCADE,
+        imovel_id VARCHAR(100) NOT NULL REFERENCES imoveis(id) ON DELETE CASCADE,
+        status_carteira VARCHAR(50) DEFAULT 'Disponivel',
+        dados_proprietario TEXT,
+        nome_proprietario VARCHAR(255),
+        telefone_proprietario VARCHAR(100),
+        comissao NUMERIC,
+        autorizacao VARCHAR(100),
+        observacoes_internas TEXT,
+        criado_em TIMESTAMP DEFAULT NOW(),
+        CONSTRAINT uq_corretor_imovel UNIQUE(corretor_email, imovel_id)
+      );
+    `);
+
+    // 6. Nova Tabela imovel_origens (Rastreamento DWV / Manual / XML)
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS imovel_origens (
+        id SERIAL PRIMARY KEY,
+        imovel_id VARCHAR(100) NOT NULL REFERENCES imoveis(id) ON DELETE CASCADE,
+        origem VARCHAR(100) NOT NULL,
+        origem_id VARCHAR(255),
+        ultima_sincronizacao TIMESTAMP DEFAULT NOW(),
+        CONSTRAINT uq_imovel_origem UNIQUE(imovel_id, origem)
+      );
+    `);
+
+    // 7. Nova Tabela imovel_historico (Auditoria de alterações)
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS imovel_historico (
+        id SERIAL PRIMARY KEY,
+        imovel_id VARCHAR(100) NOT NULL REFERENCES imoveis(id) ON DELETE CASCADE,
+        usuario_email VARCHAR(255) NOT NULL,
+        tipo_usuario VARCHAR(50) DEFAULT 'corretor',
+        campo_alterado VARCHAR(100) NOT NULL,
+        valor_anterior TEXT,
+        valor_novo TEXT,
+        data_hora TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    // 8. Nova Tabela imovel_duplicidades_revisao (Fila de decisões para o Admin)
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS imovel_duplicidades_revisao (
+        id SERIAL PRIMARY KEY,
+        imovel_novo_id VARCHAR(100),
+        imovel_existente_id VARCHAR(100),
+        corretor_email VARCHAR(255),
+        grau_confianca VARCHAR(50),
+        motivo TEXT,
+        status VARCHAR(50) DEFAULT 'PENDENTE',
+        criado_em TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
     console.log('✅ Tabelas do PostgreSQL verificadas.');
+
+    // Auto-migração não destrutiva para gerar códigos IM únicos (IM000001, IM000002...)
+    try {
+      if (this.isPostgres && this.pool) {
+        // Encontrar maior sequência atual de IM
+        const maxImRes = await this.pool.query(`
+          SELECT codigo_im, id, codigo FROM imoveis 
+          WHERE codigo_im LIKE 'IM%' OR id LIKE 'IM%' OR codigo LIKE 'IM%'
+        `);
+        let maxImSeq = 0;
+        for (const row of maxImRes.rows) {
+          const val = (row.codigo_im || row.id || row.codigo || '').toUpperCase();
+          if (val.startsWith('IM')) {
+            const num = parseInt(val.substring(2), 10);
+            if (!isNaN(num) && num > maxImSeq) {
+              maxImSeq = num;
+            }
+          }
+        }
+
+        // Atribuir codigo_im para todos os imóveis que ainda não possuem
+        const semImRes = await this.pool.query(`
+          SELECT id, corretor_email, dados_proprietario, status_imovel, origem 
+          FROM imoveis 
+          WHERE codigo_im IS NULL OR codigo_im = ''
+          ORDER BY data_cadastro ASC
+        `);
+
+        if (semImRes.rows.length > 0) {
+          console.log(`🔄 Atribuindo códigos centrais IM para ${semImRes.rows.length} imóveis existentes...`);
+          for (const row of semImRes.rows) {
+            maxImSeq++;
+            const newImCode = `IM${String(maxImSeq).padStart(6, '0')}`;
+            const isDwv = (row.origem && (row.origem.toLowerCase().includes('dwv') || row.origem.toLowerCase().includes('portal')));
+            const escopo = isDwv ? 'REDE' : 'CARTEIRA';
+            const condicao = (row.status_imovel === 'Na planta' || row.status_imovel === 'Mobiliado' || row.status_imovel === 'Sem mobília')
+              ? row.status_imovel
+              : 'Pronto para morar';
+
+            await this.pool.query(`
+              UPDATE imoveis 
+              SET codigo_im = $1,
+                  escopo = COALESCE(escopo, $2),
+                  condicao_imovel = COALESCE(condicao_imovel, $3),
+                  status_global = COALESCE(status_global, 'Disponivel')
+              WHERE id = $4
+            `, [newImCode, escopo, condicao, row.id]);
+
+            // Se for imóvel de corretor, garantir registro na tabela corretor_imoveis
+            if (row.corretor_email) {
+              const relId = `rel-${row.id}-${row.corretor_email.replace(/[^a-z0-9]/gi, '_')}`;
+              await this.pool.query(`
+                INSERT INTO corretor_imoveis (id, corretor_email, imovel_id, status_carteira, dados_proprietario)
+                VALUES ($1, $2, $3, 'Disponivel', $4)
+                ON CONFLICT (corretor_email, imovel_id) DO NOTHING
+              `, [relId, row.corretor_email, row.id, row.dados_proprietario || '']);
+            }
+          }
+          console.log('✅ Atribuição de códigos centrais IM concluída com sucesso.');
+        }
+      }
+    } catch (migErr) {
+      console.warn('Aviso durante migração de códigos IM:', migErr);
+    }
 
     // Run migration for legacy IDs (prop-*, imovel-*) to short codes (e.g., FRE1, FRE2)
     try {
@@ -318,13 +453,49 @@ export class ServerDb {
     return `${prefix}${nextSeq}`;
   }
 
+  /**
+   * Generates the next central unique property code (IM000001, IM000002, etc.)
+   * 1 Imóvel Físico = 1 Código Único IM.
+   */
+  static async generateNextCentralImCode(): Promise<string> {
+    let maxSeq = 0;
+    if (this.isPostgres && this.pool) {
+      const res = await this.pool.query(`
+        SELECT codigo_im, id, codigo FROM imoveis 
+        WHERE codigo_im LIKE 'IM%' OR id LIKE 'IM%' OR codigo LIKE 'IM%'
+      `);
+      for (const r of res.rows) {
+        const val = (r.codigo_im || r.id || r.codigo || '').toUpperCase();
+        if (val.startsWith('IM')) {
+          const num = parseInt(val.substring(2), 10);
+          if (!isNaN(num) && num > maxSeq) {
+            maxSeq = num;
+          }
+        }
+      }
+    } else {
+      const db = await this.readJson();
+      for (const p of db.properties) {
+        const val = (p.codigoIm || p.id || p.codigo || '').toUpperCase();
+        if (val.startsWith('IM')) {
+          const num = parseInt(val.substring(2), 10);
+          if (!isNaN(num) && num > maxSeq) {
+            maxSeq = num;
+          }
+        }
+      }
+    }
+    const nextSeq = maxSeq + 1;
+    return `IM${String(nextSeq).padStart(6, '0')}`;
+  }
+
   private static async seedInitialAdminIfNeeded(): Promise<void> {
     if (!this.pool) return;
     try {
-      // Ensure admin flag is set for afreccia@gmail.com without overwriting user's real name/creci
+      // Ensure admin flag and role = 'admin' is set for afreccia@gmail.com without overwriting user's real name/creci
       const adminEmail = 'afreccia@gmail.com';
       await this.pool.query(`
-        UPDATE corretores SET is_admin = true WHERE LOWER(email) = $1;
+        UPDATE corretores SET is_admin = true, role = 'admin' WHERE LOWER(email) = $1;
       `, [adminEmail]);
     } catch (e) {
       // ignore
@@ -476,6 +647,58 @@ export class ServerDb {
       const found = db.brokers.find(b => b.email && b.email.toLowerCase().trim() === cleanEmail);
       return found || null;
     }
+  }
+
+  static async getCorretorByIdOrEmail(idOrEmail: string): Promise<Corretor | null> {
+    const q = (idOrEmail || '').toLowerCase().trim();
+    if (!q) return null;
+
+    const byEmail = await this.getCorretorByEmail(q);
+    if (byEmail) return byEmail;
+
+    if (this.isPostgres && this.pool) {
+      const res = await this.pool.query(
+        `SELECT * FROM corretores 
+         WHERE LOWER(id) = $1 
+            OR LOWER(slug_site) = $1 
+            OR LOWER(nome) LIKE $2
+         LIMIT 1`,
+        [q, `%${q}%`]
+      );
+      if (res.rows.length > 0) {
+        const r = res.rows[0];
+        return {
+          id: r.id || `broker-${r.email.replace(/[^a-z0-9]/gi, '_')}`,
+          email: r.email,
+          nome: r.nome,
+          creci: r.creci || '',
+          telefone: r.telefone || '',
+          whatsapp: r.telefone || '',
+          cidade: r.cidade || '',
+          estado: r.estado || '',
+          imobiliaria: r.imobiliaria_ou_autonomo || '',
+          tipoAtuacao: r.imobiliaria_ou_autonomo === 'autonomo' ? 'autonomo' : 'imobiliaria',
+          foto: r.foto_url || '',
+          slugSite: r.slug_site || '',
+          isAdmin: Boolean(r.is_admin) || (r.email === 'afreccia@gmail.com'),
+          password: r.password || '',
+          resetToken: r.reset_token || undefined,
+          resetTokenExpires: r.reset_token_expires ? Number(r.reset_token_expires) : undefined,
+          restringirParceiros: Boolean(r.restringir_parceiros),
+          parceirosEmails: Array.isArray(r.parceiros_emails) ? r.parceiros_emails : (r.parceiros_emails ? JSON.parse(r.parceiros_emails) : [])
+        };
+      }
+    } else {
+      const db = await this.readJson();
+      const found = (db.brokers || []).find(b => 
+        (b.id && b.id.toLowerCase().trim() === q) ||
+        (b.email && b.email.toLowerCase().trim() === q) ||
+        (b.slugSite && b.slugSite.toLowerCase() === q) ||
+        (b.nome && b.nome.toLowerCase().includes(q))
+      );
+      if (found) return found;
+    }
+    return null;
   }
 
   static async saveCorretor(corretor: Partial<Corretor> & { email: string }): Promise<Corretor> {
@@ -970,6 +1193,12 @@ export class ServerDb {
           COUNT(*) OVER() AS full_count,
           i.id,
           i.codigo,
+          i.codigo_im,
+          i.unidade,
+          i.bloco_torre,
+          i.condicao_imovel,
+          i.status_global,
+          i.escopo,
           i.titulo,
           i.cidade,
           i.bairro,
@@ -1079,8 +1308,17 @@ export class ServerDb {
       }
 
       if (filterStatusImovel && filterStatusImovel.toLowerCase() !== 'todos') {
-        params.push(filterStatusImovel.trim());
-        query += ` AND LOWER(i.status_imovel) = LOWER($${params.length}) `;
+        const s = filterStatusImovel.toLowerCase().trim();
+        if (s.includes('planta')) {
+          query += ` AND (LOWER(COALESCE(i.condicao_imovel, i.status_imovel, '')) LIKE '%planta%' OR LOWER(COALESCE(i.condicao_imovel, i.status_imovel, '')) LIKE '%obra%' OR LOWER(COALESCE(i.condicao_imovel, i.status_imovel, '')) LIKE '%constru%') `;
+        } else if (s.includes('sem')) {
+          query += ` AND LOWER(COALESCE(i.condicao_imovel, i.status_imovel, '')) LIKE '%sem%' `;
+        } else if (s.includes('mobil')) {
+          query += ` AND (LOWER(COALESCE(i.condicao_imovel, i.status_imovel, '')) LIKE '%mobil%' AND LOWER(COALESCE(i.condicao_imovel, i.status_imovel, '')) NOT LIKE '%sem%') `;
+        } else {
+          params.push(filterStatusImovel.trim());
+          query += ` AND (LOWER(COALESCE(i.condicao_imovel, i.status_imovel, '')) = LOWER($${params.length})) `;
+        }
       }
 
       if (filterBusca) {
@@ -1270,6 +1508,12 @@ export class ServerDb {
           COUNT(*) OVER() AS full_count,
           i.id,
           i.codigo,
+          i.codigo_im,
+          i.unidade,
+          i.bloco_torre,
+          i.condicao_imovel,
+          i.status_global,
+          i.escopo,
           i.titulo,
           i.cidade,
           i.bairro,
@@ -1389,6 +1633,8 @@ export class ServerDb {
             OR LOWER(id) = LOWER($4) 
             OR LOWER(codigo) = LOWER($1) 
             OR LOWER(codigo) = LOWER($2) 
+            OR LOWER(COALESCE(codigo_im, '')) = LOWER($1)
+            OR LOWER(COALESCE(codigo_im, '')) = LOWER($2)
          LIMIT 1`,
         [cleanId, cleanWithoutPrefix, withImovelPrefix, withPropPrefix]
       );
@@ -1401,7 +1647,8 @@ export class ServerDb {
       return db.properties.find(p => {
         const pId = (p.id || '').toLowerCase();
         const pCod = (p.codigo || '').toLowerCase();
-        return pId === t1 || pId === t2 || pCod === t1 || pCod === t2 || pId === `imovel-${t2}` || pId === `prop-${t2}`;
+        const pIm = (p.codigoIm || '').toLowerCase();
+        return pId === t1 || pId === t2 || pCod === t1 || pCod === t2 || pIm === t1 || pIm === t2 || pId === `imovel-${t2}` || pId === `prop-${t2}`;
       }) || null;
     }
   }
@@ -1420,23 +1667,71 @@ export class ServerDb {
     const compartilharDb: 'SIM' | 'NAO' = (imovel.compartilhar === 'NAO' || imovel.compartilhar === false) ? 'NAO' : 'SIM';
 
     let propertyId = imovel.id;
+    let centralImCode = imovel.codigoIm;
+
+    // Existing property before update (for audit and duplicity detection)
+    const existingImovel = propertyId ? await this.getImovelById(propertyId) : null;
+
     if (!propertyId || propertyId.startsWith('prop-') || propertyId.startsWith('imovel-')) {
       if (propertyId && (propertyId.startsWith('prop-') || propertyId.startsWith('imovel-'))) {
-        const existing = await this.getImovelById(propertyId);
+        const existing = existingImovel;
         if (!existing) {
-          propertyId = await this.generateNextPropertyId(cleanEmail, broker.nome);
+          centralImCode = centralImCode || await this.generateNextCentralImCode();
+          propertyId = centralImCode;
+        } else {
+          centralImCode = existing.codigoIm || (existing.codigo && /^IM\d{6}$/i.test(existing.codigo) ? existing.codigo : await this.generateNextCentralImCode());
         }
       } else {
-        propertyId = await this.generateNextPropertyId(cleanEmail, broker.nome);
+        centralImCode = centralImCode || await this.generateNextCentralImCode();
+        propertyId = centralImCode;
+      }
+    } else if (!centralImCode) {
+      if (/^IM\d{6}$/i.test(propertyId)) {
+        centralImCode = propertyId.toUpperCase();
+      } else if (imovel.codigo && /^IM\d{6}$/i.test(imovel.codigo)) {
+        centralImCode = imovel.codigo.toUpperCase();
+      } else {
+        centralImCode = await this.generateNextCentralImCode();
       }
     }
 
-    const shortCode = imovel.codigo || propertyId;
+    const shortCode = centralImCode || imovel.codigo || propertyId;
+
+    const rawCondicao = (imovel.condicaoImovel || imovel.statusImovel || '').toLowerCase().trim();
+    let condicaoImovelFinal = 'Na Planta';
+    if (rawCondicao.includes('sem')) {
+      condicaoImovelFinal = 'Sem Mobília';
+    } else if (rawCondicao.includes('mobil')) {
+      condicaoImovelFinal = 'Mobiliado';
+    } else {
+      condicaoImovelFinal = 'Na Planta';
+    }
+
+    const statusGlobalFinal = (
+      imovel.statusComercial || (
+        imovel.statusImovel === 'Vendido' || imovel.statusImovel === 'Reservado' || imovel.statusImovel === 'Disponível'
+          ? imovel.statusImovel
+          : 'Disponivel'
+      )
+    );
+
+    const escopoFinal = imovel.escopo || (
+      (imovel.origem && (imovel.origem.toLowerCase().includes('dwv') || imovel.origem.toLowerCase().includes('portal')))
+        ? 'REDE'
+        : 'CARTEIRA'
+    );
 
     const finalImovel: Imovel = {
       ...imovel,
       id: propertyId,
       codigo: shortCode,
+      codigoIm: centralImCode,
+      unidade: imovel.unidade || undefined,
+      bloco: imovel.bloco || undefined,
+      condicaoImovel: condicaoImovelFinal,
+      statusImovel: condicaoImovelFinal,
+      statusComercial: statusGlobalFinal as any,
+      escopo: escopoFinal as any,
       corretorEmail: cleanEmail,
       corretorNome: broker.nome || cleanEmail.split('@')[0],
       corretorId: broker.id,
@@ -1459,15 +1754,17 @@ export class ServerDb {
           valor_venda, status_imovel, valor_locacao, quartos, bwc, vagas,
           area_privativa, nome_edificio, titulo, palavra_destacada, descricao,
           visibilidade, dados_proprietario, imagens, data_cadastro,
-          valor_anterior, valor_locacao_anterior, informacoes, origem, construtora,
-          website, compartilhar, codigo, latitude, longitude, condominio, iptu
+          valor_anterior, valor_locacao_anterior, informacoes, origem, construtora, telefone_construtora,
+          website, compartilhar, codigo, latitude, longitude, condominio, iptu,
+          codigo_im, unidade, bloco_torre, condicao_imovel, status_global, escopo
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8,
           $9, $10, $11, $12, $13, $14,
           $15, $16, $17, $18, $19,
           $20, $21, $22, $23,
-          $24, $25, $26, $27, $28,
-          $29, $30, $31, $32, $33, $34, $35
+          $24, $25, $26, $27, $28, $29,
+          $30, $31, $32, $33, $34, $35, $36,
+          $37, $38, $39, $40, $41, $42
         ) ON CONFLICT (id) DO UPDATE SET
           cep = EXCLUDED.cep,
           endereco = EXCLUDED.endereco,
@@ -1494,13 +1791,20 @@ export class ServerDb {
           informacoes = EXCLUDED.informacoes,
           origem = EXCLUDED.origem,
           construtora = EXCLUDED.construtora,
+          telefone_construtora = EXCLUDED.telefone_construtora,
           website = EXCLUDED.website,
           compartilhar = EXCLUDED.compartilhar,
           codigo = EXCLUDED.codigo,
           latitude = EXCLUDED.latitude,
           longitude = EXCLUDED.longitude,
           condominio = EXCLUDED.condominio,
-          iptu = EXCLUDED.iptu;
+          iptu = EXCLUDED.iptu,
+          codigo_im = COALESCE(EXCLUDED.codigo_im, imoveis.codigo_im),
+          unidade = COALESCE(EXCLUDED.unidade, imoveis.unidade),
+          bloco_torre = COALESCE(EXCLUDED.bloco_torre, imoveis.bloco_torre),
+          condicao_imovel = COALESCE(EXCLUDED.condicao_imovel, imoveis.condicao_imovel),
+          status_global = COALESCE(EXCLUDED.status_global, imoveis.status_global),
+          escopo = COALESCE(EXCLUDED.escopo, imoveis.escopo);
       `, [
         finalImovel.id,
         cleanEmail,
@@ -1530,14 +1834,121 @@ export class ServerDb {
         finalImovel.informacoes || null,
         finalImovel.origem || 'Imobishare',
         finalImovel.construtora || '',
+        finalImovel.telefoneConstrutora || null,
         websiteDb,
         compartilharDb,
         finalImovel.codigo || null,
         finalImovel.latitude !== undefined ? finalImovel.latitude : null,
         finalImovel.longitude !== undefined ? finalImovel.longitude : null,
         finalImovel.condominio !== undefined ? finalImovel.condominio : null,
-        finalImovel.iptu !== undefined ? finalImovel.iptu : null
+        finalImovel.iptu !== undefined ? finalImovel.iptu : null,
+        finalImovel.codigoIm || null,
+        finalImovel.unidade || null,
+        finalImovel.bloco || null,
+        finalImovel.condicaoImovel || null,
+        finalImovel.statusComercial || 'Disponivel',
+        finalImovel.escopo || 'CARTEIRA'
       ]);
+
+      // Salvar na relação corretor_imoveis
+      const relId = `rel-${finalImovel.id}-${cleanEmail.replace(/[^a-z0-9]/gi, '_')}`;
+      await this.pool.query(`
+        INSERT INTO corretor_imoveis (
+          id, corretor_email, imovel_id, status_carteira, dados_proprietario,
+          nome_proprietario, telefone_proprietario
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (corretor_email, imovel_id) DO UPDATE SET
+          status_carteira = EXCLUDED.status_carteira,
+          dados_proprietario = COALESCE(NULLIF(EXCLUDED.dados_proprietario, ''), corretor_imoveis.dados_proprietario),
+          nome_proprietario = COALESCE(NULLIF(EXCLUDED.nome_proprietario, ''), corretor_imoveis.nome_proprietario),
+          telefone_proprietario = COALESCE(NULLIF(EXCLUDED.telefone_proprietario, ''), corretor_imoveis.telefone_proprietario);
+      `, [
+        relId,
+        cleanEmail,
+        finalImovel.id,
+        finalImovel.statusComercial || 'Disponivel',
+        finalImovel.dadosProprietario || '',
+        finalImovel.nomeProprietario || '',
+        finalImovel.telefoneProprietario || ''
+      ]).catch(err => console.warn('Aviso ao sincronizar corretor_imoveis:', err));
+
+      // Auditoria / Histórico de alterações (imovel_historico)
+      if (existingImovel) {
+        const auditFields: Array<{ key: keyof Imovel; label: string }> = [
+          { key: 'valor', label: 'valor' },
+          { key: 'valorVenda', label: 'valor_venda' },
+          { key: 'valorLocacao', label: 'valor_locacao' },
+          { key: 'statusComercial', label: 'status_global' },
+          { key: 'condicaoImovel', label: 'condicao_imovel' },
+          { key: 'unidade', label: 'unidade' },
+          { key: 'bloco', label: 'bloco_torre' },
+          { key: 'titulo', label: 'titulo' }
+        ];
+
+        for (const item of auditFields) {
+          const oldVal = String(existingImovel[item.key] ?? '');
+          const newVal = String(finalImovel[item.key] ?? '');
+          if (oldVal !== newVal && (oldVal || newVal)) {
+            await this.pool.query(`
+              INSERT INTO imovel_historico (
+                imovel_id, usuario_email, tipo_usuario, campo_alterado, valor_anterior, valor_novo
+              ) VALUES ($1, $2, $3, $4, $5, $6)
+            `, [
+              finalImovel.id,
+              cleanEmail,
+              cleanEmail === 'afreccia@gmail.com' ? 'admin' : 'corretor',
+              item.label,
+              oldVal,
+              newVal
+            ]).catch(err => console.warn('Aviso ao registrar historico:', err));
+          }
+        }
+      } else {
+        // Novo cadastro no histórico
+        await this.pool.query(`
+          INSERT INTO imovel_historico (
+            imovel_id, usuario_email, tipo_usuario, campo_alterado, valor_anterior, valor_novo
+          ) VALUES ($1, $2, $3, $4, $5, $6)
+        `, [
+          finalImovel.id,
+          cleanEmail,
+          cleanEmail === 'afreccia@gmail.com' ? 'admin' : 'corretor',
+          'criacao',
+          null,
+          finalImovel.codigoIm || finalImovel.id
+        ]).catch(err => console.warn('Aviso ao registrar historico inicial:', err));
+
+        // Verificação inteligente de duplicidade física se unidade ou edifício foram preenchidos
+        if (finalImovel.nomeEdificio && finalImovel.unidade) {
+          try {
+            const dupCheck = await this.pool.query(`
+              SELECT id, corretor_email, codigo_im FROM imoveis
+              WHERE id != $1
+                AND LOWER(TRIM(nome_edificio)) = LOWER(TRIM($2))
+                AND LOWER(TRIM(unidade)) = LOWER(TRIM($3))
+                AND (bloco_torre IS NULL OR $4::text IS NULL OR LOWER(TRIM(bloco_torre)) = LOWER(TRIM($4)))
+              LIMIT 1
+            `, [finalImovel.id, finalImovel.nomeEdificio, finalImovel.unidade, finalImovel.bloco || null]);
+
+            if (dupCheck.rows.length > 0) {
+              const dup = dupCheck.rows[0];
+              await this.pool.query(`
+                INSERT INTO imovel_duplicidades_revisao (
+                  imovel_novo_id, imovel_existente_id, corretor_email, grau_confianca, motivo
+                ) VALUES ($1, $2, $3, $4, $5)
+              `, [
+                finalImovel.id,
+                dup.id,
+                cleanEmail,
+                'ALTO',
+                `Mesmo edifício (${finalImovel.nomeEdificio}) e mesma unidade (${finalImovel.unidade}). Imóvel existente: ${dup.codigo_im || dup.id}`
+              ]).catch(() => {});
+            }
+          } catch (dupErr) {
+            console.warn('Aviso ao checar duplicidade:', dupErr);
+          }
+        }
+      }
 
       return finalImovel;
     } else {
@@ -1557,16 +1968,29 @@ export class ServerDb {
     const cleanEmail = tokenEmail.toLowerCase().trim();
     const existing = await this.getImovelById(id);
     if (!existing) return false;
-    if (existing.corretorEmail.toLowerCase().trim() !== cleanEmail) {
+    
+    // Check if user is admin
+    const caller = await this.getCorretorByEmail(cleanEmail);
+    const isAdmin = caller?.isAdmin || caller?.role === 'admin' || cleanEmail === 'afreccia@gmail.com';
+
+    if (!isAdmin && existing.corretorEmail.toLowerCase().trim() !== cleanEmail) {
       throw new Error('Permissão negada: você não é o dono deste imóvel.');
     }
 
     if (this.isPostgres && this.pool) {
-      await this.pool.query('DELETE FROM imoveis WHERE id = $1 AND LOWER(corretor_email) = $2', [id, cleanEmail]);
+      if (isAdmin) {
+        await this.pool.query('DELETE FROM imoveis WHERE id = $1', [id]);
+      } else {
+        await this.pool.query('DELETE FROM imoveis WHERE id = $1 AND LOWER(corretor_email) = $2', [id, cleanEmail]);
+      }
       return true;
     } else {
       const db = await this.readJson();
-      db.properties = db.properties.filter(p => !(p.id === id && (p.corretorEmail || '').toLowerCase().trim() === cleanEmail));
+      if (isAdmin) {
+        db.properties = db.properties.filter(p => p.id !== id);
+      } else {
+        db.properties = db.properties.filter(p => !(p.id === id && (p.corretorEmail || '').toLowerCase().trim() === cleanEmail));
+      }
       await this.writeJson(db);
       return true;
     }
@@ -1627,7 +2051,14 @@ export class ServerDb {
       integrado: Boolean((r.origem && r.origem.toLowerCase() !== 'imobishare' && r.origem.trim() !== '') || (r.origem && (r.origem.toLowerCase().includes('dwv') || r.origem.toLowerCase().includes('portal')))),
       integracaoOrigem: (r.origem && r.origem.toLowerCase() !== 'imobishare') ? r.origem : undefined,
       construtora: r.construtora || '',
+      telefoneConstrutora: r.telefone_construtora || undefined,
       codigo: r.codigo || undefined,
+      codigoIm: r.codigo_im || (r.codigo && /^IM\d{6}$/i.test(r.codigo) ? r.codigo.toUpperCase() : undefined),
+      unidade: r.unidade || undefined,
+      bloco: r.bloco_torre || undefined,
+      condicaoImovel: r.condicao_imovel || undefined,
+      statusComercial: r.status_global || 'Disponível',
+      escopo: r.escopo || 'CARTEIRA',
       latitude: r.latitude !== null && r.latitude !== undefined && r.latitude !== '' ? parseFloat(r.latitude) : undefined,
       longitude: r.longitude !== null && r.longitude !== undefined && r.longitude !== '' ? parseFloat(r.longitude) : undefined,
       visibilidade: r.visibilidade || 'todos',
@@ -1706,7 +2137,14 @@ export class ServerDb {
       integrado: Boolean((r.origem && r.origem.toLowerCase() !== 'imobishare' && r.origem.trim() !== '') || (r.origem && (r.origem.toLowerCase().includes('dwv') || r.origem.toLowerCase().includes('portal')))),
       integracaoOrigem: (r.origem && r.origem.toLowerCase() !== 'imobishare') ? r.origem : undefined,
       construtora: r.construtora || '',
+      telefoneConstrutora: r.telefone_construtora || undefined,
       codigo: r.codigo || undefined,
+      codigoIm: r.codigo_im || (r.codigo && /^IM\d{6}$/i.test(r.codigo) ? r.codigo.toUpperCase() : undefined),
+      unidade: r.unidade || undefined,
+      bloco: r.bloco_torre || undefined,
+      condicaoImovel: r.condicao_imovel || undefined,
+      statusComercial: r.status_global || 'Disponível',
+      escopo: r.escopo || 'CARTEIRA',
       latitude: r.latitude !== null && r.latitude !== undefined && r.latitude !== '' ? parseFloat(r.latitude) : undefined,
       longitude: r.longitude !== null && r.longitude !== undefined && r.longitude !== '' ? parseFloat(r.longitude) : undefined,
       visibilidade: r.visibilidade || 'todos',

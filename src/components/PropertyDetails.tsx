@@ -8,7 +8,9 @@ import { Imovel, Corretor } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { MapPin, Phone, MessageCircle, ArrowLeft, Building2, UserCheck, ShieldAlert, Check, Bed, Car, Maximize, Bath } from 'lucide-react';
 import { getValidImage, isValidImageString, handleImageError } from '../utils/imageUtils';
-import { getPropertyCode } from '../utils/codeUtils';
+import { getPropertyCode, getBrokerLastNamePrefix } from '../utils/codeUtils';
+import { getCanonicalPropertyUrl } from '../utils/propertyUrlUtils';
+import { getTelefoneConstrutora } from '../utils/construtoraUtils';
 import { DbService } from '../services/db';
 
 interface PropertyDetailsProps {
@@ -64,6 +66,13 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
                   (imovelEmailClean && activeEmailClean && imovelEmailClean === activeEmailClean) ||
                   (!imovel.corretorEmail && !imovel.corretorId);
 
+  const isDWV = Boolean(
+    imovel.origem?.toUpperCase() === 'DWV' || 
+    imovel.origem?.toLowerCase() === 'dwv' || 
+    imovel.integracaoOrigem?.toUpperCase() === 'DWV' ||
+    (imovel.construtora && imovel.construtora.trim().length > 0)
+  );
+
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchStartPos({
       x: e.touches[0].clientX,
@@ -78,14 +87,17 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
     const diffX = endX - touchStartPos.x; // positive = swipe right (left to right)
     const diffY = Math.abs(endY - touchStartPos.y);
 
-    // If dragged horizontally from left to right (> 65px and dominant horizontal gesture) -> Go back
-    if (diffX > 65 && diffX > diffY * 1.2) {
+    // Navigation Gestures: Edge swipe from left (< 75px from edge) or dominant horizontal swipe to right
+    const isEdgeSwipe = touchStartPos.x < 75 && diffX > 35 && diffX > diffY * 0.8;
+    const isDominantSwipeRight = diffX > 60 && diffX > diffY * 1.2;
+
+    if (isEdgeSwipe || isDominantSwipeRight) {
       onBack();
       setTouchStartPos(null);
       return;
     }
 
-    // Photo carousel swipe logic
+    // Photo carousel swipe logic (only if not an edge/back navigation gesture)
     if (Math.abs(diffX) > 35 && fotos.length > 1) {
       if (diffX < 0) {
         // Swiped left -> Next photo
@@ -107,8 +119,10 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
     }).format(value);
   };
 
-  // Generate public link format using query parameters for 100% platform and mobile compatibility
-  const publicLink = `${window.location.origin}/?imovel=${imovel.id.replace('imovel-', '')}`;
+  // Generate public canonical link with optional broker attribution parameter
+  const brokerPrefix = activeCorretor?.nome ? getBrokerLastNamePrefix(activeCorretor.nome) : '';
+  const brokerParam = brokerPrefix ? `?corretor=${encodeURIComponent(brokerPrefix)}` : '';
+  const publicLink = `${getCanonicalPropertyUrl(currentImovel, window.location.origin)}${brokerParam}`;
 
   const handleSendWhatsApp = () => {
     // Build clean WhatsApp text with standard font and main image
@@ -220,8 +234,9 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
             {fotos.map((foto, idx) => (
               <button
                 key={idx}
+                data-no-rounded="true"
                 onClick={() => setActivePhotoIndex(idx)}
-                className={`relative w-16 h-12 rounded-md overflow-hidden flex-shrink-0 border-2 transition-all ${
+                className={`relative w-16 h-12 rounded-md overflow-hidden flex-shrink-0 border-2 transition-all cursor-pointer ${
                   idx === activePhotoIndex ? 'border-[#003366] ring-2 ring-[#003366]/10' : 'border-slate-100 opacity-70 hover:opacity-100'
                 }`}
               >
@@ -330,6 +345,12 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
               <span className="text-xs font-mono font-bold text-[#003366] bg-[#003366]/5 px-2.5 py-1 rounded-md inline-block mt-0.5 border border-[#003366]/10">
                 #{getPropertyCode(imovel)}
               </span>
+              {(imovel.unidade || imovel.bloco) && (
+                <span className="block text-[10px] font-semibold text-slate-500 mt-1">
+                  {imovel.unidade ? `Apto/Unid: ${imovel.unidade}` : ''}
+                  {imovel.bloco ? ` • ${imovel.bloco}` : ''}
+                </span>
+              )}
             </div>
           </div>
 
@@ -436,8 +457,63 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
           </div>
         </div>
 
-        {/* Broker Information - ONLY shown if it's NOT the user's own property */}
-        {!isOwner && (() => {
+        {/* Responsável pelo Imóvel: Construtora no caso de imóveis DWV / Construtora, ou Corretor Parceiro no caso de parcerias */}
+        {isDWV ? (() => {
+          const construtoraTelefone = getTelefoneConstrutora(imovel);
+          const cleanPhoneConstrutora = construtoraTelefone.replace(/\D/g, '');
+          const cleanWhatsappConstrutora = cleanPhoneConstrutora;
+
+          return (
+            <div className="p-3.5 bg-white border-b border-slate-100 space-y-3">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Responsável pelo Imóvel</span>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-[#003366] flex-shrink-0 shadow-2xs">
+                  <Building2 size={20} className="text-[#003366]" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="font-extrabold text-slate-900 text-sm block truncate">
+                    Construtora: {imovel.construtora || 'Construtora Parceira'}
+                  </span>
+                  <span className="text-xs text-slate-600 block truncate font-medium mt-0.5">
+                    Telefone: {construtoraTelefone || 'Não informado'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Ações diretas de ligação e WhatsApp para a Construtora */}
+              {Boolean(cleanPhoneConstrutora) && (
+                <div className="pt-1.5 flex items-center gap-2">
+                  <a
+                    href={`tel:${cleanPhoneConstrutora}`}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl transition-all border border-slate-200/80 active:scale-95 shadow-2xs"
+                    title="Ligar para a construtora"
+                  >
+                    <Phone size={14} className="text-[#003366]" />
+                    <span>Ligar</span>
+                  </a>
+                  <a
+                    href={`https://wa.me/${cleanWhatsappConstrutora}?text=${encodeURIComponent(`Olá, gostaria de informações sobre o imóvel "${imovel.titulo}" (#${imovel.codigoIm || imovel.codigo || imovel.id.replace('imovel-', '')}) no ImobiShare.`)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-all shadow-2xs active:scale-95"
+                    title="Enviar WhatsApp para a construtora"
+                  >
+                    <MessageCircle size={14} />
+                    <span>WhatsApp</span>
+                  </a>
+                </div>
+              )}
+
+              <div className="bg-slate-50 border border-slate-200/70 rounded-xl p-2.5 text-[11px] text-slate-600 flex items-start gap-2">
+                <span className="text-sm leading-none flex-shrink-0">📲</span>
+                <div>
+                  <span className="font-bold text-slate-800">Ao compartilhar este link com seu cliente:</span>{' '}
+                  Seus dados de contato como corretor serão exibidos como responsável exclusivo pelo atendimento.
+                </div>
+              </div>
+            </div>
+          );
+        })() : !isOwner && (() => {
           const corretores = DbService.getCorretores();
           const responsibleBroker = corretores.find(c => (c.id && c.id === imovel.corretorId) || (c.email && c.email.toLowerCase().trim() === imovelEmailClean)) || {
             nome: imovel.corretorNome || 'Corretor ImobiShare',
@@ -501,7 +577,7 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
         })()}
 
         {/* Confidential Section - Controle do Proprietário e Informações */}
-        {isOwner && (
+        {isOwner && !isDWV && (
           <div className="p-4 bg-slate-900 text-slate-100 space-y-3">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center">
@@ -627,7 +703,7 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
                 navigator.clipboard.writeText(publicLink);
                 alert('Link público copiado com sucesso! Você pode compartilhar onde quiser.');
               }}
-              className="text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-3 py-1.5 rounded-full flex-shrink-0 shadow-xs active:scale-95 transition-all cursor-pointer"
+              className="text-xs sm:text-sm font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-6 py-2.5 rounded-[24px] flex-shrink-0 shadow-xs active:scale-95 transition-all cursor-pointer whitespace-nowrap flex items-center justify-center"
             >
               Copiar Link
             </button>
@@ -636,7 +712,7 @@ export function PropertyDetails({ imovel, activeCorretor, onBack }: PropertyDeta
           {/* WhatsApp button below the public link */}
           <button
             onClick={handleSendWhatsApp}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-full shadow-md transition-all flex items-center justify-center gap-2 active:scale-95 text-sm cursor-pointer"
+            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-6 rounded-[24px] shadow-md transition-all flex items-center justify-center gap-2 active:scale-95 text-xs sm:text-sm cursor-pointer"
           >
             {whatsappSent ? (
               <>

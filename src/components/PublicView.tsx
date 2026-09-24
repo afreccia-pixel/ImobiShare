@@ -3,14 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import LOGO_IMAGE from '../assets/logo';
 import { Imovel, Corretor } from '../types';
-import { MOCK_CORRETORES } from '../data';
 import { DbService } from '../services/db';
-import { MapPin, Phone, MessageCircle, Bed, Car, Maximize, Bath } from 'lucide-react';
+import { MapPin, Phone, MessageCircle, Bed, Car, Maximize, Bath, ArrowLeft } from 'lucide-react';
 import { getValidImage, isValidImageString, handleImageError } from '../utils/imageUtils';
 import { getPropertyCode } from '../utils/codeUtils';
+import { getCanonicalPropertyPath } from '../utils/propertyUrlUtils';
 
 interface PublicViewProps {
   imovel: Imovel;
@@ -21,6 +21,73 @@ interface PublicViewProps {
 export function PublicView({ imovel, activeCorretor, onExit }: PublicViewProps) {
   const [activePhotoIdx, setActivePhotoIdx] = useState(0);
   const [touchStartPos, setTouchStartPos] = useState<{ x: number; y: number } | null>(null);
+
+  // Sincroniza e busca corretor responsável pelo atendimento
+  const [resolvedBroker, setResolvedBroker] = useState<Corretor | null>(() => {
+    if (activeCorretor) return activeCorretor;
+    const corretores = DbService.getCorretores();
+    return corretores.find(c => 
+      (imovel.corretorId && c.id === imovel.corretorId) || 
+      (imovel.corretorEmail && c.email && c.email.toLowerCase().trim() === imovel.corretorEmail.toLowerCase().trim())
+    ) || null;
+  });
+
+  useEffect(() => {
+    if (activeCorretor) {
+      setResolvedBroker(activeCorretor);
+      return;
+    }
+    let isMounted = true;
+    const brokerQuery = imovel.corretorId || imovel.corretorEmail;
+    if (brokerQuery) {
+      DbService.getCorretorByIdOrEmail(brokerQuery).then(b => {
+        if (isMounted && b) setResolvedBroker(b);
+      }).catch(() => {});
+    }
+    return () => { isMounted = false; };
+  }, [activeCorretor, imovel.corretorId, imovel.corretorEmail]);
+
+  // Sincroniza canonical URL, meta title e barra de endereço com a URL canônica do imóvel
+  useEffect(() => {
+    try {
+      const canonicalPath = getCanonicalPropertyPath(imovel);
+      const origin = window.location.origin;
+      const canonicalUrl = `${origin}${canonicalPath}`;
+
+      const tipo = imovel.tipoImovel || imovel.tipo || 'Imóvel';
+      const quartos = Number(imovel.dormitorios ?? imovel.quartos ?? 0);
+      const quartosText = quartos === 1 ? '1 quarto' : quartos > 1 ? `${quartos} quartos` : '';
+      const modalidade = imovel.tipo === 'locação' ? 'para alugar' : 'à venda';
+      const priceText = formatPrice(imovel.valor || imovel.valorLocacao || 0);
+      document.title = `${tipo} ${quartosText} ${modalidade} em ${imovel.cidade || 'Balneário Camboriú'} — ${priceText} | ImobiShare`;
+
+      let link = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = 'canonical';
+        document.head.appendChild(link);
+      }
+      link.href = canonicalUrl;
+
+      if (window.location.pathname !== canonicalPath) {
+        window.history.replaceState(null, '', `${canonicalPath}${window.location.search}`);
+      }
+    } catch (e) {
+      console.warn('Erro ao sincronizar canonical URL:', e);
+    }
+  }, [imovel]);
+
+  // Safe broker object: no link enviado para o cliente, o responsável exibido é sempre o corretor
+  const broker: Corretor = resolvedBroker || activeCorretor || {
+    id: imovel.corretorId || 'broker-responsavel',
+    nome: imovel.corretorNome || 'Alessandro Freccia',
+    telefone: imovel.corretorTelefone || '(47) 99111-9910',
+    whatsapp: imovel.corretorTelefone || '47991119910',
+    creci: '25490',
+    email: imovel.corretorEmail || 'afreccia@gmail.com',
+    cidade: imovel.cidade || 'Balneário Camboriú',
+    foto: ''
+  };
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchStartPos({
@@ -63,19 +130,13 @@ export function PublicView({ imovel, activeCorretor, onExit }: PublicViewProps) 
     }).format(value);
   };
 
-  // Find listing broker or active logged-in broker
-  const corretores = DbService.getCorretores();
-  const broker = activeCorretor || 
-    corretores.find(c => (c.id && c.id === imovel.corretorId) || (c.email && c.email.toLowerCase().trim() === imovel.corretorEmail?.toLowerCase().trim())) || 
-    MOCK_CORRETORES[0];
-
-  const rawPhone = broker?.telefone || '(47) 99888-7766';
-  const rawWhatsapp = broker?.whatsapp || broker?.telefone || '47998887766';
+  const rawPhone = broker.telefone || '(47) 99111-9910';
+  const rawWhatsapp = broker.whatsapp || broker.telefone || '47991119910';
   const cleanPhone = rawPhone.replace(/\D/g, '');
   const cleanWhatsapp = rawWhatsapp.replace(/\D/g, '');
 
   const handleWhatsAppClick = () => {
-    const textMessage = `Olá ${broker.nome.split(' ')[0]}, vi o anúncio do imóvel "${imovel.nomeEdificio?.trim() || imovel.titulo}" (#${getPropertyCode(imovel)}) e gostaria de mais informações.`;
+    const textMessage = `Olá ${(broker.nome || 'Corretor').split(' ')[0]}, vi o anúncio do imóvel "${imovel.nomeEdificio?.trim() || imovel.titulo}" (#${getPropertyCode(imovel)}) e gostaria de mais informações.`;
     const waUrl = `https://wa.me/${cleanWhatsapp}?text=${encodeURIComponent(textMessage)}`;
     window.open(waUrl, '_blank', 'noopener,noreferrer');
   };
@@ -84,15 +145,27 @@ export function PublicView({ imovel, activeCorretor, onExit }: PublicViewProps) 
     <div className="bg-slate-50 min-h-screen pb-16 font-sans select-none touch-pan-y" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd} id={`public-view-imovel-${imovel.id}`}>
       {/* Brand logo bar */}
       <div className="bg-white border-b border-slate-100 px-4 py-3 flex justify-between items-center shadow-xs">
-        <div className="flex items-center gap-2 text-[#003366] font-bold text-sm">
-          <img
-            src={LOGO_IMAGE}
-            alt="ImobiShare Logo"
-            className="w-5 h-5 object-contain rounded-md"
-            referrerPolicy="no-referrer"
-            onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = LOGO_IMAGE; }}
-          />
-          <span className="font-extrabold text-[#003366] tracking-tight text-base">ImobiShare</span>
+        <div className="flex items-center gap-2">
+          {onExit && (
+            <button
+              onClick={onExit}
+              className="p-1.5 -ml-1 text-slate-700 hover:text-[#003366] rounded-xl hover:bg-slate-100 transition-colors cursor-pointer flex items-center gap-1 text-xs font-bold"
+              title="Voltar"
+            >
+              <ArrowLeft size={16} />
+              <span>Voltar</span>
+            </button>
+          )}
+          <div className="flex items-center gap-2 text-[#003366] font-bold text-sm">
+            <img
+              src={LOGO_IMAGE}
+              alt="ImobiShare Logo"
+              className="w-5 h-5 object-contain rounded-md"
+              referrerPolicy="no-referrer"
+              onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = LOGO_IMAGE; }}
+            />
+            <span className="font-extrabold text-[#003366] tracking-tight text-base">ImobiShare</span>
+          </div>
         </div>
         <div className="text-[10px] bg-emerald-50 text-emerald-800 font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">
           Anúncio Ativo

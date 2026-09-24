@@ -36,11 +36,33 @@ export function getBrokerLastNamePrefix(brokerName?: string): string {
 }
 
 /**
- * Generates or formats the property code using:
- * [3 letters of broker's last name] + [sequential number starting from 1]
- * e.g., FRE01, FRE02, SIL01
+ * Formats a sequence number into the IM standard: IM000001
+ */
+export function formatImCode(seq: number): string {
+  const padded = String(Math.max(1, seq)).padStart(6, '0');
+  return `IM${padded}`;
+}
+
+/**
+ * Generates or formats the property code:
+ * Prioritizes the central IM code (e.g. IM000001, IM008452),
+ * followed by existing code/id, with graceful legacy fallback.
  */
 export function getPropertyCode(imovel: Imovel, allImoveis?: Imovel[]): string {
+  // 1. Explicit central IM code
+  if (imovel.codigoIm && /^IM\d{6}$/i.test(imovel.codigoIm.trim())) {
+    return imovel.codigoIm.toUpperCase().trim();
+  }
+
+  // 2. Already formatted as IM code in codigo or id
+  if (imovel.codigo && /^IM\d{6}$/i.test(imovel.codigo.trim())) {
+    return imovel.codigo.toUpperCase().trim();
+  }
+  if (imovel.id && /^IM\d{6}$/i.test(imovel.id.trim())) {
+    return imovel.id.toUpperCase().trim();
+  }
+
+  // 3. Existing short code (e.g., FRE1, SIL2)
   if (
     imovel.codigo &&
     imovel.codigo.trim() &&

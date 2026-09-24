@@ -61,28 +61,54 @@ function CompactPropertyRowComponent({
     onClick();
   };
 
-  // Specs text (Linha 2): "Rua 1500, 200 · Centro · 70m² · 2 dorms · 1 vaga"
+  // Specs text (Linha 2): primeiro as especificações do imóvel e depois o endereço simplificado
   const specsParts: string[] = [];
-  const addressPart = (imovel.endereco || imovel.localizacao || '').trim();
-  const bairroPart = (imovel.bairro || '').trim();
-  
-  if (addressPart) {
-    if (bairroPart && !addressPart.toLowerCase().includes(bairroPart.toLowerCase())) {
-      specsParts.push(`${addressPart} · ${bairroPart}`);
-    } else {
-      specsParts.push(addressPart);
-    }
-  } else if (bairroPart) {
-    specsParts.push(bairroPart);
-  }
-
   const isTerreno = imovel.tipoImovel === 'Terreno';
   const isComercial = imovel.tipoImovel === 'Comercial';
 
-  if (imovel.metragem) specsParts.push(`${imovel.metragem}m²`);
-  if (!isComercial && !isTerreno && imovel.dormitorios) specsParts.push(`${imovel.dormitorios} dorm${imovel.dormitorios > 1 ? 's' : ''}`);
+  // 1. Especificações do imóvel primeiro: quartos, BWC, vagas, m²
+  if (!isComercial && !isTerreno && imovel.dormitorios) specsParts.push(`${imovel.dormitorios} ${imovel.dormitorios === 1 ? 'quarto' : 'quartos'}`);
+  if (!isTerreno && imovel.banheiros) specsParts.push(`${imovel.banheiros} BWC`);
   if (!isTerreno && imovel.vagas) specsParts.push(`${imovel.vagas} vaga${imovel.vagas > 1 ? 's' : ''}`);
-  if (!isTerreno && imovel.banheiros && !imovel.vagas) specsParts.push(`${imovel.banheiros} BWC`);
+  if (imovel.metragem) specsParts.push(`${imovel.metragem}m²`);
+
+  // 2. Depois o endereço simplificado: somente a rua (sem bairro e sem cidade)
+  const getOnlyStreet = () => {
+    let raw = (imovel.endereco || imovel.localizacao || '').trim();
+    const bairro = (imovel.bairro || '').trim();
+    const cidade = (imovel.cidade || '').trim();
+
+    if (!raw) return '';
+
+    if (bairro && raw.toLowerCase() === bairro.toLowerCase()) return '';
+    if (cidade && raw.toLowerCase() === cidade.toLowerCase()) return '';
+
+    if (cidade) {
+      const cityRegex = new RegExp(`(\\s*[-·,/]\\s*)?${cidade}\\s*([-/]\\s*[A-Za-z]{2})?$`, 'i');
+      raw = raw.replace(cityRegex, '').trim();
+    }
+
+    if (bairro) {
+      const bairroRegex = new RegExp(`(\\s*[-·,/]\\s*)?${bairro}\\b.*$`, 'i');
+      raw = raw.replace(bairroRegex, '').trim();
+    }
+
+    if (raw.includes(' - ')) {
+      const parts = raw.split(' - ');
+      raw = parts[0].trim();
+    } else if (raw.includes(' · ')) {
+      const parts = raw.split(' · ');
+      raw = parts[0].trim();
+    }
+
+    raw = raw.replace(/[,\-·.]+$/, '').trim();
+    return raw;
+  };
+
+  const ruaApenas = getOnlyStreet();
+  if (ruaApenas) {
+    specsParts.push(ruaApenas);
+  }
 
   const specsText = specsParts.join(' · ');
 
@@ -239,7 +265,7 @@ function CompactPropertyRowComponent({
 
           {/* Linha 2: Especificações */}
           <div className="text-[10px] text-slate-500 truncate leading-tight mt-0.5">
-            {specsText || 'Sem especificações'}
+            <span className="truncate">{specsText || 'Sem especificações'}</span>
           </div>
         </div>
       </div>

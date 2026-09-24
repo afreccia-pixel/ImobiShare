@@ -269,11 +269,11 @@ export function PortalSearchPage({
   const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
   const [isMoreFiltersOpen, setIsMoreFiltersOpen] = useState(false);
 
-  // Paginação progressiva dos cards na interface
-  const [displayCount, setDisplayCount] = useState(24);
+  // Paginação progressiva dos cards na interface (lotes de 20 imóveis)
+  const [displayCount, setDisplayCount] = useState(20);
 
   useEffect(() => {
-    setDisplayCount(24);
+    setDisplayCount(20);
   }, [filterSerialized, sortBy]);
 
   const handleUpdateFilters = useCallback((newFilters: Partial<PortalFilterState>) => {
@@ -317,10 +317,20 @@ export function PortalSearchPage({
       });
     }
 
-    // Filtro de Status do Imóvel (Na planta, Mobiliado, Sem mobília)
+    // Filtro de Condição do Imóvel (Na Planta, Mobiliado, Sem Mobília)
     if (filters.statusImovel && filters.statusImovel.toLowerCase() !== 'todos') {
-      const s = filters.statusImovel.toLowerCase();
-      list = list.filter((p) => (p.statusImovel || '').toLowerCase() === s);
+      const s = filters.statusImovel.toLowerCase().trim();
+      list = list.filter((p) => {
+        const pCond = (p.condicaoImovel || p.statusImovel || '').toLowerCase().trim();
+        if (s.includes('planta')) {
+          return pCond.includes('planta') || pCond.includes('obra') || pCond.includes('constru');
+        } else if (s.includes('sem')) {
+          return pCond.includes('sem');
+        } else if (s.includes('mobil')) {
+          return pCond.includes('mobil') && !pCond.includes('sem');
+        }
+        return pCond === s;
+      });
     }
 
     // Busca livre combinada (empreendimento, condomínio, bairro, código, construtora, título, endereço, etc.)
@@ -418,11 +428,50 @@ export function PortalSearchPage({
 
   const handleShowMoreCards = useCallback(() => {
     if (displayCount < filteredAndSortedProperties.length) {
-      setDisplayCount((prev) => Math.min(prev + 24, filteredAndSortedProperties.length));
+      setDisplayCount((prev) => Math.min(prev + 20, filteredAndSortedProperties.length));
     } else if (hasMore && onLoadMore) {
       onLoadMore();
     }
   }, [displayCount, filteredAndSortedProperties.length, hasMore, onLoadMore]);
+
+  // Infinite scroll automático: ao chegar no final da lista carrega mais 20 imóveis sucessivamente
+  const desktopSentinelRef = useRef<HTMLDivElement | null>(null);
+  const mobileSentinelRef = useRef<HTMLDivElement | null>(null);
+
+  const handleScrollContainer = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (!canLoadMore || loadingMore) return;
+    const target = e.currentTarget;
+    const remaining = target.scrollHeight - target.scrollTop - target.clientHeight;
+    if (remaining <= 500) {
+      handleShowMoreCards();
+    }
+  }, [canLoadMore, loadingMore, handleShowMoreCards]);
+
+  useEffect(() => {
+    if (!canLoadMore || loadingMore) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const first = entries[0];
+        if (first.isIntersecting && !loadingMore) {
+          handleShowMoreCards();
+        }
+      },
+      { rootMargin: '450px' }
+    );
+
+    const desktopEl = desktopSentinelRef.current;
+    const mobileEl = mobileSentinelRef.current;
+
+    if (desktopEl) observer.observe(desktopEl);
+    if (mobileEl) observer.observe(mobileEl);
+
+    return () => {
+      if (desktopEl) observer.unobserve(desktopEl);
+      if (mobileEl) observer.unobserve(mobileEl);
+      observer.disconnect();
+    };
+  }, [canLoadMore, loadingMore, handleShowMoreCards]);
 
   // Sincronização ao clicar no marcador do mapa:
   // "no mapa ao clicar no imovel vai para a vizualizacao, apos clicar no botao fechar volta para o map"
@@ -591,7 +640,10 @@ export function PortalSearchPage({
                 </div>
 
                 {/* ÁREA DE CARDS QUE ROLA SUAVEMENTE ABAIXO DA BARRA FIXA */}
-                <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 lg:px-8 py-5 scroll-smooth">
+                <div 
+                  onScroll={handleScrollContainer}
+                  className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 lg:px-8 py-5 scroll-smooth"
+                >
                   {/* GRID DE CARDS DESKTOP */}
                   {filteredAndSortedProperties.length > 0 ? (
                     <div className="pb-12">
@@ -610,24 +662,16 @@ export function PortalSearchPage({
                       </div>
 
                       {canLoadMore && (
-                        <div className="flex justify-center pt-2 pb-6">
-                          <button
-                            type="button"
-                            onClick={handleShowMoreCards}
-                            disabled={loadingMore}
-                            className="inline-flex items-center justify-center gap-2 h-11 lg:h-12 px-6 lg:px-7 bg-[#003366] hover:bg-[#002244] disabled:opacity-50 text-white text-xs lg:text-sm font-semibold rounded-xl shadow-sm transition-all cursor-pointer active:scale-[0.99]"
-                          >
-                            {loadingMore ? (
-                              <>
-                                <Loader2 className="animate-spin w-4 h-4" />
-                                <span>Carregando mais imóveis...</span>
-                              </>
-                            ) : (
-                              <span>
-                                Carregar mais imóveis ({displayedProperties.length} de {filteredAndSortedProperties.length})
-                              </span>
-                            )}
-                          </button>
+                        <div className="flex flex-col items-center justify-center pt-2 pb-6">
+                          {/* Sentinela de Infinite Scroll Desktop */}
+                          <div ref={desktopSentinelRef} className="h-6 w-full pointer-events-none" />
+
+                          {loadingMore && (
+                            <div className="flex items-center justify-center gap-2 py-4 text-slate-500 text-xs font-semibold">
+                              <Loader2 className="animate-spin w-4 h-4 text-[#003366]" />
+                              <span>Carregando mais imóveis...</span>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -711,7 +755,10 @@ export function PortalSearchPage({
                 </div>
 
                 {/* LISTAGEM DE CARDS DE IMÓVEIS (ÚNICA ÁREA QUE ROLA) */}
-                <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3.5 space-y-4 pb-28 scroll-smooth">
+                <div 
+                  onScroll={handleScrollContainer}
+                  className="flex-1 min-h-0 overflow-y-auto scrollbar-none no-scrollbar px-4 py-3.5 space-y-4 pb-28 scroll-smooth"
+                >
                   {filteredAndSortedProperties.length > 0 ? (
                     <div className="space-y-4">
                       {displayedProperties.map((imovel) => (
@@ -727,24 +774,16 @@ export function PortalSearchPage({
                       ))}
 
                       {canLoadMore && (
-                        <div className="flex justify-center pt-2 pb-6">
-                          <button
-                            type="button"
-                            onClick={handleShowMoreCards}
-                            disabled={loadingMore}
-                            className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#003366] hover:bg-[#002244] disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
-                          >
-                            {loadingMore ? (
-                              <>
-                                <Loader2 className="animate-spin w-4 h-4" />
-                                <span>Carregando mais...</span>
-                              </>
-                            ) : (
-                              <span>
-                                Carregar mais imóveis ({displayedProperties.length} de {filteredAndSortedProperties.length})
-                              </span>
-                            )}
-                          </button>
+                        <div className="flex flex-col items-center justify-center pt-2 pb-6">
+                          {/* Sentinela de Infinite Scroll Mobile */}
+                          <div ref={mobileSentinelRef} className="h-6 w-full pointer-events-none" />
+
+                          {loadingMore && (
+                            <div className="flex items-center justify-center gap-2 py-4 text-slate-500 text-xs font-semibold">
+                              <Loader2 className="animate-spin w-4 h-4 text-[#003366]" />
+                              <span>Carregando mais imóveis...</span>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

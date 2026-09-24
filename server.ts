@@ -13,6 +13,15 @@ import crypto from 'crypto';
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { ServerDb, logBackendError, logMemory } from './server-db';
+import { Imovel } from './src/types';
+import { 
+  getCanonicalPropertyCode, 
+  getPropertyModalidade, 
+  generatePropertySlug, 
+  getCanonicalPropertyPath, 
+  getCanonicalPropertyUrl,
+  parsePropertyUrl 
+} from './src/utils/propertyUrlUtils';
 
 dotenv.config();
 
@@ -103,6 +112,8 @@ function decodeJwtPayload(token: string): any {
 // Security Middleware: Verifies Firebase ID token or active broker session
 interface AuthenticatedRequest extends Request {
   userEmail?: string;
+  isAdmin?: boolean;
+  userRole?: 'admin' | 'corretor' | 'imobiliaria';
 }
 
 async function verifyAuthToken(req: AuthenticatedRequest, res: Response, next: NextFunction) {
@@ -113,9 +124,13 @@ async function verifyAuthToken(req: AuthenticatedRequest, res: Response, next: N
       token = authHeader.substring(7).trim();
     } else if (req.headers['x-user-email']) {
       req.userEmail = String(req.headers['x-user-email']).toLowerCase().trim();
+      req.isAdmin = req.userEmail === 'afreccia@gmail.com';
+      req.userRole = req.isAdmin ? 'admin' : 'corretor';
       return next();
     } else if (req.headers['x-corretor-email']) {
       req.userEmail = String(req.headers['x-corretor-email']).toLowerCase().trim();
+      req.isAdmin = req.userEmail === 'afreccia@gmail.com';
+      req.userRole = req.isAdmin ? 'admin' : 'corretor';
       return next();
     }
 
@@ -160,6 +175,8 @@ async function verifyAuthToken(req: AuthenticatedRequest, res: Response, next: N
     }
 
     req.userEmail = verifiedEmail;
+    req.isAdmin = verifiedEmail === 'afreccia@gmail.com';
+    req.userRole = req.isAdmin ? 'admin' : 'corretor';
     next();
   } catch (err: any) {
     logBackendError(req.path, err);
@@ -550,7 +567,7 @@ app.get(['/api/properties', '/api/imoveis'], optionalAuthToken, async (req: Auth
     const isPaginated = page !== undefined || req.query.format === 'paginated';
     const limit = limitParam 
       ? Math.min(1000, Math.max(1, parseInt(limitParam as string, 10))) 
-      : (isPaginated ? 24 : 1000);
+      : (isPaginated ? 20 : 1000);
 
     const result = await ServerDb.getImoveis({
       userEmail: req.userEmail,
@@ -962,6 +979,291 @@ app.get('/api/admin/diagnostics', verifyAuthToken, async (req: AuthenticatedRequ
   }
 });
 
+// Admin Review Duplicates Endpoint
+app.get('/api/admin/duplicidades', verifyAuthToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const email = req.userEmail!;
+    const broker = await ServerDb.getCorretorByEmail(email);
+    if (!broker || !broker.isAdmin) {
+      return res.status(403).json({ error: 'Acesso negado.' });
+    }
+
+    if (ServerDb['isPostgres'] && ServerDb['pool']) {
+      const resQuery = await ServerDb['pool'].query(`
+        SELECT * FROM imovel_duplicidades_revisao
+        ORDER BY criado_em DESC
+        LIMIT 100
+      `);
+      return res.json(resQuery.rows);
+    }
+    return res.json([]);
+  } catch (err: any) {
+    logBackendError('/api/admin/duplicidades', err);
+    return res.status(500).json({ error: 'Erro ao carregar duplicidades.' });
+  }
+});
+
+// Admin Property Audit History Endpoint
+app.get('/api/properties/:id/history', verifyAuthToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const email = req.userEmail!;
+    const broker = await ServerDb.getCorretorByEmail(email);
+    const imovel = await ServerDb.getImovelById(req.params.id);
+    if (!imovel) {
+      return res.status(404).json({ error: 'Imóvel não encontrado.' });
+    }
+
+    const isOwner = imovel.corretorEmail.toLowerCase().trim() === email.toLowerCase().trim();
+    const isAdmin = broker?.isAdmin || email === 'afreccia@gmail.com';
+
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ error: 'Acesso negado.' });
+    }
+
+    if (ServerDb['isPostgres'] && ServerDb['pool']) {
+      const resQuery = await ServerDb['pool'].query(`
+        SELECT * FROM imovel_historico
+        WHERE imovel_id = $1
+        ORDER BY data_hora DESC
+        LIMIT 100
+      `, [req.params.id]);
+      return res.json(resQuery.rows);
+    }
+    return res.json([]);
+  } catch (err: any) {
+    logBackendError(`/api/properties/${req.params.id}/history`, err);
+    return res.status(500).json({ error: 'Erro ao buscar histórico do imóvel.' });
+  }
+});
+
+function escapeHtml(str?: string): string {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatPriceBRL(val?: number): string {
+  if (!val || val <= 0) return 'Consulte';
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    maximumFractionDigits: 0
+  }).format(val);
+}
+
+function getRequestOrigin(req: Request): string {
+  const host = req.get('host') || 'localhost:3000';
+  const proto = req.get('x-forwarded-proto') || (req.secure ? 'https' : 'http');
+  return `${proto}://${host}`;
+}
+
+function generateInitialPropertyHtml(imovel: Imovel, canonicalUrl: string): string {
+  const title = imovel.nomeEdificio?.trim() ? `${imovel.nomeEdificio} — ${imovel.titulo}` : imovel.titulo;
+  const price = imovel.tipo === 'locação' 
+    ? `${formatPriceBRL(imovel.valorLocacao || imovel.valor)} /mês`
+    : imovel.tipo === 'ambos'
+    ? `${formatPriceBRL(imovel.valor)} (Venda) | ${formatPriceBRL(imovel.valorLocacao)} /mês (Aluguel)`
+    : formatPriceBRL(imovel.valor);
+
+  const quartos = imovel.dormitorios || imovel.quartos || 0;
+  const banheiros = imovel.banheiros || 0;
+  const vagas = imovel.vagas || 0;
+  const metragem = imovel.metragem || 0;
+  const location = [imovel.endereco, imovel.bairro, imovel.cidade, 'SC'].filter(Boolean).join(', ');
+  const fotos = Array.isArray(imovel.fotos) ? imovel.fotos.slice(0, 6) : [];
+
+  return `
+    <noscript>
+      <article style="max-width: 800px; margin: 24px auto; padding: 24px; font-family: system-ui, -apple-system, sans-serif; background: #ffffff; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); color: #0f172a;">
+        <header style="border-bottom: 2px solid #f1f5f9; padding-bottom: 16px; margin-bottom: 20px;">
+          <span style="display: inline-block; padding: 4px 12px; background: #003366; color: #ffffff; font-weight: 700; font-size: 11px; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.05em;">
+            ${escapeHtml(imovel.tipoImovel || 'Imóvel')} • ${imovel.tipo === 'locação' ? 'Aluguel' : 'Venda'}
+          </span>
+          <h1 style="font-size: 26px; font-weight: 800; margin: 12px 0 6px 0; color: #0f172a; line-height: 1.2;">${escapeHtml(title)}</h1>
+          <p style="font-size: 14px; color: #64748b; margin: 0;">📍 ${escapeHtml(location)}</p>
+          <div style="font-size: 26px; font-weight: 900; color: #003366; margin-top: 14px;">${price}</div>
+        </header>
+
+        <section style="margin-bottom: 24px;">
+          <h2 style="font-size: 16px; font-weight: 700; color: #1e293b; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em;">Características Principais</h2>
+          <ul style="list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 10px; margin: 0;">
+            ${quartos ? `<li style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 8px 14px; border-radius: 8px; font-weight: 600; font-size: 13px;">🛏️ ${quartos} ${quartos === 1 ? 'Quarto' : 'Quartos'}</li>` : ''}
+            ${banheiros ? `<li style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 8px 14px; border-radius: 8px; font-weight: 600; font-size: 13px;">🚿 ${banheiros} ${banheiros === 1 ? 'Banheiro' : 'Banheiros'}</li>` : ''}
+            ${vagas ? `<li style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 8px 14px; border-radius: 8px; font-weight: 600; font-size: 13px;">🚗 ${vagas} ${vagas === 1 ? 'Vaga' : 'Vagas'}</li>` : ''}
+            ${metragem ? `<li style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 8px 14px; border-radius: 8px; font-weight: 600; font-size: 13px;">📐 ${metragem} m² privativos</li>` : ''}
+          </ul>
+        </section>
+
+        ${imovel.descricao ? `
+        <section style="margin-bottom: 24px;">
+          <h2 style="font-size: 16px; font-weight: 700; color: #1e293b; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.05em;">Descrição Completa</h2>
+          <p style="font-size: 14px; line-height: 1.6; color: #334155; white-space: pre-line;">${escapeHtml(imovel.descricao)}</p>
+        </section>
+        ` : ''}
+
+        ${fotos.length > 0 ? `
+        <section style="margin-bottom: 24px;">
+          <h2 style="font-size: 16px; font-weight: 700; color: #1e293b; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em;">Fotos do Imóvel</h2>
+          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px;">
+            ${fotos.map((f, idx) => `<img src="${escapeHtml(f)}" alt="${escapeHtml(title)} - Imagem ${idx + 1}" style="width: 100%; height: 140px; object-fit: cover; border-radius: 8px;" />`).join('\n')}
+          </div>
+        </section>
+        ` : ''}
+
+        <footer style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #f1f5f9; font-size: 12px; color: #94a3b8; text-align: center;">
+          <p>ImobiShare — Referência: <strong>${escapeHtml(getCanonicalPropertyCode(imovel))}</strong></p>
+          <p><a href="${canonicalUrl}" style="color: #003366; text-decoration: none; font-weight: 700;">Ver anúncio completo no ImobiShare</a></p>
+        </footer>
+      </article>
+    </noscript>
+  `;
+}
+
+function generate404Html(origin: string = 'https://imobishare.app.br'): string {
+  return `<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Imóvel não encontrado (404) — ImobiShare</title>
+    <meta name="description" content="O imóvel que você procura não foi encontrado ou não está mais disponível no ImobiShare." />
+    <meta name="robots" content="noindex, follow" />
+    <link rel="icon" type="image/png" href="/icone_imobishare.png" />
+  </head>
+  <body style="margin: 0; padding: 0; background: #0b1320; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh;">
+    <div style="text-align: center; max-width: 480px; padding: 32px 24px;">
+      <div style="font-size: 72px; font-weight: 900; color: #38bdf8; line-height: 1; margin-bottom: 16px;">404</div>
+      <h1 style="font-size: 22px; font-weight: 800; margin: 0 0 12px 0;">Imóvel Não Encontrado</h1>
+      <p style="font-size: 14px; color: #94a3b8; line-height: 1.5; margin: 0 0 28px 0;">
+        O código ou anúncio solicitado não existe, seu endereço foi digitado incorretamente ou o imóvel foi desativado.
+      </p>
+      <a href="/" style="display: inline-block; background: #0284c7; color: #ffffff; text-decoration: none; font-weight: bold; font-size: 14px; padding: 12px 24px; border-radius: 12px; box-shadow: 0 4px 14px rgba(2, 132, 199, 0.4);">
+        Explorar Imóveis no Portal
+      </a>
+    </div>
+  </body>
+</html>`;
+}
+
+function injectPropertyMetadata(html: string, imovel: Imovel, canonicalUrl: string, origin: string): string {
+  const code = getCanonicalPropertyCode(imovel);
+  const tipo = imovel.tipoImovel || imovel.tipo || 'Imóvel';
+  const quartos = Number(imovel.dormitorios ?? imovel.quartos ?? 0);
+  const quartosText = quartos === 1 ? '1 quarto' : quartos > 1 ? `${quartos} quartos` : '';
+  const bairro = imovel.bairro?.trim() || '';
+  const cidade = imovel.cidade?.trim() || 'Balneário Camboriú';
+  const modalidadeText = imovel.tipo === 'locação' ? 'para alugar' : 'à venda';
+  
+  const priceFormatted = imovel.tipo === 'locação'
+    ? `${formatPriceBRL(imovel.valorLocacao || imovel.valor)}/mês`
+    : formatPriceBRL(imovel.valor);
+
+  const titleParts = [tipo, quartosText, modalidadeText, bairro ? `no ${bairro}` : '', cidade ? `em ${cidade}` : '', `— ${priceFormatted} | ImobiShare`].filter(Boolean);
+  const pageTitle = titleParts.join(' ').replace(/\s+/g, ' ');
+
+  const descParts = [
+    `${tipo} ${modalidadeText} por ${priceFormatted}`,
+    bairro && cidade ? `no bairro ${bairro}, ${cidade}` : cidade ? `em ${cidade}` : '',
+    quartos ? `${quartos} ${quartos === 1 ? 'quarto' : 'quartos'}` : '',
+    imovel.banheiros ? `${imovel.banheiros} banheiros` : '',
+    imovel.vagas ? `${imovel.vagas} vagas` : '',
+    imovel.metragem ? `${imovel.metragem}m²` : '',
+    `Código: ${code}. Veja fotos e detalhes no ImobiShare.`
+  ].filter(Boolean);
+  const pageDesc = descParts.join('. ').replace(/\.\./g, '.');
+
+  let coverPhoto = (Array.isArray(imovel.fotos) && imovel.fotos[0]) ? imovel.fotos[0] : '';
+  if (coverPhoto && !coverPhoto.startsWith('http://') && !coverPhoto.startsWith('https://')) {
+    coverPhoto = `${origin}${coverPhoto.startsWith('/') ? '' : '/'}${coverPhoto}`;
+  }
+  if (!coverPhoto) {
+    coverPhoto = `${origin}/fotocapa.png`;
+  }
+
+  // Schema.org RealEstateListing JSON-LD
+  const schemaJson = {
+    '@context': 'https://schema.org',
+    '@type': 'RealEstateListing',
+    'name': pageTitle,
+    'description': pageDesc,
+    'url': canonicalUrl,
+    'image': Array.isArray(imovel.fotos) && imovel.fotos.length > 0 
+      ? imovel.fotos.slice(0, 5).map(f => f.startsWith('http') ? f : `${origin}${f.startsWith('/') ? '' : '/'}${f}`) 
+      : [coverPhoto],
+    'offers': {
+      '@type': 'Offer',
+      'price': imovel.tipo === 'locação' ? (imovel.valorLocacao || imovel.valor || 0) : (imovel.valor || 0),
+      'priceCurrency': 'BRL',
+      'availability': 'https://schema.org/InStock',
+      'businessFunction': imovel.tipo === 'locação' ? 'https://schema.org/LeaseOut' : 'https://schema.org/Sell'
+    },
+    'address': {
+      '@type': 'PostalAddress',
+      'streetAddress': imovel.endereco || '',
+      'addressLocality': cidade,
+      'addressRegion': 'SC',
+      'addressCountry': 'BR'
+    }
+  };
+
+  let result = html;
+
+  // Replace Title
+  result = result.replace(/<title>.*?<\/title>/i, `<title>${escapeHtml(pageTitle)}</title>`);
+
+  // Replace / Add Description
+  if (result.includes('<meta name="description"')) {
+    result = result.replace(/<meta\s+name="description"\s+content="[^"]*"/i, `<meta name="description" content="${escapeHtml(pageDesc)}"`);
+  } else {
+    result = result.replace('</head>', `<meta name="description" content="${escapeHtml(pageDesc)}">\n</head>`);
+  }
+
+  // Inject Canonical, OpenGraph and Twitter tags
+  const tagsToInject = `
+    <!-- Canonical & SEO Social Tags -->
+    <link rel="canonical" href="${escapeHtml(canonicalUrl)}" />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="ImobiShare" />
+    <meta property="og:title" content="${escapeHtml(pageTitle)}" />
+    <meta property="og:description" content="${escapeHtml(pageDesc)}" />
+    <meta property="og:url" content="${escapeHtml(canonicalUrl)}" />
+    <meta property="og:image" content="${escapeHtml(coverPhoto)}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="${escapeHtml(pageTitle)}" />
+    <meta name="twitter:description" content="${escapeHtml(pageDesc)}" />
+    <meta name="twitter:image" content="${escapeHtml(coverPhoto)}" />
+    <script type="application/ld+json">
+${JSON.stringify(schemaJson, null, 2)}
+    </script>
+  `;
+  result = result.replace('</head>', `${tagsToInject}\n</head>`);
+
+  // Inject initial HTML content
+  const initialBody = generateInitialPropertyHtml(imovel, canonicalUrl);
+  result = result.replace('<div id="root"></div>', `<div id="root"></div>\n${initialBody}`);
+
+  return result;
+}
+
+async function loadHtmlTemplate(req: Request, vite?: any): Promise<string> {
+  if (vite) {
+    const templatePath = path.resolve(process.cwd(), 'index.html');
+    let template = await fs.readFile(templatePath, 'utf-8');
+    return await vite.transformIndexHtml(req.originalUrl, template);
+  } else {
+    const distPath = path.join(process.cwd(), 'dist');
+    try {
+      return await fs.readFile(path.join(distPath, 'index.html'), 'utf-8');
+    } catch {
+      return await fs.readFile(path.resolve(process.cwd(), 'index.html'), 'utf-8');
+    }
+  }
+}
+
 // Start Server and setup Vite middleware
 const startServer = async () => {
   const PORT = 3000;
@@ -971,32 +1273,130 @@ const startServer = async () => {
   app.use(express.static(path.join(process.cwd(), 'public')));
   app.use('/assets', express.static(path.join(process.cwd(), 'assets')));
 
+  // Robots.txt
+  app.get('/robots.txt', (req, res) => {
+    const origin = getRequestOrigin(req);
+    const content = `User-agent: *\nAllow: /\n\nSitemap: ${origin}/sitemap.xml\n`;
+    res.set('Content-Type', 'text/plain; charset=utf-8');
+    return res.status(200).send(content);
+  });
+
+  // Sitemap.xml: Inclui somente as URLs principais de imóveis para indexação
+  app.get('/sitemap.xml', async (req, res) => {
+    try {
+      const origin = getRequestOrigin(req);
+      const properties = await ServerDb.getImoveis({ limit: 5000 });
+      const list = Array.isArray(properties) ? properties : (properties as any).data || [];
+
+      const activeProperties = list.filter((p: Imovel) => {
+        const isShared = p.compartilhar === 'SIM' || p.compartilhar === true || p.compartilhar === undefined || (p.compartilhar as any) === 'true';
+        const isNotSold = p.statusComercial !== 'Vendido' && (p as any).statusImovel !== 'Vendido';
+        const isWebsite = p.website !== 'NAO' && (p as any).website !== false;
+        return isShared && isNotSold && isWebsite;
+      });
+
+      const today = new Date().toISOString().split('T')[0];
+
+      const xmlUrls = [
+        `  <url>\n    <loc>${origin}/</loc>\n    <changefreq>daily</changefreq>\n    <priority>1.0</priority>\n  </url>`
+      ];
+
+      for (const imovel of activeProperties) {
+        const canonicalPath = getCanonicalPropertyPath(imovel);
+        const lastmod = imovel.dataCadastro ? imovel.dataCadastro.split('T')[0] : today;
+        xmlUrls.push(`  <url>\n    <loc>${origin}${canonicalPath}</loc>\n    <lastmod>${lastmod}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.8</priority>\n  </url>`);
+      }
+
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${xmlUrls.join('\n')}\n</urlset>`;
+
+      res.set('Content-Type', 'application/xml; charset=utf-8');
+      return res.status(200).send(xml);
+    } catch (err: any) {
+      logBackendError('/sitemap.xml', err);
+      return res.status(500).send('Erro ao gerar sitemap.');
+    }
+  });
+
+  const handlePageRequest = async (req: Request, res: Response, next: NextFunction, vite?: any) => {
+    if (req.path.startsWith('/api') || (req.path.includes('.') && !req.path.endsWith('.html'))) {
+      return next();
+    }
+
+    const origin = getRequestOrigin(req);
+
+    // A. Redireciona links públicos antigos (?imovel=CODIGO) para as novas URLs canônicas
+    if (req.path === '/' && req.query.imovel) {
+      const imovelCode = String(req.query.imovel).trim();
+      const imovel = await ServerDb.getImovelById(imovelCode);
+      if (imovel) {
+        const canonicalPath = getCanonicalPropertyPath(imovel);
+        const queryParams = new URLSearchParams(req.query as any);
+        queryParams.delete('imovel');
+        const queryString = queryParams.toString() ? '?' + queryParams.toString() : '';
+        return res.redirect(301, `${canonicalPath}${queryString}`);
+      } else {
+        return res.status(404).set({ 'Content-Type': 'text/html; charset=utf-8' }).send(generate404Html(origin));
+      }
+    }
+
+    // B. Rotas de Imóveis: /imovel/...
+    if (req.path.startsWith('/imovel/')) {
+      const parsed = parsePropertyUrl(req.path);
+      if (!parsed || !parsed.code) {
+        return res.status(404).set({ 'Content-Type': 'text/html; charset=utf-8' }).send(generate404Html(origin));
+      }
+
+      const imovel = await ServerDb.getImovelById(parsed.code);
+      if (!imovel) {
+        return res.status(404).set({ 'Content-Type': 'text/html; charset=utf-8' }).send(generate404Html(origin));
+      }
+
+      const canonicalPath = getCanonicalPropertyPath(imovel);
+
+      // Redireciona links curtos ou slugs desatualizados para a URL canônica principal
+      if (req.path.toLowerCase() !== canonicalPath.toLowerCase()) {
+        const queryIndex = req.url.indexOf('?');
+        const queryString = queryIndex >= 0 ? req.url.substring(queryIndex) : '';
+        return res.redirect(301, `${canonicalPath}${queryString}`);
+      }
+
+      // Entrega o HTML inicial com título, descrição, canonical, OpenGraph, JSON-LD e dados pré-renderizados
+      try {
+        const canonicalUrl = `${origin}${canonicalPath}`;
+        let template = await loadHtmlTemplate(req, vite);
+        template = injectPropertyMetadata(template, imovel, canonicalUrl, origin);
+        return res.status(200).set({ 'Content-Type': 'text/html; charset=utf-8' }).send(template);
+      } catch (err: any) {
+        logBackendError(req.path, err);
+        return next(err);
+      }
+    }
+
+    // C. Demais rotas SPA
+    try {
+      let template = await loadHtmlTemplate(req, vite);
+      return res.status(200).set({ 'Content-Type': 'text/html; charset=utf-8' }).send(template);
+    } catch (err: any) {
+      return next(err);
+    }
+  };
+
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
-      appType: 'spa',
+      appType: 'custom',
     });
     app.use(vite.middlewares);
 
     app.get('*', async (req, res, next) => {
-      if (req.path.startsWith('/api') || req.path.includes('.')) {
-        return next();
-      }
-      try {
-        const templatePath = path.resolve(process.cwd(), 'index.html');
-        let template = await fs.readFile(templatePath, 'utf-8');
-        template = await vite.transformIndexHtml(req.originalUrl, template);
-        res.status(200).set({ 'Content-Type': 'text/html' }).send(template);
-      } catch (e) {
-        next(e);
-      }
+      await handlePageRequest(req, res, next, vite);
     });
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+    app.get('*', async (req, res, next) => {
+      await handlePageRequest(req, res, next);
     });
   }
 

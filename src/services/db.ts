@@ -6,6 +6,7 @@
 import { Imovel, Corretor, DiagnosticCheck } from '../types';
 import { getApiUrl } from '../utils/apiUrl';
 import { auth } from './firebase';
+import { getBrokerLastNamePrefix } from '../utils/codeUtils';
 
 export function isProfileComplete(corretor: Partial<Corretor> | null | undefined): boolean {
   if (!corretor) return false;
@@ -252,6 +253,46 @@ export class DbService {
     return this.getCorretores();
   }
 
+  static async getCorretorByIdOrEmail(idOrEmail: string): Promise<Corretor | null> {
+    const query = (idOrEmail || '').trim().toLowerCase();
+    if (!query) return null;
+
+    const findInList = (list: Corretor[]): Corretor | null => {
+      // 1. Match exato por id ou e-mail
+      let found = list.find(c => 
+        (c.id && c.id.toLowerCase().trim() === query) ||
+        (c.email && c.email.toLowerCase().trim() === query) ||
+        (c.id && c.id.toLowerCase().replace(/^broker-/, '').replace(/_/g, '.') === query.replace(/^broker-/, '').replace(/_/g, '.')) ||
+        (c.id && c.id.toLowerCase().replace(/^broker-/, '').replace(/_/g, '@') === query.replace(/^broker-/, '').replace(/_/g, '@'))
+      );
+      if (found) return found;
+
+      // 2. Match por prefixo do corretor (ex: FRE para Freccia) ou slug
+      found = list.find(c => {
+        if (!c.nome) return false;
+        const prefix = getBrokerLastNamePrefix(c.nome).toLowerCase();
+        return prefix === query || (c.slugSite && c.slugSite.toLowerCase() === query);
+      });
+      return found || null;
+    };
+
+    if (cachedCorretor) {
+      const match = findInList([cachedCorretor]);
+      if (match) return match;
+    }
+
+    let match = findInList(cachedCorretores);
+    if (match) return match;
+
+    try {
+      const freshList = await this.fetchBrokers();
+      match = findInList(freshList);
+      if (match) return match;
+    } catch {}
+
+    return null;
+  }
+
   static getBrokerStats(idOrEmail?: string) {
     const imoveis = this.getImoveisSync();
     const active = this.getActiveCorretor();
@@ -333,7 +374,7 @@ export class DbService {
       }
       return this.getActiveCorretor();
     } catch (err) {
-      console.error('Erro ao verificar perfil com backend:', err);
+      console.warn('Erro ao verificar perfil com backend (usando dados locais):', err);
       return this.getActiveCorretor();
     }
   }
@@ -374,13 +415,17 @@ export class DbService {
   private static paginationState = {
     total: 0,
     page: 1,
-    limit: 24,
+    limit: 20,
     totalPages: 1,
     hasMore: false,
     loadingMore: false
   };
 
   static getPaginationInfo() {
+    return { ...this.paginationState };
+  }
+
+  static getPaginationState() {
     return { ...this.paginationState };
   }
 
@@ -407,7 +452,7 @@ export class DbService {
     construtora?: string;
   }): Promise<Imovel[]> {
     const page = options?.page || 1;
-    const limit = options?.limit || (options?.page ? 24 : 500);
+    const limit = options?.limit || (options?.page ? 20 : 500);
     const append = Boolean(options?.append);
     const cidade = options?.cidade;
 
@@ -516,7 +561,7 @@ export class DbService {
           return cachedImoveis;
         }
       } catch (err) {
-        console.error('Erro ao buscar imóveis:', err);
+        console.warn('Erro ao buscar imóveis (usando cache local):', err);
       } finally {
         if (page === 1 && !append && !cidade) {
           this.inflightGetImoveis = null;
@@ -542,7 +587,7 @@ export class DbService {
         return await res.json();
       }
     } catch (err) {
-      console.error('Erro ao buscar cidades:', err);
+      console.warn('Erro ao buscar cidades:', err);
     }
     return [];
   }
@@ -680,7 +725,7 @@ export class DbService {
       }
     } catch (err: any) {
       if (err?.name !== 'AbortError') {
-        console.error('Erro ao buscar marcadores do mapa:', err);
+        console.warn('Erro ao buscar marcadores do mapa:', err);
       }
     }
     return [];
@@ -711,7 +756,7 @@ export class DbService {
         return list;
       }
     } catch (err) {
-      console.error('Erro ao buscar meus imóveis:', err);
+      console.warn('Erro ao buscar meus imóveis (usando dados locais):', err);
     }
     return cachedImoveis.filter(i => isProfileComplete(this.getActiveCorretor()));
   }
