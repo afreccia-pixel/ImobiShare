@@ -652,6 +652,7 @@ app.get('/api/properties/mine', verifyAuthToken, async (req: AuthenticatedReques
 app.get(['/api/imoveis/mapa', '/api/properties/mapa', '/api/properties/map'], optionalAuthToken, async (req: AuthenticatedRequest, res: Response) => {
   logMemory('GET /api/imoveis/mapa BEFORE');
   try {
+    const userEmail = (req.userEmail || (req.query.userEmail as string) || (req.headers['x-user-email'] as string) || '').toLowerCase().trim();
     const filters = {
       cidade: req.query.cidade as string,
       finalidade: req.query.finalidade as string,
@@ -668,6 +669,7 @@ app.get(['/api/imoveis/mapa', '/api/properties/mapa', '/api/properties/map'], op
       metragemMax: req.query.metragemMax ? Number(req.query.metragemMax) : undefined,
       bairro: req.query.bairro as string,
       construtora: req.query.construtora as string,
+      userEmail: userEmail || undefined,
     };
 
     const markers = await ServerDb.getImoveisMapa(filters);

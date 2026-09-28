@@ -587,6 +587,27 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
     setDragOverPhotoIndex(null);
   };
 
+  const scrollToField = (fieldId: string) => {
+    setTimeout(() => {
+      const el = document.getElementById(fieldId);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const mainContainer = document.getElementById('main-app-content-container');
+        if (mainContainer) {
+          const elRect = el.getBoundingClientRect();
+          const containerRect = mainContainer.getBoundingClientRect();
+          const relativeTop = elRect.top - containerRect.top + mainContainer.scrollTop - 100;
+          mainContainer.scrollTo({ top: Math.max(0, relativeTop), behavior: 'smooth' });
+        }
+        if ('focus' in el) {
+          try {
+            (el as HTMLElement).focus();
+          } catch {}
+        }
+      }
+    }, 50);
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
@@ -594,23 +615,34 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
     // 1. Fotos validation
     if (fotos.length === 0) {
       setErrorMsg('Adicione pelo menos uma foto ao imóvel.');
+      scrollToField('field-fotos');
       return;
     }
 
     if (fotos.length > 20) {
       setErrorMsg('O limite máximo é de 20 fotos por imóvel.');
+      scrollToField('field-fotos');
       return;
     }
 
     // 2. Localização validation
     if (!localizacao.trim()) {
       setErrorMsg('Localização / Endereço é obrigatória.');
+      scrollToField('field-localizacao');
       return;
     }
 
     // 3. Tipo de imóvel validation
     if (!tipoImovel) {
       setErrorMsg('Tipo de imóvel é obrigatório.');
+      scrollToField('field-tipoImovel');
+      return;
+    }
+
+    // Condição do imóvel validation
+    if (!condicaoImovel) {
+      setErrorMsg('Condição do imóvel (Na planta, Pronto para morar, Mobiliado, etc.) é obrigatória.');
+      scrollToField('field-condicaoImovel');
       return;
     }
 
@@ -621,7 +653,8 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
     let finalTipo: 'venda' | 'locação' | 'ambos' = tipo;
 
     if (numValor <= 0 && numValorLocacao <= 0) {
-      setErrorMsg('É obrigatório preencher o valor de Venda ou o valor de Locação. Se o valor de Venda estiver em branco, o valor de Locação é obrigatório (e vice-versa).');
+      setErrorMsg('É obrigatório preencher o valor de Venda ou o valor de Locação.');
+      scrollToField(tipo === 'venda' ? 'field-valor' : 'field-valorLocacao');
       return;
     }
 
@@ -636,48 +669,63 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
     // 4. Quartos validation (conditional)
     if (!isLandOrCommercial && (dormitorios === '' || Number(dormitorios) < 0)) {
       setErrorMsg('Número de quartos é obrigatório.');
-      return;
-    }
-
-    // 6. Garagem validation (conditional)
-    if (!isLandOrCommercial && (vagas === '' || Number(vagas) < 0)) {
-      setErrorMsg('Número de vagas de garagem é obrigatório.');
+      scrollToField('field-dormitorios');
       return;
     }
 
     // 7. Número de banheiros validation (not required for Terreno)
     if (tipoImovel !== 'Terreno' && (banheiros === '' || Number(banheiros) < 0)) {
       setErrorMsg('Número de banheiros é obrigatório.');
+      scrollToField('field-banheiros');
+      return;
+    }
+
+    // 6. Garagem validation (conditional)
+    if (!isLandOrCommercial && (vagas === '' || Number(vagas) < 0)) {
+      setErrorMsg('Número de vagas de garagem é obrigatório.');
+      scrollToField('field-vagas');
       return;
     }
 
     // 8. Metragem privativa validation
     if (metragem === '' || Number(metragem) <= 0) {
       setErrorMsg('Metragem privativa é obrigatória.');
+      scrollToField('field-metragem');
+      return;
+    }
+
+    // 8.1 Valor Condomínio validation (obrigatório)
+    if (condominio === '' || Number(condominio) < 0 || isNaN(Number(condominio))) {
+      setErrorMsg('Valor do condomínio é obrigatório (informe 0 caso seja isento).');
+      scrollToField('field-condominio');
+      return;
+    }
+
+    // 8.2 Valor IPTU validation (obrigatório)
+    if (iptu === '' || Number(iptu) < 0 || isNaN(Number(iptu))) {
+      setErrorMsg('Valor do IPTU é obrigatório (informe 0 caso seja isento).');
+      scrollToField('field-iptu');
       return;
     }
 
     // 9. Nome do edifício validation (conditional)
     if (!isLandOrCommercial && !nomeEdificio.trim()) {
       setErrorMsg('Nome do edifício / condomínio é obrigatório.');
+      scrollToField('field-nomeEdificio');
       return;
     }
 
     // 10. Título validation
     if (!titulo.trim()) {
       setErrorMsg('Título do anúncio é obrigatório.');
+      scrollToField('field-titulo');
       return;
     }
 
     // 11. Descrição validation
     if (!descricao.trim()) {
       setErrorMsg('Descrição do imóvel é obrigatória.');
-      return;
-    }
-
-    // 12. Condição do imóvel validation
-    if (!condicaoImovel) {
-      setErrorMsg('Condição do imóvel (Na planta, Pronto para morar, Mobiliado, etc.) é obrigatória.');
+      scrollToField('field-descricao');
       return;
     }
 
@@ -786,8 +834,8 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         vagas: (vagas as any) !== '' ? Number(vagas) : undefined,
         banheiros: (banheiros as any) !== '' ? Number(banheiros) : undefined,
         metragem: (metragem as any) !== '' ? Number(metragem) : undefined,
-        condominio: (condominio as any) !== '' && Number(condominio) > 0 ? Number(condominio) : undefined,
-        iptu: (iptu as any) !== '' && Number(iptu) > 0 ? Number(iptu) : undefined,
+        condominio: (condominio as any) !== '' && Number(condominio) >= 0 ? Number(condominio) : undefined,
+        iptu: (iptu as any) !== '' && Number(iptu) >= 0 ? Number(iptu) : undefined,
         visibilidade: 'todos',
         dataCadastro: existingImovel?.dataCadastro || new Date().toISOString(),
       };
@@ -830,7 +878,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
         )}
 
         {/* 1. Anexar imagens */}
-        <div className="bg-white p-3 rounded-lg border border-slate-100 space-y-2">
+        <div id="field-fotos" className="bg-white p-3 rounded-lg border border-slate-100 space-y-2 scroll-mt-24">
           <div className="flex items-center justify-between">
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
               1. Anexar imagens <span className="text-rose-500">*</span>
@@ -973,12 +1021,13 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
             <div className="col-span-2">
               <span className="text-[10px] text-slate-500 font-medium block mb-0.5 whitespace-nowrap">Endereço (Rua, nº ou ref.):</span>
               <input
+                id="field-localizacao"
                 type="text"
                 placeholder="Ex: Av. Atlântica, 4500 ou Yachthouse"
                 value={localizacao}
                 onChange={(e) => setLocalizacao(e.target.value)}
                 onBlur={() => fetchCoordinates()}
-                className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50"
+                className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50 scroll-mt-24"
               />
             </div>
           </div>
@@ -1054,9 +1103,10 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
             <div>
               <span className="text-[10px] text-slate-500 font-medium block mb-0.5 whitespace-nowrap">Tipo de Imóvel:</span>
               <select
+                id="field-tipoImovel"
                 value={tipoImovel}
                 onChange={(e) => setTipoImovel(e.target.value as PropertyTypeOption)}
-                className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-slate-50 font-bold text-slate-800 focus:outline-hidden focus:border-[#003366]"
+                className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-slate-50 font-bold text-slate-800 focus:outline-hidden focus:border-[#003366] scroll-mt-24"
               >
                 {PROPERTY_TYPES.map((t) => (
                   <option key={t} value={t}>{t}</option>
@@ -1067,9 +1117,10 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
             <div>
               <span className="text-[10px] text-[#003366] font-bold block mb-0.5 whitespace-nowrap">Condição do imóvel *:</span>
               <select
+                id="field-condicaoImovel"
                 value={condicaoImovel}
                 onChange={(e) => setCondicaoImovel(e.target.value)}
-                className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-slate-50 font-bold text-slate-800 focus:outline-hidden focus:border-[#003366]"
+                className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-slate-50 font-bold text-slate-800 focus:outline-hidden focus:border-[#003366] scroll-mt-24"
                 required
               >
                 <option value="Na Planta">Na Planta</option>
@@ -1147,6 +1198,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
                       Valor de Venda (R$) <span className="text-rose-500">*</span>
                     </span>
                     <input
+                      id="field-valor"
                       type="text"
                       inputMode="numeric"
                       placeholder="R$ 0"
@@ -1156,7 +1208,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
                         const newValor = cleanValue === '' ? '' : Number(cleanValue);
                         setValor(newValor);
                       }}
-                      className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] font-bold text-[#003366] bg-white"
+                      className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] font-bold text-[#003366] bg-white scroll-mt-24"
                     />
                   </div>
                 ) : (
@@ -1165,6 +1217,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
                       Valor de Locação / Mês (R$) <span className="text-rose-500">*</span>
                     </span>
                     <input
+                      id="field-valorLocacao"
                       type="text"
                       inputMode="numeric"
                       placeholder="R$ 0 /mês"
@@ -1174,7 +1227,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
                         const newValorLoc = cleanValue === '' ? '' : Number(cleanValue);
                         setValorLocacao(newValorLoc);
                       }}
-                      className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-emerald-700 font-bold text-emerald-800 bg-white"
+                      className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-emerald-700 font-bold text-emerald-800 bg-white scroll-mt-24"
                     />
                   </div>
                 )}
@@ -1211,6 +1264,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
                       Quartos <span className="text-rose-500">*</span>
                     </label>
                     <input
+                      id="field-dormitorios"
                       type="text"
                       inputMode="numeric"
                       placeholder="Qtd"
@@ -1219,7 +1273,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
                         const clean = e.target.value.replace(/\D/g, '');
                         setDormitorios(clean === '' ? '' : Number(clean));
                       }}
-                      className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold text-center"
+                      className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold text-center scroll-mt-24"
                     />
                   </div>
                 )}
@@ -1229,6 +1283,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
                     BWC <span className="text-rose-500">*</span>
                   </label>
                   <input
+                    id="field-banheiros"
                     type="text"
                     inputMode="numeric"
                     placeholder="Qtd"
@@ -1237,7 +1292,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
                       const clean = e.target.value.replace(/\D/g, '');
                       setBanheiros(clean === '' ? '' : Number(clean));
                     }}
-                    className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold text-center"
+                    className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold text-center scroll-mt-24"
                   />
                 </div>
 
@@ -1246,6 +1301,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
                     Vagas {tipoImovel !== 'Comercial' && <span className="text-rose-500">*</span>}
                   </label>
                   <input
+                    id="field-vagas"
                     type="text"
                     inputMode="numeric"
                     placeholder="Qtd"
@@ -1254,7 +1310,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
                       const clean = e.target.value.replace(/\D/g, '');
                       setVagas(clean === '' ? '' : Number(clean));
                     }}
-                    className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold text-center"
+                    className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold text-center scroll-mt-24"
                   />
                 </div>
               </div>
@@ -1267,6 +1323,7 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
               </label>
               <div className="relative">
                 <input
+                  id="field-metragem"
                   type="text"
                   inputMode="numeric"
                   placeholder="Ex: 120"
@@ -1275,50 +1332,54 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
                     const clean = e.target.value.replace(/\D/g, '');
                     setMetragem(clean === '' ? '' : Number(clean));
                   }}
-                  className="w-full text-xs px-2.5 py-1.5 pr-8 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold"
+                  className="w-full text-xs px-2.5 py-1.5 pr-8 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold scroll-mt-24"
                 />
                 <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-semibold pointer-events-none">m²</span>
               </div>
             </div>
 
-            {/* Linha 3: Valor Condomínio e Valor IPTU */}
+            {/* Linha 3: Valor Condomínio e Valor IPTU (Obrigatórios) */}
             <div className="grid grid-cols-2 gap-2 sm:gap-2.5 pt-0.5">
               <div>
-                <label className="text-[10px] font-semibold text-slate-600 block mb-1 whitespace-nowrap">
-                  Valor Condomínio <span className="text-slate-400 font-normal">(opcional)</span>
+                <label className="text-[10px] font-semibold text-slate-700 block mb-1 whitespace-nowrap">
+                  Valor Condomínio (R$) <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-semibold pointer-events-none">R$</span>
                   <input
+                    id="field-condominio"
                     type="text"
                     inputMode="numeric"
-                    placeholder="Ex: 850"
+                    placeholder="Ex: 850 (ou 0 se isento)"
                     value={formatNumberWithSeparators(condominio)}
                     onChange={(e) => {
                       const clean = e.target.value.replace(/\D/g, '');
                       setCondominio(clean === '' ? '' : Number(clean));
                     }}
-                    className="w-full text-xs pl-7 pr-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold"
+                    className="w-full text-xs pl-7 pr-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold scroll-mt-24"
+                    required
                   />
                 </div>
               </div>
 
               <div>
-                <label className="text-[10px] font-semibold text-slate-600 block mb-1 whitespace-nowrap">
-                  Valor IPTU <span className="text-slate-400 font-normal">(opcional)</span>
+                <label className="text-[10px] font-semibold text-slate-700 block mb-1 whitespace-nowrap">
+                  Valor IPTU (R$) <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-semibold pointer-events-none">R$</span>
                   <input
+                    id="field-iptu"
                     type="text"
                     inputMode="numeric"
-                    placeholder="Ex: 2.400"
+                    placeholder="Ex: 2.400 (ou 0 se isento)"
                     value={formatNumberWithSeparators(iptu)}
                     onChange={(e) => {
                       const clean = e.target.value.replace(/\D/g, '');
                       setIptu(clean === '' ? '' : Number(clean));
                     }}
-                    className="w-full text-xs pl-7 pr-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold"
+                    className="w-full text-xs pl-7 pr-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] bg-slate-50/50 font-semibold scroll-mt-24"
+                    required
                   />
                 </div>
               </div>
@@ -1337,11 +1398,12 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
             )}
           </div>
           <input
+            id="field-nomeEdificio"
             type="text"
             placeholder={isLandOrCommercial ? "Opcional" : "Ex: Ibiza Towers Residence"}
             value={nomeEdificio}
             onChange={(e) => setNomeEdificio(e.target.value)}
-            className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366]"
+            className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] scroll-mt-24"
           />
         </div>
 
@@ -1404,12 +1466,13 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
               </span>
             </div>
             <input
+              id="field-titulo"
               type="text"
               maxLength={90}
               placeholder="Ex: Apartamento Alto Padrão Barra Sul"
               value={titulo}
               onChange={(e) => setTitulo(e.target.value.slice(0, 90))}
-              className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366]"
+              className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] scroll-mt-24"
             />
           </div>
 
@@ -1437,12 +1500,13 @@ export function PropertyForm({ imovelId, onSave, onCancel }: PropertyFormProps) 
             </div>
 
             <textarea
+              id="field-descricao"
               placeholder="Escreva a descrição completa do imóvel aqui... Toque em 'Melhorar com IA' para que o sistema aprimore o texto utilizando os dados cadastrados."
               value={descricao}
               maxLength={6000}
               onChange={(e) => setDescricao(e.target.value.slice(0, 6000))}
               rows={4}
-              className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] leading-relaxed"
+              className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#003366] leading-relaxed scroll-mt-24"
             />
           </div>
 

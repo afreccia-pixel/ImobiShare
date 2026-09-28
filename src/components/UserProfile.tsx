@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Corretor } from '../types';
 import { DbService } from '../services/db';
-import { User, Phone, Mail, MapPin, Award, Check, RefreshCw, LogOut, CheckCircle2, Users, Plus, Trash2, Camera, Edit2, Save, X } from 'lucide-react';
+import { User, Phone, Mail, MapPin, Award, Check, RefreshCw, LogOut, CheckCircle2, Users, Plus, Trash2, Camera, Edit2, Save, X, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
 import { motion } from 'motion/react';
 import { getApiUrl } from '../utils/apiUrl';
 import { getValidImage, isValidImageString, handleImageError } from '../utils/imageUtils';
@@ -393,14 +393,14 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
         </div>
 
         {/* Contact info list & Edit profile section */}
-        <div className="bg-white border border-slate-100 rounded-xl p-4 shadow-xs space-y-3.5">
+        <div className="bg-white border border-slate-100 rounded-xl p-4 shadow-xs space-y-3.5" id="dados-profissionais-card">
           <div className="flex items-center justify-between border-b border-slate-100 pb-2">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Dados Profissionais</h3>
             {!isEditing ? (
               <button
                 type="button"
                 onClick={() => setIsEditing(true)}
-                className="text-[#003366] hover:bg-[#003366]/5 px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all"
+                className="text-[#003366] hover:bg-[#003366]/5 px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer"
               >
                 <Edit2 size={13} />
                 <span>Editar Dados</span>
@@ -409,61 +409,17 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
               <button
                 type="button"
                 onClick={() => setIsEditing(false)}
-                className="text-slate-400 hover:bg-slate-100 p-1 rounded-lg text-xs font-bold flex items-center gap-1"
+                className="text-slate-400 hover:bg-slate-100 p-1 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
+                title="Fechar edição"
               >
                 <X size={14} />
               </button>
             )}
           </div>
           
-          {!isEditing ? (
-            <div className="space-y-3">
-              <div className="flex items-center gap-3 text-xs text-slate-600">
-                <Award size={14} className="text-slate-400 shrink-0" />
-                <div>
-                  <span className="text-[10px] text-slate-400 block">CRECI:</span>
-                  <span className="font-medium text-slate-800">{corretor.creci || <span className="text-amber-500 font-bold">Não informado (Clique em Editar)</span>}</span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3 text-xs text-slate-600">
-                <Phone size={14} className="text-slate-400 shrink-0" />
-                <div>
-                  <span className="text-[10px] text-slate-400 block">WhatsApp / Celular:</span>
-                  <span className="font-medium text-slate-800">{corretor.whatsapp || corretor.telefone || <span className="text-amber-500 font-bold">Não informado</span>}</span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3 text-xs text-slate-600">
-                <Mail size={14} className="text-slate-400 shrink-0" />
-                <div>
-                  <span className="text-[10px] text-slate-400 block">E-mail Corporativo:</span>
-                  <span className="font-medium text-slate-800">{corretor.email}</span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3 text-xs text-slate-600">
-                <MapPin size={14} className="text-slate-400 shrink-0" />
-                <div>
-                  <span className="text-[10px] text-slate-400 block">Cidade / Estado:</span>
-                  <span className="font-medium text-slate-800">
-                    {corretor.cidade ? `${corretor.cidade}${corretor.estado ? ` - ${corretor.estado}` : ''}` : <span className="text-amber-500 font-bold">Não informado</span>}
-                  </span>
-                </div>
-              </div>
-
-              {corretor.imobiliaria && (
-                <div className="flex items-center gap-3 text-xs text-slate-600">
-                  <User size={14} className="text-slate-400 shrink-0" />
-                  <div>
-                    <span className="text-[10px] text-slate-400 block">Imobiliária / Empresa:</span>
-                    <span className="font-medium text-slate-800">{corretor.imobiliaria}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <form onSubmit={handleSaveProfile} className="space-y-3 pt-1">
+          {/* Fica oculto por padrão; só abre para alteração se clicar no botão 'Editar Dados' */}
+          {isEditing && (
+            <form onSubmit={handleSaveProfile} className="space-y-3 pt-1 animate-in fade-in duration-200">
               <div>
                 <label className="text-[10px] font-bold text-slate-500 block mb-1">Seu Nome Completo</label>
                 <input
@@ -661,7 +617,7 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
                       <button
                         type="button"
                         onClick={() => handleDeletePartner(email)}
-                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                         title="Excluir parceiro"
                       >
                         <Trash2 size={14} />
@@ -674,23 +630,46 @@ export function UserProfile({ corretor, onProfileSwitched, onLogout }: UserProfi
           </div>
         </div>
 
-        {/* Logout Section Card */}
-        {onLogout && (
-          <div className="bg-white border border-red-100 rounded-xl p-4 shadow-xs space-y-2 text-center" id="profile-logout-card">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Encerrar Sessão</h3>
-            <p className="text-[11px] text-slate-500">
-              Deseja sair da sua conta no ImobiShare neste dispositivo?
-            </p>
-            <button
-              type="button"
-              onClick={onLogout}
-              className="w-full mt-2 bg-red-50 hover:bg-red-100 active:scale-[0.98] text-red-600 border border-red-200 text-xs font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs"
-            >
-              <LogOut size={16} />
-              <span>Sair do Sistema</span>
-            </button>
+        {/* Card de Versão Gratuita (Abaixo do Card de Grupo de Corretores Parceiros) */}
+        <div className="bg-gradient-to-br from-white to-blue-50/50 border border-blue-100 rounded-xl p-4 shadow-xs space-y-3" id="versao-gratuita-card">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-[#003366] text-white flex items-center justify-center shadow-xs">
+                <Sparkles size={14} />
+              </div>
+              <div>
+                <h3 className="text-xs font-bold text-slate-900 leading-tight">Plano ImobiShare</h3>
+                <span className="text-[10px] font-extrabold text-[#003366] uppercase tracking-wider">Versão Gratuita</span>
+              </div>
+            </div>
+            <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2.5 py-0.5 rounded-full border border-emerald-200">
+              Ativo
+            </span>
           </div>
-        )}
+
+          <p className="text-[11px] text-slate-600 leading-relaxed">
+            Você está utilizando o <strong className="font-semibold text-slate-800">plano gratuito do ImobiShare</strong> com acesso liberado a cadastro de imóveis, rede de parcerias, portal público e mapa integrado.
+          </p>
+
+          <div className="grid grid-cols-2 gap-2 pt-1 border-t border-blue-100/60 text-[11px] text-slate-700">
+            <div className="flex items-center gap-1.5">
+              <Check size={13} className="text-emerald-600 shrink-0" />
+              <span>Acesso ao Portal</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Check size={13} className="text-emerald-600 shrink-0" />
+              <span>Rede de Parcerias</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Check size={13} className="text-emerald-600 shrink-0" />
+              <span>Busca no Mapa</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Check size={13} className="text-emerald-600 shrink-0" />
+              <span>Compartilhamento</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -36,6 +36,7 @@ import {
   Home as HomeIcon,
   Building,
   PlusCircle,
+  Plus,
   User,
   Search,
   SlidersHorizontal,
@@ -1830,8 +1831,8 @@ useEffect(() => {
     sortBy
   ]);
 
-  // Batch size for property search with high performance (20 properties per load)
-  const PAGE_SIZE = 20;
+  // Batch size for property search with high performance (24 properties per load)
+  const PAGE_SIZE = 24;
   const [homePage, setHomePage] = useState<number>(1);
 
   // Automatically reset to page 1 whenever any filter or search query changes
@@ -1870,22 +1871,29 @@ useEffect(() => {
     setHomePage(targetPage);
   };
 
-  // Carregamento contínuo automático de 20 em 20 ao rolar até o final da lista (sem necessidade de botão)
+  // Carregamento contínuo automático de 24 em 24 ao rolar até o final da lista (sem necessidade de botão)
   const [isLoadingMoreHome, setIsLoadingMoreHome] = useState(false);
   const homeInfiniteScrollSentinelRef = useRef<HTMLDivElement | null>(null);
+  const isHandlingLoadMoreHomeRef = useRef(false);
 
   const triggerLoadMoreHome = useCallback(async () => {
-    if (isLoadingMoreHome) return;
+    if (isLoadingMoreHome || isHandlingLoadMoreHomeRef.current) return;
+    
     if (currentHomePage < totalHomePages) {
+      isHandlingLoadMoreHomeRef.current = true;
       setIsLoadingMoreHome(true);
       setTimeout(() => {
         setHomePage((prev) => Math.min(prev + 1, totalHomePages));
         setIsLoadingMoreHome(false);
-      }, 120);
+        setTimeout(() => {
+          isHandlingLoadMoreHomeRef.current = false;
+        }, 150);
+      }, 200);
     } else {
       // Verifica se o servidor possui mais imóveis
       const pgState = DbService.getPaginationState();
       if (pgState.hasMore && !pgState.loadingMore) {
+        isHandlingLoadMoreHomeRef.current = true;
         setIsLoadingMoreHome(true);
         try {
           const res = await DbService.loadMoreImoveis();
@@ -1896,6 +1904,9 @@ useEffect(() => {
           console.error('Erro ao carregar mais imóveis automaticamente:', err);
         } finally {
           setIsLoadingMoreHome(false);
+          setTimeout(() => {
+            isHandlingLoadMoreHomeRef.current = false;
+          }, 150);
         }
       }
     }
@@ -1906,19 +1917,22 @@ useEffect(() => {
     const canLoad = currentHomePage < totalHomePages || DbService.getPaginationState().hasMore;
     if (!canLoad) return;
 
+    const container = document.getElementById('main-app-content-container');
+
     let ticking = false;
     const checkAndTrigger = () => {
-      if (isLoadingMoreHome) return;
-      const container = document.getElementById('main-app-content-container');
+      if (isLoadingMoreHome || isHandlingLoadMoreHomeRef.current) return;
+
       if (container) {
         const remaining = container.scrollHeight - container.scrollTop - container.clientHeight;
-        if (remaining <= 550) {
+        if (remaining <= 600) {
           triggerLoadMoreHome();
           return;
         }
       }
-      const windowRemaining = document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
-      if (windowRemaining <= 550) {
+
+      const docRemaining = document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
+      if (docRemaining <= 600) {
         triggerLoadMoreHome();
       }
     };
@@ -1933,7 +1947,6 @@ useEffect(() => {
       }
     };
 
-    const container = document.getElementById('main-app-content-container');
     if (container) {
       container.addEventListener('scroll', handleScroll, { passive: true });
     }
@@ -1942,13 +1955,13 @@ useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
         const first = entries[0];
-        if (first.isIntersecting && !isLoadingMoreHome) {
+        if (first.isIntersecting && !isLoadingMoreHome && !isHandlingLoadMoreHomeRef.current) {
           triggerLoadMoreHome();
         }
       },
       {
         root: container || null,
-        rootMargin: '450px'
+        rootMargin: '300px'
       }
     );
 
@@ -1987,6 +2000,7 @@ useEffect(() => {
       metragemMin: filterMetragemMin,
       metragemMax: filterMetragemMax,
       busca: searchWord,
+      userEmail: activeCorretor?.email || '',
     });
   }, [
     filterCidade,
@@ -2002,6 +2016,7 @@ useEffect(() => {
     filterMetragemMin,
     filterMetragemMax,
     searchWord,
+    activeCorretor?.email,
   ]);
 
   useEffect(() => {
@@ -2017,7 +2032,7 @@ useEffect(() => {
     const mapFilters: Record<string, any> = {
       cidade: filterCidade && filterCidade !== 'Todas' ? filterCidade : undefined,
       bairro: filterBairro && filterBairro !== 'Todos os bairros' ? filterBairro : undefined,
-      tipoImovel: filterTipoImovel && filterTipoImovel !== 'Todos' ? filterTipoImovel : undefined,
+      tipoImovel: filterTipoImovel && filterTipoImovel !== 'Todos' && filterTipoImovel !== 'todos' ? filterTipoImovel : undefined,
       statusImovel: filterStatusImovel && filterStatusImovel !== 'todos' ? filterStatusImovel : undefined,
       precoMin: filterValorMin > 0 ? filterValorMin : undefined,
       precoMax: filterValorMax < 15000000 ? filterValorMax : undefined,
@@ -2027,6 +2042,7 @@ useEffect(() => {
       metragemMin: filterMetragemMin > 0 ? filterMetragemMin : undefined,
       metragemMax: filterMetragemMax < 1000 ? filterMetragemMax : undefined,
       busca: searchWord ? searchWord : undefined,
+      userEmail: activeCorretor?.email ? activeCorretor.email.toLowerCase().trim() : undefined,
     };
 
     if (filterTipo === 'comprar') {
@@ -2064,10 +2080,11 @@ useEffect(() => {
       if (filterApenasFavoritos) {
         list = list.filter((i) => favoritos.includes(i.id));
       }
-      if (filterMeusImoveis && activeCorretor) {
+      // Se apenas meus imóveis estiver ativo e outros corretores desmarcado
+      if (filterMeusImoveis && !filterOutrosCorretores && activeCorretor) {
         const email = (activeCorretor.email || '').toLowerCase().trim();
         list = list.filter((i) => (i.corretorEmail || '').toLowerCase().trim() === email);
-      } else if (filterOutrosCorretores && activeCorretor) {
+      } else if (!filterMeusImoveis && filterOutrosCorretores && activeCorretor) {
         const email = (activeCorretor.email || '').toLowerCase().trim();
         list = list.filter((i) => (i.corretorEmail || '').toLowerCase().trim() !== email);
       }
@@ -2240,8 +2257,8 @@ useEffect(() => {
     allImoveis
   ]);
 
-  // Batch size for My Properties tab (20 properties per load)
-  const MY_PAGE_SIZE = 20;
+  // Batch size for My Properties tab (24 properties per load)
+  const MY_PAGE_SIZE = 24;
   const [myPage, setMyPage] = useState<number>(1);
 
   // Automatically reset to page 1 whenever any filter or search query changes in My Properties
@@ -2274,18 +2291,23 @@ useEffect(() => {
     setMyPage(targetPage);
   };
 
-  // Carregamento contínuo de 20 em 20 ao rolar até o final da lista de Meus Imóveis / Carteira
+  // Carregamento contínuo de 24 em 24 ao rolar até o final da lista de Meus Imóveis / Carteira
   const [isLoadingMoreMy, setIsLoadingMoreMy] = useState(false);
   const myInfiniteScrollSentinelRef = useRef<HTMLDivElement | null>(null);
+  const isHandlingLoadMoreMyRef = useRef(false);
 
   const triggerLoadMoreMy = useCallback(() => {
-    if (isLoadingMoreMy) return;
+    if (isLoadingMoreMy || isHandlingLoadMoreMyRef.current) return;
     if (currentMyPage < totalMyPages) {
+      isHandlingLoadMoreMyRef.current = true;
       setIsLoadingMoreMy(true);
       setTimeout(() => {
         setMyPage((prev) => Math.min(prev + 1, totalMyPages));
         setIsLoadingMoreMy(false);
-      }, 120);
+        setTimeout(() => {
+          isHandlingLoadMoreMyRef.current = false;
+        }, 300);
+      }, 350);
     }
   }, [isLoadingMoreMy, currentMyPage, totalMyPages]);
 
@@ -2293,19 +2315,22 @@ useEffect(() => {
     if (activeTab !== 'my-properties') return;
     if (currentMyPage >= totalMyPages) return;
 
+    const container = document.getElementById('main-app-content-container');
+
     let ticking = false;
     const checkAndTrigger = () => {
-      if (isLoadingMoreMy) return;
-      const container = document.getElementById('main-app-content-container');
+      if (isLoadingMoreMy || isHandlingLoadMoreMyRef.current) return;
+
       if (container) {
         const remaining = container.scrollHeight - container.scrollTop - container.clientHeight;
-        if (remaining <= 550) {
+        if (remaining <= 600) {
           triggerLoadMoreMy();
           return;
         }
       }
-      const windowRemaining = document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
-      if (windowRemaining <= 550) {
+
+      const docRemaining = document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
+      if (docRemaining <= 600) {
         triggerLoadMoreMy();
       }
     };
@@ -2320,7 +2345,6 @@ useEffect(() => {
       }
     };
 
-    const container = document.getElementById('main-app-content-container');
     if (container) {
       container.addEventListener('scroll', handleScroll, { passive: true });
     }
@@ -2329,13 +2353,13 @@ useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
         const first = entries[0];
-        if (first.isIntersecting && !isLoadingMoreMy) {
+        if (first.isIntersecting && !isLoadingMoreMy && !isHandlingLoadMoreMyRef.current) {
           triggerLoadMoreMy();
         }
       },
       {
         root: container || null,
-        rootMargin: '450px'
+        rootMargin: '300px'
       }
     );
 
@@ -2353,6 +2377,18 @@ useEffect(() => {
       observer.disconnect();
     };
   }, [currentMyPage, totalMyPages, isLoadingMoreMy, activeTab, triggerLoadMoreMy]);
+
+  // Indicador unificado: sempre que o sistema estiver processando (carga inicial, carregando mais 24 imóveis, marcadores do mapa, busca, sincronização, etc.)
+  const isSystemProcessing = Boolean(
+    isInitialLoading ||
+    isLoadingImoveis ||
+    isLoadingMoreHome ||
+    isLoadingMoreMy ||
+    loadingMapMarkers ||
+    isRefreshing ||
+    authLoading ||
+    allImoveis.length === 0
+  );
 
   // Multi-Selection Actions
   const handleSelectToggle = (imovelId: string) => {
@@ -3077,13 +3113,13 @@ Toque abaixo para ver a seleção completa:
                       </div>
                     </div>
 
-                    {/* Barra fina em movimento da direita para a esquerda indicando que os imóveis estão carregando */}
+                    {/* Barra fina em movimento da direita para a esquerda indicando que o sistema está processando */}
                     <div
                       className={`h-0.5 sm:h-1 w-full bg-slate-100 overflow-hidden relative transition-opacity duration-300 ${
-                        (isLoadingImoveis || allImoveis.length === 0 || isRefreshing) ? 'opacity-100' : 'opacity-0'
+                        isSystemProcessing ? 'opacity-100' : 'opacity-0'
                       }`}
                     >
-                      {(isLoadingImoveis || allImoveis.length === 0 || isRefreshing) && (
+                      {isSystemProcessing && (
                         <div className="h-full w-2/5 bg-gradient-to-l from-[#003366] via-blue-500 to-[#003366] rounded-full absolute right-0 animate-progress-rtl" />
                       )}
                     </div>
@@ -3169,144 +3205,144 @@ Toque abaixo para ver a seleção completa:
                     </div>
                   )}
 
-                  {/* SEARCH CARD & PILLS GROUP WITH TIGHT LINE SPACING */}
-                  <div className={searchViewMode === 'mapa' ? "flex-shrink-0 bg-white border-b border-slate-100/80 shadow-xs" : "space-y-1"}>
-                    {/* 1. MAIN SEARCH CARD */}
-                    <div className={`px-4 ${searchViewMode === 'mapa' ? 'py-2' : 'pt-1'}`}>
-                      <div
-                        onClick={() => {
-                          if (!isSearchingEmpreendimento) {
-                            setIsSearchingEmpreendimento(true);
-                            setTimeout(() => empreendimentoInputRef.current?.focus(), 50);
-                          }
-                        }}
-                        className="bg-white border border-slate-200/90 rounded-2xl p-3.5 sm:p-4 shadow-xs hover:shadow-md hover:border-[#003366]/40 transition-all flex items-center justify-between gap-3 cursor-pointer"
-                      >
-                        {/* Left: Two-line textual summary with instant inline enterprise search */}
-                        <div className="flex-1 min-w-0">
-                          {isSearchingEmpreendimento ? (
-                            <div className="min-w-0" onClick={(e) => e.stopPropagation()}>
-                              {/* 1st line: Seamless text input with search icon, smaller font, no underline */}
-                              <div className="relative flex items-center">
-                                <Search size={16} className="text-slate-400 flex-shrink-0 mr-2" />
-                                <input
-                                  ref={empreendimentoInputRef}
-                                  type="text"
-                                  placeholder="Buscar Imóvel"
-                                  value={searchWord}
-                                  onChange={(e) => {
-                                    setSearchWord(e.target.value);
-                                    setHomePage(1);
-                                  }}
-                                  onBlur={() => {
-                                    if (!searchWord.trim()) {
-                                      setIsSearchingEmpreendimento(false);
-                                    }
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                      empreendimentoInputRef.current?.blur();
-                                    }
-                                    if (e.key === 'Escape') {
-                                      setSearchWord('');
+                  {/* SEARCH CARD & PILLS GROUP (EXIBIDO APENAS NO MODO LISTA / FORA DO MAPA) */}
+                  {searchViewMode !== 'mapa' && (
+                    <div className="space-y-1">
+                      {/* 1. MAIN SEARCH CARD */}
+                      <div className="px-4 pt-1">
+                        <div
+                          onClick={() => {
+                            if (!isSearchingEmpreendimento) {
+                              setIsSearchingEmpreendimento(true);
+                              setTimeout(() => empreendimentoInputRef.current?.focus(), 50);
+                            }
+                          }}
+                          className="bg-white border border-slate-200/90 rounded-2xl p-3.5 sm:p-4 shadow-xs hover:shadow-md hover:border-[#003366]/40 transition-all flex items-center justify-between gap-3 cursor-pointer"
+                        >
+                          {/* Left: Two-line textual summary with instant inline enterprise search */}
+                          <div className="flex-1 min-w-0">
+                            {isSearchingEmpreendimento ? (
+                              <div className="min-w-0" onClick={(e) => e.stopPropagation()}>
+                                {/* 1st line: Seamless text input with search icon, smaller font, no underline */}
+                                <div className="relative flex items-center">
+                                  <Search size={16} className="text-slate-400 flex-shrink-0 mr-2" />
+                                  <input
+                                    ref={empreendimentoInputRef}
+                                    type="text"
+                                    placeholder="Buscar Imóvel"
+                                    value={searchWord}
+                                    onChange={(e) => {
+                                      setSearchWord(e.target.value);
                                       setHomePage(1);
-                                      setIsSearchingEmpreendimento(false);
-                                    }
-                                  }}
-                                  className="w-full text-xs sm:text-sm font-medium text-slate-800 bg-transparent border-0 border-none outline-hidden focus:outline-hidden focus:ring-0 p-0 pr-6 placeholder:text-slate-400 placeholder:font-normal"
-                                  autoFocus
-                                />
-                                {searchWord ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setSearchWord('');
-                                      setHomePage(1);
-                                      empreendimentoInputRef.current?.focus();
                                     }}
-                                    className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-0.5 cursor-pointer"
-                                    title="Limpar busca"
-                                  >
-                                    <X size={14} />
-                                  </button>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => setIsSearchingEmpreendimento(false)}
-                                    className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500 p-0.5 cursor-pointer"
-                                    title="Fechar"
-                                  >
-                                    <X size={14} />
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          ) : (
-                            <div>
-                              {/* 1st line: Cidade e bairro com mais imóveis ou Empreendimento ativo */}
-                              <div className="mb-0.5 flex items-center gap-1.5 min-w-0">
-                                {searchWord ? (
-                                  <>
-                                    <h3 className="text-sm sm:text-base font-extrabold text-[#003366] tracking-tight truncate flex items-center gap-1">
-                                      <Building size={15} className="text-[#003366] flex-shrink-0" />
-                                      <span>{searchWord}</span>
-                                    </h3>
-                                    <span className="text-[11px] text-slate-400 font-medium truncate">
-                                      em {searchCardCityAndNeighborhood}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
+                                    onBlur={() => {
+                                      if (!searchWord.trim()) {
+                                        setIsSearchingEmpreendimento(false);
+                                      }
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        empreendimentoInputRef.current?.blur();
+                                      }
+                                      if (e.key === 'Escape') {
                                         setSearchWord('');
                                         setHomePage(1);
+                                        setIsSearchingEmpreendimento(false);
+                                      }
+                                    }}
+                                    className="w-full text-xs sm:text-sm font-medium text-slate-800 bg-transparent border-0 border-none outline-hidden focus:outline-hidden focus:ring-0 p-0 pr-6 placeholder:text-slate-400 placeholder:font-normal"
+                                    autoFocus
+                                  />
+                                  {searchWord ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSearchWord('');
+                                        setHomePage(1);
+                                        empreendimentoInputRef.current?.focus();
                                       }}
-                                      className="text-slate-400 hover:text-slate-700 p-0.5 ml-0.5 cursor-pointer"
-                                      title="Remover filtro de empreendimento"
+                                      className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-0.5 cursor-pointer"
+                                      title="Limpar busca"
                                     >
-                                      <X size={13} />
+                                      <X size={14} />
                                     </button>
-                                  </>
-                                ) : (
-                                  <h3 className="text-sm sm:text-base font-extrabold text-slate-900 tracking-tight truncate hover:text-[#003366] transition-colors">
-                                    {searchCardCityAndNeighborhood}
-                                  </h3>
-                                )}
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => setIsSearchingEmpreendimento(false)}
+                                      className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500 p-0.5 cursor-pointer"
+                                      title="Fechar"
+                                    >
+                                      <X size={14} />
+                                    </button>
+                                  )}
+                                </div>
                               </div>
+                            ) : (
+                              <div>
+                                {/* 1st line: Cidade e bairro com mais imóveis ou Empreendimento ativo */}
+                                <div className="mb-0.5 flex items-center gap-1.5 min-w-0">
+                                  {searchWord ? (
+                                    <>
+                                      <h3 className="text-sm sm:text-base font-extrabold text-[#003366] tracking-tight truncate flex items-center gap-1">
+                                        <Building size={15} className="text-[#003366] flex-shrink-0" />
+                                        <span>{searchWord}</span>
+                                      </h3>
+                                      <span className="text-[11px] text-slate-400 font-medium truncate">
+                                        em {searchCardCityAndNeighborhood}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSearchWord('');
+                                          setHomePage(1);
+                                        }}
+                                        className="text-slate-400 hover:text-slate-700 p-0.5 ml-0.5 cursor-pointer"
+                                        title="Remover filtro de empreendimento"
+                                      >
+                                        <X size={13} />
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <h3 className="text-sm sm:text-base font-extrabold text-slate-900 tracking-tight truncate hover:text-[#003366] transition-colors">
+                                      {searchCardCityAndNeighborhood}
+                                    </h3>
+                                  )}
+                                </div>
 
-                              {/* 2nd line: Informações menores (Venda - Sem filtros de imóvel) */}
-                              <p className="text-[11px] sm:text-xs text-slate-500 font-medium truncate">
-                                {searchWord ? `${searchWord} • ${searchCardSubtext}` : searchCardSubtext}
-                              </p>
-                            </div>
-                          )}
+                                {/* 2nd line: Informações menores (Venda - Sem filtros de imóvel) */}
+                                <p className="text-[11px] sm:text-xs text-slate-500 font-medium truncate">
+                                  {searchWord ? `${searchWord} • ${searchCardSubtext}` : searchCardSubtext}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Right: Filter button */}
+                          <button
+                            type="button"
+                            id="btn-search-card-filters"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFilterModalTab('home');
+                              setIsFilterModalOpen(true);
+                            }}
+                            className="w-11 h-11 rounded-[24px] bg-slate-100 hover:bg-slate-200 active:scale-95 transition-all flex items-center justify-center text-slate-700 flex-shrink-0 cursor-pointer shadow-xs relative"
+                            title="Filtros de busca"
+                            aria-label="Filtros de busca"
+                          >
+                            <SlidersHorizontal size={18} className="text-slate-700" />
+                            {getActiveFilterCount() > 2 && (
+                              <span className="absolute -top-1 -right-1 bg-[#003366] text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center border border-white shadow-xs">
+                                {getActiveFilterCount() - 2}
+                              </span>
+                            )}
+                          </button>
                         </div>
-
-                        {/* Right: Filter button */}
-                        <button
-                          type="button"
-                          id="btn-search-card-filters"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setFilterModalTab('home');
-                            setIsFilterModalOpen(true);
-                          }}
-                          className="w-11 h-11 rounded-[24px] bg-slate-100 hover:bg-slate-200 active:scale-95 transition-all flex items-center justify-center text-slate-700 flex-shrink-0 cursor-pointer shadow-xs relative"
-                          title="Filtros de busca"
-                          aria-label="Filtros de busca"
-                        >
-                          <SlidersHorizontal size={18} className="text-slate-700" />
-                          {getActiveFilterCount() > 2 && (
-                            <span className="absolute -top-1 -right-1 bg-[#003366] text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center border border-white shadow-xs">
-                              {getActiveFilterCount() - 2}
-                            </span>
-                          )}
-                        </button>
                       </div>
-                    </div>
 
-                    {/* 2. BOTÕES DE FILTRO RÁPIDO (Valor -> Tipo -> Quartos) */}
-                    {searchViewMode !== 'mapa' && (
+                      {/* 2. BOTÕES DE FILTRO RÁPIDO (Valor -> Tipo -> Quartos) */}
                       <div className="px-4">
                         {/* Botões seletores: padrão de tamanho e formato igual ao Mostrar mapa */}
                         <div className="flex items-center gap-2 sm:gap-2.5 overflow-x-auto no-scrollbar scrollbar-none py-1">
@@ -3414,8 +3450,8 @@ Toque abaixo para ver a seleção completa:
                           )}
                         </div>
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
                   {/* 3. MAIN CONTENT: FULL SCREEN MAP OR PROPERTY SEARCH RESULTS LIST */}
                   {searchViewMode === 'mapa' ? (
@@ -3546,21 +3582,27 @@ Toque abaixo para ver a seleção completa:
                         </div>
                       )}
 
-                      {/* Sentinela de Infinite Scroll para carregar automaticamente mais 20 imóveis ao rolar até o fim */}
-                      <div ref={homeInfiniteScrollSentinelRef} className="h-6 w-full pointer-events-none" />
+                      {/* Sentinela de Infinite Scroll para carregar automaticamente mais 24 imóveis ao rolar até o fim */}
+                      <div ref={homeInfiniteScrollSentinelRef} className="h-8 w-full pointer-events-none" />
 
-                      {/* Feedback suave ao carregar automaticamente o próximo lote de 20 imóveis */}
+                      {/* Feedback suave ao carregar automaticamente o próximo lote de 24 imóveis */}
                       {isLoadingMoreHome && (
                         <div className="flex items-center justify-center gap-2 py-4 text-slate-500 text-xs font-semibold">
                           <div className="w-4 h-4 border-2 border-[#003366] border-t-transparent rounded-full animate-spin" />
-                          <span>Carregando mais 20 imóveis...</span>
+                          <span>Carregando mais 24 imóveis...</span>
                         </div>
                       )}
 
-                      {/* Fim da lista atingido */}
-                      {currentHomePage >= totalHomePages && filteredImoveis.length > PAGE_SIZE && (
-                        <div className="py-6 text-center text-xs text-slate-400 font-medium">
-                          Você visualizou todos os {filteredImoveis.length} imóveis encontrados.
+                      {/* Botão sutil de carregar mais caso queira acionar imediatamente ou o scroll pare no final */}
+                      {!isLoadingMoreHome && (currentHomePage < totalHomePages || DbService.getPaginationState().hasMore) && (
+                        <div className="flex justify-center py-2">
+                          <button
+                            type="button"
+                            onClick={() => triggerLoadMoreHome()}
+                            className="text-xs font-semibold text-[#003366] bg-blue-50/80 hover:bg-blue-100/90 active:scale-95 px-4 py-2 rounded-xl border border-blue-200/80 transition-all cursor-pointer shadow-2xs"
+                          >
+                            Carregar mais imóveis
+                          </button>
                         </div>
                       )}
                     </div>
@@ -3583,10 +3625,21 @@ Toque abaixo para ver a seleção completa:
                           setIsAddingProperty(true);
                         }}
                         title="Cadastrar Novo Imóvel"
-                        className="bg-[#003366] hover:bg-[#002244] text-white p-2 rounded-[24px] flex items-center justify-center shadow-xs transition-colors flex-shrink-0 cursor-pointer"
+                        className="bg-[#003366] hover:bg-[#002244] text-white p-2 sm:p-2.5 rounded-[24px] flex items-center justify-center shadow-xs transition-colors flex-shrink-0 cursor-pointer"
                       >
-                        <PlusCircle size={16} />
+                        <Plus size={20} strokeWidth={2.5} />
                       </button>
+                    </div>
+
+                    {/* Barra fina de processo caso o sistema esteja carregando/processando */}
+                    <div
+                      className={`h-0.5 w-full bg-slate-100 rounded-full overflow-hidden relative transition-opacity duration-300 ${
+                        isSystemProcessing ? 'opacity-100' : 'opacity-0'
+                      }`}
+                    >
+                      {isSystemProcessing && (
+                        <div className="h-full w-2/5 bg-gradient-to-l from-[#003366] via-blue-500 to-[#003366] rounded-full absolute right-0 animate-progress-rtl" />
+                      )}
                     </div>
 
                     {/* Search Field + Filter Button */}
@@ -3625,12 +3678,12 @@ Toque abaixo para ver a seleção completa:
                       </button>
                     </div>
 
-                    {/* Botões com bordas redondas para selecionar a Origem dos Imóveis */}
-                    <div className="flex items-center gap-2 flex-wrap" id="my-properties-origin-selector">
+                    {/* Botões com bordas redondas para selecionar a Origem dos Imóveis na mesma linha */}
+                    <div className="flex items-center gap-1.5 sm:gap-2 w-full" id="my-properties-origin-selector">
                       <button
                         type="button"
                         onClick={() => setFilterMyOrigem('meus')}
-                        className={`px-6 py-2.5 rounded-[24px] text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap flex items-center justify-center ${
+                        className={`flex-1 py-2 sm:py-2.5 px-2 rounded-[24px] text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap flex items-center justify-center text-center ${
                           filterMyOrigem === 'meus'
                             ? 'bg-[#003366] text-white shadow-xs'
                             : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 hover:border-slate-300'
@@ -3642,7 +3695,7 @@ Toque abaixo para ver a seleção completa:
                       <button
                         type="button"
                         onClick={() => setFilterMyOrigem('dwv')}
-                        className={`px-6 py-2.5 rounded-[24px] text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap flex items-center justify-center ${
+                        className={`flex-1 py-2 sm:py-2.5 px-2 rounded-[24px] text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap flex items-center justify-center text-center ${
                           filterMyOrigem === 'dwv'
                             ? 'bg-[#003366] text-white shadow-xs'
                             : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 hover:border-slate-300'
@@ -3654,7 +3707,7 @@ Toque abaixo para ver a seleção completa:
                       <button
                         type="button"
                         onClick={() => setFilterMyOrigem('parcerias')}
-                        className={`px-6 py-2.5 rounded-[24px] text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap flex items-center justify-center ${
+                        className={`flex-1 py-2 sm:py-2.5 px-2 rounded-[24px] text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap flex items-center justify-center text-center ${
                           filterMyOrigem === 'parcerias'
                             ? 'bg-[#003366] text-white shadow-xs'
                             : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 hover:border-slate-300'
@@ -3685,21 +3738,14 @@ Toque abaixo para ver a seleção completa:
                         );
                       })}
 
-                      {/* Sentinela de Infinite Scroll para carregar automaticamente mais 20 imóveis ao rolar até o fim */}
+                      {/* Sentinela de Infinite Scroll para carregar automaticamente mais 24 imóveis ao rolar até o fim */}
                       <div ref={myInfiniteScrollSentinelRef} className="h-6 w-full pointer-events-none" />
 
-                      {/* Feedback suave ao carregar automaticamente o próximo lote de 20 imóveis */}
+                      {/* Feedback suave ao carregar automaticamente o próximo lote de 24 imóveis */}
                       {isLoadingMoreMy && (
                         <div className="flex items-center justify-center gap-2 py-4 text-slate-500 text-xs font-semibold">
                           <div className="w-4 h-4 border-2 border-[#003366] border-t-transparent rounded-full animate-spin" />
-                          <span>Carregando mais 20 imóveis...</span>
-                        </div>
-                      )}
-
-                      {/* Fim da lista atingido */}
-                      {currentMyPage >= totalMyPages && filteredMyProperties.length > MY_PAGE_SIZE && (
-                        <div className="py-3 text-center text-xs text-slate-400 font-medium">
-                          Você visualizou todos os {filteredMyProperties.length} imóveis.
+                          <span>Carregando mais 24 imóveis...</span>
                         </div>
                       )}
 

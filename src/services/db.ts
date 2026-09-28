@@ -708,6 +708,7 @@ export class DbService {
   // Fetch lightweight map markers with filters applied (no images, no heavy fields)
   static async getImoveisMapa(filters?: Record<string, any>, signal?: AbortSignal): Promise<any[]> {
     try {
+      const headers = await this.getReadAuthHeader();
       const params = new URLSearchParams();
       if (filters) {
         Object.entries(filters).forEach(([k, v]) => {
@@ -716,9 +717,13 @@ export class DbService {
           }
         });
       }
+      const active = this.getActiveCorretor();
+      if (active?.email && !params.has('userEmail')) {
+        params.set('userEmail', active.email);
+      }
       const query = params.toString();
       const url = getApiUrl(`/api/imoveis/mapa${query ? `?${query}` : ''}`);
-      const res = await fetch(url, { signal });
+      const res = await fetch(url, { headers, signal });
       if (res.ok) {
         const data = await res.json();
         return Array.isArray(data) ? data : [];

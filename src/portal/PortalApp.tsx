@@ -322,47 +322,13 @@ export function PortalApp({
 
   const handleSelectProperty = (id: string, fromMap: boolean = false) => {
     const cleanId = id.replace('imovel-', '');
-
-    // Verifica se está no modo celular / mobile (< 1024px ou dispositivo touch/smartphone)
-    const isMobileMode =
-      typeof window !== 'undefined' &&
-      (window.innerWidth < 1024 ||
-        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
-        ('ontouchstart' in window && window.innerWidth < 1024));
-
-    if (isMobileMode) {
-      // No modo celular, abre diretamente na mesma tela sem abrir nova aba
-      setSelectedPropertyId(id);
-      setOpenedFromMap(fromMap);
-      if (fromMap) {
-        setLastSelectedPinId(id);
-      }
-      window.location.hash = `#imovel/${cleanId}`;
-      window.scrollTo(0, 0);
-      return;
+    setSelectedPropertyId(id);
+    setOpenedFromMap(fromMap);
+    if (fromMap) {
+      setLastSelectedPinId(id);
     }
-
-    // No desktop, abre em nova aba
-    const targetUrl = `${window.location.origin}${window.location.pathname}?imovel=${encodeURIComponent(cleanId)}#imovel/${encodeURIComponent(cleanId)}`;
-    try {
-      const newTab = window.open(targetUrl, '_blank');
-      // Se popup for bloqueado pelo ambiente (ex.: iFrame), aplica fallback na mesma aba
-      if (!newTab || newTab.closed || typeof newTab.closed === 'undefined') {
-        setSelectedPropertyId(id);
-        setOpenedFromMap(fromMap);
-        if (fromMap) {
-          setLastSelectedPinId(id);
-        }
-        window.location.hash = `#imovel/${cleanId}`;
-      }
-    } catch {
-      setSelectedPropertyId(id);
-      setOpenedFromMap(fromMap);
-      if (fromMap) {
-        setLastSelectedPinId(id);
-      }
-      window.location.hash = `#imovel/${cleanId}`;
-    }
+    window.location.hash = `#imovel/${cleanId}`;
+    window.scrollTo({ top: 0, behavior: 'instant' });
   };
 
   const handleCloseDetail = () => {

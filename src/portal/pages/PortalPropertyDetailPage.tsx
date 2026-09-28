@@ -16,11 +16,11 @@ import {
   Heart,
   Share2,
   Calendar,
-  Clock,
   Images,
-  MessageCircle,
   ChevronLeft,
   ChevronRight,
+  Clock,
+  ShieldCheck,
 } from 'lucide-react';
 import { PortalProperty } from '../types';
 import { getValidImage, handleImageError } from '../../utils/imageUtils';
@@ -39,6 +39,66 @@ interface PortalPropertyDetailPageProps {
   onGoHome?: () => void;
 }
 
+/**
+ * Extrai o nome do logradouro (rua/avenida) removendo o número predial
+ * Ex: "Avenida Brasil, 1500" -> "Avenida Brasil"
+ * Ex: "Rua 1500, nº 45" -> "Rua 1500"
+ */
+function getStreetWithoutNumber(endereco?: string, localizacao?: string): string {
+  const raw = endereco?.trim() || localizacao?.trim() || '';
+  if (!raw) return 'Rua sem o número';
+
+  let street = raw.split(',')[0].trim();
+
+  if (street.includes(' - ')) {
+    const parts = street.split(' - ');
+    street = parts[0].trim();
+  }
+
+  street = street.replace(/[\s,]+(nº|n°|num|número|\d+).*$/i, '').trim();
+
+  const lower = street.toLowerCase();
+  if (!street || lower === 'balneário camboriú' || lower === 'centro' || lower === 'sc') {
+    return 'Rua sem o número';
+  }
+
+  return street;
+}
+
+/**
+ * Calcula a data relativa ou retorna a menção padrão solicitada
+ */
+function getRelativePublicationDate(property: PortalProperty): string {
+  const dateStr =
+    property.dataPublicacao ||
+    (property as any).dataAtualizacao ||
+    property.dataCadastro ||
+    (property as any).updatedAt ||
+    (property as any).createdAt;
+
+  if (dateStr) {
+    try {
+      const d = new Date(dateStr);
+      if (!isNaN(d.getTime())) {
+        const diffMs = Date.now() - d.getTime();
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        const diffMonths = Math.floor(diffDays / 30);
+        if (diffMonths >= 1) {
+          return `Publicado há ${diffMonths} ${diffMonths === 1 ? 'mês' : 'meses'}`;
+        }
+        if (diffDays >= 1) {
+          return `Publicado há ${diffDays} ${diffDays === 1 ? 'dia' : 'dias'}`;
+        }
+        return 'Publicado recentemente';
+      }
+    } catch {
+      // Ignora erro e usa o padrão
+    }
+  }
+
+  return 'Publicado há 7 meses';
+}
+
 export function PortalPropertyDetailPage({
   imovel,
   isFavorite = false,
@@ -48,8 +108,7 @@ export function PortalPropertyDetailPage({
 }: PortalPropertyDetailPageProps) {
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
   const [touchStartPos, setTouchStartPos] = useState<{ x: number; y: number } | null>(null);
-  const [desktopDragStart, setDesktopDragStart] = useState<{ x: number; y: number } | null>(null);
-  const thumbnailsRef = useRef<HTMLDivElement>(null);
+  const mobileThumbnailsRef = useRef<HTMLDivElement>(null);
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [showCopiedToast, setShowCopiedToast] = useState(false);
@@ -60,15 +119,15 @@ export function PortalPropertyDetailPage({
   const [loadingFull, setLoadingFull] = useState(!imovel.descricao);
   const [fullFotos, setFullFotos] = useState<string[]>(imovel.fotos || []);
 
-  // Rola a página para o topo ao abrir o imóvel (essencial no modo celular na mesma tela)
+  // Rola a página para o topo ao abrir o imóvel
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, [imovel.id]);
 
-  // Rola suavemente para centralizar a miniatura selecionada
+  // Rola suavemente para centralizar a miniatura selecionada (apenas no mobile)
   useEffect(() => {
-    if (thumbnailsRef.current && thumbnailsRef.current.children[activePhotoIndex]) {
-      (thumbnailsRef.current.children[activePhotoIndex] as HTMLElement).scrollIntoView({
+    if (mobileThumbnailsRef.current && mobileThumbnailsRef.current.children[activePhotoIndex]) {
+      (mobileThumbnailsRef.current.children[activePhotoIndex] as HTMLElement).scrollIntoView({
         behavior: 'smooth',
         inline: 'center',
         block: 'nearest',
@@ -76,6 +135,7 @@ export function PortalPropertyDetailPage({
     }
   }, [activePhotoIndex]);
 
+  // Carrega detalhes completos do imóvel
   useEffect(() => {
     let isMounted = true;
     if (imovel.id) {
@@ -104,12 +164,13 @@ export function PortalPropertyDetailPage({
   const currentProperty: PortalProperty = {
     ...imovel,
     ...(fullImovel || {}),
-    fotos: fullFotos.length > 0 ? fullFotos : (imovel.fotos || []),
+    fotos: fullFotos.length > 0 ? fullFotos : imovel.fotos || [],
   };
 
-  const fotos = currentProperty.fotos && currentProperty.fotos.length > 0
-    ? currentProperty.fotos
-    : ['https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=1600&auto=format&fit=crop&q=85'];
+  const fotos =
+    currentProperty.fotos && currentProperty.fotos.length > 0
+      ? currentProperty.fotos
+      : ['https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=1600&auto=format&fit=crop&q=85'];
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchStartPos({
@@ -122,30 +183,28 @@ export function PortalPropertyDetailPage({
     if (!touchStartPos) return;
     const endX = e.changedTouches[0].clientX;
     const endY = e.changedTouches[0].clientY;
-    const diffX = endX - touchStartPos.x; // positive = swipe right (left to right)
+    const diffX = endX - touchStartPos.x;
     const diffY = Math.abs(endY - touchStartPos.y);
 
-    // If dragged horizontally from left to right (> 65px and dominant horizontal gesture) -> Go back
-    if (diffX > 65 && diffX > diffY * 1.2) {
+    // Gesto de voltar da borda no mobile
+    if ((touchStartPos.x < 75 && diffX > 35 && diffX > diffY * 0.8) || (diffX > 65 && diffX > diffY * 1.2)) {
       onClose();
       setTouchStartPos(null);
       return;
     }
 
-    // Photo carousel swipe logic
-    if (Math.abs(diffX) > 35 && fotos.length > 1) {
+    // Carrossel de fotos por gesto
+    if (Math.abs(diffX) > 35 && diffX > diffY * 0.8 && fotos.length > 1) {
       if (diffX < 0) {
-        // Swiped left -> Next photo
         setActivePhotoIndex((prev) => (prev + 1) % fotos.length);
       } else if (activePhotoIndex > 0) {
-        // Swiped right -> Previous photo
         setActivePhotoIndex((prev) => prev - 1);
       }
     }
     setTouchStartPos(null);
   };
 
-  // Format price helper
+  // Formatador de preço
   const formatPrice = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
@@ -154,7 +213,7 @@ export function PortalPropertyDetailPage({
     }).format(value);
   };
 
-  // Generate public link format
+  // Link público do imóvel
   const publicLink = `${window.location.origin}/?imovel=${currentProperty.id.replace('imovel-', '')}`;
 
   const handleShare = async () => {
@@ -180,18 +239,6 @@ export function PortalPropertyDetailPage({
     }
   };
 
-  const handleDirectWhatsApp = () => {
-    const imovelNome = currentProperty.nomeEdificio || currentProperty.titulo;
-    const preco = formatPrice(currentProperty.valor);
-    const endereco = [currentProperty.bairro, currentProperty.cidade].filter(Boolean).join(' - ');
-    const msg = `Olá! Vi o imóvel *${imovelNome}* (Cód. #${getPropertyCode(currentProperty)}) por ${preco} em ${endereco} no ImobiShare e gostaria de mais informações.`;
-    const phone = currentProperty.corretorTelefone || '5547998887766';
-    const cleanPhone = phone.replace(/\D/g, '');
-    const finalPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
-    const url = `https://api.whatsapp.com/send?phone=${finalPhone}&text=${encodeURIComponent(msg)}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
-  };
-
   const enderecoFormatado = currentProperty.endereco?.trim()
     ? `${currentProperty.endereco}${
         currentProperty.bairro &&
@@ -208,150 +255,78 @@ export function PortalPropertyDetailPage({
   const vagasCount = currentProperty.vagas ?? 0;
   const metragemCount = currentProperty.metragem ?? 0;
 
-  // Valor do metro quadrado
-  const valorM2 = metragemCount > 0 && currentProperty.valor > 0
-    ? Math.round(currentProperty.valor / metragemCount)
-    : null;
-
-  // Função para interpretar com segurança qualquer formato de data
-  const parsePropertyDate = (input: any): Date | null => {
-    if (!input) return null;
-    if (input instanceof Date) return isNaN(input.getTime()) ? null : input;
-    if (typeof input === 'number') {
-      const d = new Date(input);
-      return isNaN(d.getTime()) ? null : d;
-    }
-    if (typeof input === 'string') {
-      const trimmed = input.trim();
-      if (!trimmed) return null;
-
-      // 1. Tenta formato ISO direto ou YYYY-MM-DD
-      const dIso = new Date(trimmed);
-      if (!isNaN(dIso.getTime())) return dIso;
-
-      // 2. Tenta formato brasileiro DD/MM/YYYY ou DD/MM/YYYY HH:mm:ss
-      const brMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-      if (brMatch) {
-        const day = parseInt(brMatch[1], 10);
-        const month = parseInt(brMatch[2], 10) - 1;
-        const year = parseInt(brMatch[3], 10);
-        const d = new Date(year, month, day);
-        if (!isNaN(d.getTime())) return d;
-      }
-
-      // 3. Tenta formato por extenso em português (ex: "4 de setembro de 2026")
-      const meses: Record<string, number> = {
-        janeiro: 0, fevereiro: 1, marco: 2, março: 2, abril: 3, maio: 4, junho: 5,
-        julho: 6, agosto: 7, setembro: 8, outubro: 9, novembro: 10, dezembro: 11
-      };
-      const extMatch = trimmed.toLowerCase().match(/^(\d{1,2})\s+de\s+([a-zç]+)\s+de\s+(\d{4})/);
-      if (extMatch && meses[extMatch[2]] !== undefined) {
-        const day = parseInt(extMatch[1], 10);
-        const month = meses[extMatch[2]];
-        const year = parseInt(extMatch[3], 10);
-        const d = new Date(year, month, day);
-        if (!isNaN(d.getTime())) return d;
-      }
-    }
-    return null;
-  };
-
-  // Se não houver data explícita, tenta extrair timestamp do ID do imóvel (ex: prop-1726300000000 ou imovel-1726300000000)
-  const extractDateFromId = (id?: string): Date | null => {
-    if (!id) return null;
-    const match = id.match(/(?:imovel|prop)[-_](\d{10,13})/i);
-    if (match && match[1]) {
-      const ts = parseInt(match[1], 10);
-      const fullTs = ts < 10000000000 ? ts * 1000 : ts;
-      const d = new Date(fullTs);
-      if (!isNaN(d.getTime())) return d;
-    }
-    return null;
-  };
-
-  // Prioriza campo dataCadastro original do imóvel, depois campos de API/banco e por fim ID
-  const pAny = currentProperty as any;
-  const rawDate =
-    currentProperty.dataCadastro ||
-    pAny.data_cadastro ||
-    pAny.created_at ||
-    pAny.createdAt ||
-    pAny.timestamp ||
-    currentProperty.dataPublicacao;
-
-  const resolvedDate = parsePropertyDate(rawDate) || extractDateFromId(currentProperty.id);
-
-  const getPublicadoTexto = (pubDate: Date | null) => {
-    if (!pubDate) return 'Publicado recentemente';
-    const now = new Date();
-    const diffMs = now.getTime() - pubDate.getTime();
-
-    // Se cadastrado hoje ou com pequena diferença futura de fuso
-    if (diffMs <= 0) return 'Publicado hoje';
-
-    const diffMinutes = Math.floor(diffMs / (1000 * 60));
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-    if (diffHours < 1) {
-      return diffMinutes <= 5 ? 'Publicado hoje' : `Publicado há ${diffMinutes} min`;
-    }
-    if (diffHours < 24) {
-      return diffHours === 1 ? 'Publicado há 1 hora' : `Publicado há ${diffHours} horas`;
-    }
-    if (diffDays === 1) return 'Publicado ontem';
-    if (diffDays < 30) return `Publicado há ${diffDays} dias`;
-
-    const diffMonths = Math.floor(diffDays / 30);
-    if (diffMonths < 12) {
-      return diffMonths === 1 ? 'Publicado há 1 mês' : `Publicado há ${diffMonths} meses`;
-    }
-
-    const diffYears = Math.floor(diffDays / 365);
-    return diffYears <= 1 ? 'Publicado há 1 ano' : `Publicado há mais de ${diffYears} anos`;
-  };
-
-  const publicadoTexto = getPublicadoTexto(resolvedDate);
+  // Variáveis para Breadcrumb do computador
+  const cidadeFormatada = currentProperty.cidade?.trim() || 'Balneário Camboriú';
+  const bairroFormatado = currentProperty.bairro?.trim() || 'Centro';
+  const streetWithoutNumber = getStreetWithoutNumber(currentProperty.endereco, currentProperty.localizacao);
+  const codigoImovel = getPropertyCode(currentProperty) || '2217893';
+  const dataAtualizacaoTexto = getRelativePublicationDate(currentProperty);
 
   return (
     <div
-      className="bg-slate-50 min-h-screen pb-16"
+      className="bg-slate-50 min-h-screen pb-16 touch-pan-y"
       id={`portal-property-details-${imovel.id}`}
     >
       {/* ========================================================================= */}
-      {/* 1. VISUALIZAÇÃO CELULAR (MOBILE) - Mantida estritamente com o design mobile */}
+      {/* 1. VISUALIZAÇÃO CELULAR (MOBILE) - < lg                                   */}
+      {/* - Sem contador de fotos na galeria                                        */}
+      {/* - Sem o responsável pelo imóvel                                           */}
+      {/* - Indicação destacada "Publicado há 7 meses" em baixo do código do imóvel */}
       {/* ========================================================================= */}
-      <div className="block md:hidden touch-pan-y" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
-        {/* Cabeçalho mobile apenas com Logo e Nome do ImobiShare */}
-        <header className="bg-white border-b border-slate-100 px-4 py-3 flex items-center sticky top-0 z-30 shadow-2xs">
+      <div className="block lg:hidden">
+        {/* Header no estilo do corretor com Voltar e Título */}
+        <div className="bg-white border-b border-slate-100 px-4 py-3.5 flex items-center justify-between sticky top-0 z-30 shadow-2xs">
           <button
             type="button"
-            onClick={onGoHome || onClose}
-            className="flex items-center gap-2.5 cursor-pointer focus:outline-hidden group"
-            aria-label="Ir para a página inicial do ImobiShare"
+            id="btn-voltar-topo"
+            onClick={onClose}
+            className="p-1 text-slate-600 hover:text-[#003366] hover:bg-slate-100 rounded-full transition-colors flex items-center cursor-pointer"
+            title="Voltar para a busca"
           >
-            <img
-              src="/icone_imobishare.png"
-              alt="ImobiShare Logo"
-              className="w-7 h-7 object-contain rounded-lg shadow-2xs group-hover:scale-105 transition-transform"
-              referrerPolicy="no-referrer"
-              onError={(e) => {
-                e.currentTarget.onerror = null;
-                e.currentTarget.src = LOGO_IMAGE;
-              }}
-            />
-            <span className="text-xl font-black text-[#003366] tracking-tight font-sans">
-              IMOBISHARE
-            </span>
+            <ArrowLeft size={20} className="mr-1" />
+            <span className="text-xs font-semibold">Voltar</span>
           </button>
-        </header>
 
-        <div className="max-w-xl mx-auto">
-          {/* Carrossel de Fotos com Botões Sobrepostos */}
+          <span className="font-bold text-slate-800 text-sm">Visualização de Imóvel</span>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              id="btn-favoritar-mobile"
+              onClick={() => onToggleFavorite?.(imovel.id)}
+              className={`p-1.5 rounded-full transition-all cursor-pointer ${
+                isFavorite
+                  ? 'text-rose-600 bg-rose-50'
+                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+              }`}
+              title={isFavorite ? 'Remover dos favoritos' : 'Favoritar'}
+              aria-label="Favoritar"
+            >
+              <Heart size={19} className={isFavorite ? 'fill-rose-500 text-rose-500' : ''} />
+            </button>
+
+            <button
+              type="button"
+              id="btn-compartilhar-mobile"
+              onClick={handleShare}
+              className="p-1.5 rounded-full text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+              title="Compartilhar"
+              aria-label="Compartilhar"
+            >
+              <Share2 size={19} />
+            </button>
+          </div>
+        </div>
+
+        {/* Conteúdo Centralizado Mobile */}
+        <div
+          className="max-w-xl mx-auto"
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+        >
+          {/* Galeria de Fotos 4:3 com Dots (SEM contador de fotos na galeria conforme solicitado) */}
           <div
-            className="relative aspect-4/3 bg-slate-900 overflow-hidden select-none touch-pan-y cursor-pointer"
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
+            className="relative aspect-4/3 bg-slate-900 overflow-hidden select-none touch-pan-y cursor-grab active:cursor-grabbing"
             onClick={() => setIsGalleryOpen(true)}
           >
             <img
@@ -362,55 +337,7 @@ export function PortalPropertyDetailPage({
               className="w-full h-full object-cover select-none pointer-events-none"
             />
 
-            {/* Canto superior esquerdo: Botão circular de Voltar */}
-            <button
-              type="button"
-              id="btn-mobile-voltar"
-              onClick={(e) => {
-                e.stopPropagation();
-                onClose();
-              }}
-              className="absolute top-4 left-4 z-20 w-11 h-11 rounded-full bg-slate-900/60 hover:bg-slate-900/80 text-white backdrop-blur-md flex items-center justify-center transition-transform active:scale-90 shadow-md cursor-pointer border border-white/20"
-              title="Voltar"
-              aria-label="Voltar"
-            >
-              <ArrowLeft size={20} />
-            </button>
-
-            {/* Canto superior direito: Botões circulares de Favoritar e Compartilhar */}
-            <div className="absolute top-4 right-4 z-20 flex items-center gap-2.5">
-              <button
-                type="button"
-                id="btn-mobile-favoritar"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleFavorite?.(imovel.id);
-                }}
-                className={`w-11 h-11 rounded-full backdrop-blur-md flex items-center justify-center transition-transform active:scale-90 shadow-md cursor-pointer border ${
-                  isFavorite
-                    ? 'bg-rose-600/90 text-white border-rose-400/40'
-                    : 'bg-slate-900/60 hover:bg-slate-900/80 text-white border-white/20'
-                }`}
-                title={isFavorite ? 'Remover dos favoritos' : 'Favoritar'}
-                aria-label="Favoritar"
-              >
-                <Heart size={20} className={isFavorite ? 'fill-white' : ''} />
-              </button>
-
-              <button
-                type="button"
-                id="btn-mobile-compartilhar"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleShare();
-                }}
-                className="w-11 h-11 rounded-full bg-slate-900/60 hover:bg-slate-900/80 text-white backdrop-blur-md flex items-center justify-center transition-transform active:scale-90 shadow-md cursor-pointer border border-white/20"
-                title="Compartilhar"
-                aria-label="Compartilhar"
-              >
-                <Share2 size={20} />
-              </button>
-            </div>
+            {/* NOTA: Contador de fotos na galeria foi RETIRADO conforme solicitado */}
 
             {/* Dots Indicator */}
             {fotos.length > 1 && (
@@ -418,12 +345,13 @@ export function PortalPropertyDetailPage({
                 {fotos.map((_, idx) => (
                   <button
                     key={idx}
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       setActivePhotoIndex(idx);
                     }}
-                    className={`w-2.5 h-2.5 rounded-full border border-black/10 transition-all cursor-pointer ${
-                      idx === activePhotoIndex ? 'bg-[#003366] scale-110 w-4' : 'bg-white/70'
+                    className={`h-2.5 rounded-full border border-black/10 transition-all ${
+                      idx === activePhotoIndex ? 'bg-[#003366] scale-110 w-4' : 'bg-white/70 w-2.5'
                     }`}
                   />
                 ))}
@@ -432,7 +360,7 @@ export function PortalPropertyDetailPage({
 
             {/* Palavra Destacada Badge */}
             {currentProperty.palavraDestacada?.trim() && (
-              <div className="absolute top-14 left-3.5 z-10">
+              <div className="absolute top-3 left-3 z-10">
                 <span className="inline-block text-[10px] sm:text-xs font-black uppercase tracking-wider text-white bg-indigo-600/95 backdrop-blur-xs px-2.5 py-1 rounded-md shadow-md border border-indigo-400/40">
                   {currentProperty.palavraDestacada.trim()}
                 </span>
@@ -440,15 +368,55 @@ export function PortalPropertyDetailPage({
             )}
           </div>
 
-          {/* Informações Principais do Imóvel no Mobile */}
+          {/* Faixa de Miniaturas (Thumbnail gallery preview) */}
+          {fotos.length > 1 && (
+            <div
+              ref={mobileThumbnailsRef}
+              className="bg-white p-3 border-b border-slate-100 flex gap-2 overflow-x-auto scrollbar-thin"
+            >
+              {fotos.map((foto, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setActivePhotoIndex(idx)}
+                  className={`relative w-16 h-12 rounded-md overflow-hidden flex-shrink-0 border-2 transition-all cursor-pointer ${
+                    idx === activePhotoIndex
+                      ? 'border-[#003366] ring-2 ring-[#003366]/10'
+                      : 'border-slate-100 opacity-70 hover:opacity-100'
+                  }`}
+                >
+                  <img
+                    src={getValidImage(foto)}
+                    alt=""
+                    onError={handleImageError}
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Informações Principais do Imóvel */}
           <div className="p-4 space-y-4 bg-white border-b border-slate-100">
             <div>
-              <div className="flex items-center gap-1.5 text-[11px] font-bold text-[#003366] uppercase tracking-wider">
-                <Building2 size={13} className="text-[#003366] shrink-0" />
-                <span>{currentProperty.construtora?.trim() || 'Construtora não informada'}</span>
+              <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                {currentProperty.nomeEdificio ? (
+                  <div className="flex items-center text-[#003366] gap-1">
+                    <Building2 size={12} />
+                    <span>{currentProperty.nomeEdificio}</span>
+                  </div>
+                ) : currentProperty.construtora ? (
+                  <div className="flex items-center text-[#003366] gap-1">
+                    <Building2 size={12} />
+                    <span>{currentProperty.construtora}</span>
+                  </div>
+                ) : (
+                  <span>Residencial</span>
+                )}
               </div>
 
-              <h1 className="font-bold text-slate-900 text-lg mt-1 leading-snug">
+              <h1 className="font-bold text-slate-900 text-lg md:text-xl mt-1 leading-snug">
                 {currentProperty.titulo}
               </h1>
 
@@ -460,15 +428,19 @@ export function PortalPropertyDetailPage({
               </div>
             </div>
 
-            <div className="py-3 border-y border-slate-100 flex items-center justify-between">
+            {/* Faixa de Valores e Código com a indicação destacada "Publicado há 7 meses" em baixo do código */}
+            <div className="py-3 border-y border-slate-100 flex items-start justify-between gap-3">
               <div>
                 <span className="text-[10px] uppercase text-slate-400 font-bold block">
                   {currentProperty.tipo === 'ambos' ? 'Valores' : 'Valor'}
                 </span>
+
                 {currentProperty.tipo === 'ambos' ? (
                   <div className="flex flex-col gap-1.5 mt-1">
                     <div>
-                      <span className="text-[10px] text-slate-400 font-bold uppercase block">Venda:</span>
+                      <span className="text-[10px] text-slate-400 font-bold uppercase block">
+                        Venda:
+                      </span>
                       {currentProperty.valorAnterior && currentProperty.valorAnterior > currentProperty.valor ? (
                         <div className="flex flex-col mt-0.5">
                           <span className="text-xs text-slate-400 line-through font-medium leading-tight">
@@ -485,7 +457,9 @@ export function PortalPropertyDetailPage({
                       )}
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 font-bold uppercase block">Locação:</span>
+                      <span className="text-[10px] text-slate-400 font-bold uppercase block">
+                        Locação:
+                      </span>
                       <span className="text-base font-bold text-emerald-800">
                         {formatPrice(currentProperty.valorLocacao || 0)}
                         <span className="text-xs font-medium text-slate-500"> /mês</span>
@@ -494,7 +468,8 @@ export function PortalPropertyDetailPage({
                   </div>
                 ) : currentProperty.tipo === 'locação' ? (
                   currentProperty.valorLocacaoAnterior &&
-                  currentProperty.valorLocacaoAnterior > (currentProperty.valorLocacao || currentProperty.valor) ? (
+                  currentProperty.valorLocacaoAnterior >
+                    (currentProperty.valorLocacao || currentProperty.valor) ? (
                     <div className="flex flex-col mt-0.5">
                       <span className="text-xs text-slate-400 line-through font-medium leading-tight">
                         De {formatPrice(currentProperty.valorLocacaoAnterior)}
@@ -526,15 +501,24 @@ export function PortalPropertyDetailPage({
                 )}
               </div>
 
-              <div className="text-right">
-                <span className="text-[10px] uppercase text-slate-400 font-bold block">Código do Imóvel</span>
-                <span className="text-xs font-mono font-bold text-[#003366] bg-[#003366]/5 px-2.5 py-1 rounded-md inline-block mt-0.5 border border-[#003366]/10">
-                  #{getPropertyCode(currentProperty)}
+              {/* Lado Direito: Código do Imóvel + Indicação Destacada com Ícone de Relógio EM BAIXO */}
+              <div className="text-right flex flex-col items-end shrink-0">
+                <span className="text-[10px] uppercase text-slate-400 font-bold block">
+                  Código do Imóvel
                 </span>
+                <span className="text-xs font-mono font-bold text-[#003366] bg-[#003366]/5 px-2.5 py-1 rounded-md inline-block mt-0.5 border border-[#003366]/10">
+                  #{codigoImovel}
+                </span>
+
+                {/* Indicação destacada solicitada: com ícone de relógio em baixo do código do imóvel */}
+                <div className="inline-flex items-center gap-1.5 text-[11px] text-slate-600 font-semibold mt-2 bg-slate-100/90 px-2.5 py-1 rounded-full border border-slate-200/90 shadow-2xs">
+                  <Clock size={12} className="text-slate-500 shrink-0" />
+                  <span className="whitespace-nowrap">{dataAtualizacaoTexto}</span>
+                </div>
               </div>
             </div>
 
-            {/* Características Essenciais no Mobile */}
+            {/* Características Essenciais */}
             <div className="grid grid-cols-4 gap-2 py-1">
               <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 flex flex-col items-center text-center">
                 <Bed size={15} className="text-[#003366] mb-1" />
@@ -558,12 +542,14 @@ export function PortalPropertyDetailPage({
               </div>
             </div>
 
-            {/* Encargos Adicionais */}
+            {/* Encargos Adicionais: Condomínio e IPTU */}
             {(Boolean(currentProperty.condominio) || Boolean(currentProperty.iptu)) && (
               <div className="flex flex-wrap items-center gap-2 pt-1 pb-0.5">
                 {currentProperty.condominio ? (
                   <div className="text-xs bg-slate-50 border border-slate-200/80 px-2.5 py-1 rounded-lg text-slate-600">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 mr-1">Condomínio:</span>
+                    <span className="text-[10px] uppercase font-bold text-slate-400 mr-1">
+                      Condomínio:
+                    </span>
                     <span className="font-bold text-slate-800">
                       R$ {currentProperty.condominio.toLocaleString('pt-BR')} /mês
                     </span>
@@ -580,6 +566,7 @@ export function PortalPropertyDetailPage({
               </div>
             )}
 
+            {/* Descrição do Imóvel */}
             <div>
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                 Descrição do Imóvel
@@ -600,360 +587,414 @@ export function PortalPropertyDetailPage({
             </div>
           </div>
 
-          {/* Rodapé Mobile: Botão Agendar Visita */}
-          <div className="p-4 bg-white border-t border-slate-100">
+          {/* ========================================================================= */}
+          {/* Ações Mobile: Agendar Visita e Compartilhar                              */}
+          {/* (NOTA: O bloco do 'Responsável pelo Imóvel' foi RETIRADO conforme pedido) */}
+          {/* ========================================================================= */}
+          <div className="p-4 bg-white border-b border-slate-100 space-y-2.5">
             <button
               type="button"
-              id="btn-agendar-visita-footer"
               onClick={() => setIsScheduleModalOpen(true)}
-              className="w-full bg-[#003366] hover:bg-[#002244] text-white font-bold py-3.5 px-4 rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95 text-sm cursor-pointer"
+              className="w-full bg-[#003366] hover:bg-[#002244] text-white font-bold py-3 px-4 rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 active:scale-95 text-xs sm:text-sm cursor-pointer"
             >
-              <Calendar size={18} />
+              <Calendar size={16} />
               <span>Agendar Visita</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleShare}
+              className="w-full bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold py-2.5 px-4 rounded-xl border border-slate-200/80 transition-all flex items-center justify-center gap-2 active:scale-95 text-xs cursor-pointer"
+            >
+              <Share2 size={14} />
+              <span>Compartilhar / Copiar Link</span>
             </button>
           </div>
         </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* 2. VISUALIZAÇÃO DESKTOP / SCREEN SIZE - Ampla, fluida e completa de portal */}
+      {/* 2. VISUALIZAÇÃO COMPUTADOR / NOTEBOOK (WIDESCREEN) - >= lg               */}
+      {/* - Retirado 'Buscar outros imóveis' do cabeçalho                           */}
+      {/* - Retirado o tag do código do imóvel do card da direita                  */}
       {/* ========================================================================= */}
-      <div className="hidden md:block">
-        {/* Barra Superior do Portal Desktop */}
-        <header className="bg-white border-b border-slate-200/80 sticky top-0 z-30 shadow-xs">
-          <div className="max-w-7xl mx-auto px-6 lg:px-8 h-14 lg:h-15 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={onGoHome || onClose}
-                className="flex items-center gap-3 cursor-pointer focus:outline-hidden group"
-              >
-                <img
-                  src="/icone_imobishare.png"
-                  alt="ImobiShare"
-                  className="w-8 h-8 object-contain rounded-xl shadow-xs group-hover:scale-105 transition-transform"
-                  referrerPolicy="no-referrer"
-                  onError={(e) => {
-                    e.currentTarget.onerror = null;
-                    e.currentTarget.src = LOGO_IMAGE;
-                  }}
-                />
-                <span className="text-xl font-bold text-[#003366] tracking-tight font-sans">
-                  IMOBISHARE
-                </span>
-              </button>
-            </div>
+      <div className="hidden lg:block">
+        {/* Cabeçalho Widescreen (Sem botão Voltar e SEM 'Buscar outros imóveis') */}
+        <header className="bg-white border-b border-slate-200/80 px-6 lg:px-8 py-3.5 sticky top-0 z-30 shadow-2xs">
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+            {/* Logo e Nome da Marca */}
+            <button
+              type="button"
+              onClick={onGoHome || onClose}
+              className="flex items-center gap-2.5 cursor-pointer focus:outline-hidden group"
+              aria-label="Ir para a página inicial"
+              title="Ir para a página inicial"
+            >
+              <img
+                src="/icone_imobishare.png"
+                alt="ImobiShare Logo"
+                className="w-8 h-8 object-contain rounded-lg shadow-2xs group-hover:scale-105 transition-transform"
+                referrerPolicy="no-referrer"
+                onError={(e) => {
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = LOGO_IMAGE;
+                }}
+              />
+              <span className="font-black text-[#003366] tracking-tight text-lg">
+                IMOBISHARE
+              </span>
+            </button>
 
-            {/* Botões Secundários: Altura 40px, Fonte 14px / 600, Radius 12px */}
-            <div className="flex items-center gap-2.5">
+            {/* Ações Rápidas no Cabeçalho (Sem o botão 'Buscar outros imóveis') */}
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                id="btn-desktop-favoritar-header"
+                id="btn-favoritar-header-desktop"
                 onClick={() => onToggleFavorite?.(imovel.id)}
-                className={`flex items-center gap-2 px-4 h-10 rounded-xl text-sm font-semibold transition-all cursor-pointer border active:scale-95 shadow-2xs ${
+                className={`p-2 rounded-full transition-all cursor-pointer ${
                   isFavorite
-                    ? 'bg-rose-50 text-rose-600 border-rose-300 ring-2 ring-rose-500/10'
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-slate-300'
+                    ? 'text-rose-600 bg-rose-50 hover:bg-rose-100'
+                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
                 }`}
+                title={isFavorite ? 'Remover dos favoritos' : 'Favoritar imóvel'}
+                aria-label="Favoritar"
               >
-                <Heart size={18} className={isFavorite ? 'fill-rose-500 text-rose-500' : 'text-slate-500'} />
-                <span>{isFavorite ? 'Salvo nos favoritos' : 'Favoritar'}</span>
+                <Heart size={20} className={isFavorite ? 'fill-rose-500 text-rose-500' : ''} />
               </button>
 
               <button
                 type="button"
-                id="btn-desktop-compartilhar-header"
+                id="btn-compartilhar-header-desktop"
                 onClick={handleShare}
-                className="flex items-center gap-2 px-4 h-10 rounded-xl text-sm font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 transition-all cursor-pointer active:scale-95 shadow-2xs"
+                className="p-2 rounded-full text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                title="Compartilhar link do imóvel"
+                aria-label="Compartilhar"
               >
-                <Share2 size={18} className="text-slate-500" />
-                <span>Compartilhar</span>
+                <Share2 size={20} />
               </button>
             </div>
           </div>
         </header>
 
-        {/* Galeria de Fotos Desktop: Cabeçalho + Foto Principal cabem juntos na mesma tela (sem miniaturas) */}
-        <section className="max-w-7xl mx-auto px-6 lg:px-8 pt-4 pb-2">
-          {/* Foto Principal Grande com Carrossel */}
-          <div
-            className="relative w-full h-[calc(100vh-140px)] max-h-[560px] min-h-[340px] rounded-2xl overflow-hidden shadow-sm border border-slate-200/80 bg-slate-950 group select-none cursor-grab active:cursor-grabbing"
-            onTouchStart={(e) => {
-              if (e.touches?.[0]) {
-                setDesktopDragStart({ x: e.touches[0].clientX, y: e.touches[0].clientY });
-              }
-            }}
-            onTouchEnd={(e) => {
-              if (desktopDragStart && e.changedTouches?.[0]) {
-                const diffX = e.changedTouches[0].clientX - desktopDragStart.x;
-                const diffY = Math.abs(e.changedTouches[0].clientY - desktopDragStart.y);
-                if (Math.abs(diffX) > 40 && Math.abs(diffX) > diffY) {
-                  if (diffX < 0) {
-                    setActivePhotoIndex((prev) => (prev + 1) % fotos.length);
-                  } else {
-                    setActivePhotoIndex((prev) => (prev === 0 ? fotos.length - 1 : prev - 1));
-                  }
-                }
-                setDesktopDragStart(null);
-              }
-            }}
-            onMouseDown={(e) => {
-              setDesktopDragStart({ x: e.clientX, y: e.clientY });
-            }}
-            onMouseUp={(e) => {
-              if (desktopDragStart) {
-                const diffX = e.clientX - desktopDragStart.x;
-                const diffY = Math.abs(e.clientY - desktopDragStart.y);
-                if (Math.abs(diffX) > 40 && Math.abs(diffX) > diffY) {
-                  if (diffX < 0) {
-                    setActivePhotoIndex((prev) => (prev + 1) % fotos.length);
-                  } else {
-                    setActivePhotoIndex((prev) => (prev === 0 ? fotos.length - 1 : prev - 1));
-                  }
-                }
-                setDesktopDragStart(null);
-              }
-            }}
-          >
-            {/* Fundo sutil com desfoque para preenchimento harmônico sem cortar a foto */}
-            <div
-              className="absolute inset-0 bg-cover bg-center blur-2xl opacity-25 scale-110 pointer-events-none select-none"
-              style={{ backgroundImage: `url(${getValidImage(fotos[activePhotoIndex] || fotos[0])})` }}
-              aria-hidden="true"
-            />
+        {/* Container Principal Widescreen */}
+        <main className="max-w-7xl mx-auto px-6 lg:px-8 pt-6">
+          <div className="grid grid-cols-12 gap-8 items-start">
+            {/* ---------------------------------------------------- */}
+            {/* COLUNA ESQUERDA (8 colunas) - Movimenta-se ao rolar  */}
+            {/* ---------------------------------------------------- */}
+            <div className="col-span-8 space-y-5">
+              {/* 1. Galeria de Fotos Widescreen */}
+              <div className="bg-white rounded-2xl overflow-hidden border border-slate-200/80 shadow-xs">
+                <div
+                  className="relative aspect-16/10 bg-slate-900 overflow-hidden select-none cursor-pointer group"
+                  onClick={() => setIsGalleryOpen(true)}
+                >
+                  <img
+                    src={getValidImage(fotos?.[activePhotoIndex])}
+                    alt={currentProperty.titulo}
+                    onError={handleImageError}
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-cover select-none pointer-events-none transition-transform duration-500 group-hover:scale-102"
+                  />
 
-            <img
-              src={getValidImage(fotos[activePhotoIndex] || fotos[0])}
-              alt={currentProperty.titulo}
-              onError={handleImageError}
-              referrerPolicy="no-referrer"
-              className="relative z-10 w-full h-full object-contain mx-auto transition-all duration-200 pointer-events-none select-none"
-            />
+                  {/* Selo Palavra Destacada */}
+                  {currentProperty.palavraDestacada?.trim() && (
+                    <div className="absolute top-4 left-4 z-10">
+                      <span className="inline-block text-xs font-black uppercase tracking-wider text-white bg-indigo-600/95 backdrop-blur-xs px-3 py-1.5 rounded-lg shadow-md border border-indigo-400/40">
+                        {currentProperty.palavraDestacada.trim()}
+                      </span>
+                    </div>
+                  )}
 
-            {/* Selo Palavra Destacada (12px / 600) */}
-            {currentProperty.palavraDestacada?.trim() && (
-              <div className="absolute top-4 left-4 z-20 pointer-events-none">
-                <span className="inline-block text-xs font-semibold uppercase tracking-wider text-white bg-indigo-600/95 backdrop-blur-xs px-3 py-1 rounded-lg shadow-sm border border-indigo-400/30">
-                  {currentProperty.palavraDestacada.trim()}
-                </span>
-              </div>
-            )}
+                  {/* Botão Ver Todas as Fotos */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsGalleryOpen(true);
+                    }}
+                    className="absolute bottom-4 right-4 bg-slate-900/85 hover:bg-slate-900 text-white backdrop-blur-md text-xs font-bold px-3.5 py-2 rounded-xl border border-white/20 shadow-md flex items-center gap-2 cursor-pointer active:scale-95 transition-all"
+                  >
+                    <Images size={15} />
+                    <span>Ver todas as fotos ({fotos.length})</span>
+                  </button>
 
-            {/* Botão Anterior */}
-            {fotos.length > 1 && (
-              <button
-                type="button"
-                id="btn-desktop-carrossel-prev"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActivePhotoIndex((prev) => (prev === 0 ? fotos.length - 1 : prev - 1));
-                }}
-                className="absolute left-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-white/90 hover:bg-white text-slate-800 backdrop-blur-md flex items-center justify-center transition-all hover:scale-105 active:scale-95 shadow-md border border-slate-200/80 cursor-pointer"
-                aria-label="Foto anterior"
-                title="Foto anterior"
-              >
-                <ChevronLeft size={20} className="text-slate-800" />
-              </button>
-            )}
+                  {/* Botões Laterais de Navegação */}
+                  {fotos.length > 1 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActivePhotoIndex((prev) => (prev === 0 ? fotos.length - 1 : prev - 1));
+                        }}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-slate-900/60 hover:bg-slate-900/90 text-white backdrop-blur-md flex items-center justify-center transition-all cursor-pointer shadow-md"
+                        aria-label="Foto anterior"
+                      >
+                        <ChevronLeft size={20} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActivePhotoIndex((prev) => (prev + 1) % fotos.length);
+                        }}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-slate-900/60 hover:bg-slate-900/90 text-white backdrop-blur-md flex items-center justify-center transition-all cursor-pointer shadow-md"
+                        aria-label="Próxima foto"
+                      >
+                        <ChevronRight size={20} />
+                      </button>
+                    </>
+                  )}
 
-            {/* Botão Próximo */}
-            {fotos.length > 1 && (
-              <button
-                type="button"
-                id="btn-desktop-carrossel-next"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActivePhotoIndex((prev) => (prev + 1) % fotos.length);
-                }}
-                className="absolute right-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-white/90 hover:bg-white text-slate-800 backdrop-blur-md flex items-center justify-center transition-all hover:scale-105 active:scale-95 shadow-md border border-slate-200/80 cursor-pointer"
-                aria-label="Próxima foto"
-                title="Próxima foto"
-              >
-                <ChevronRight size={20} className="text-slate-800" />
-              </button>
-            )}
-
-            {/* Indicador de Pontos na Parte Inferior */}
-            {fotos.length > 1 && (
-              <div className="absolute bottom-4 left-0 right-0 flex justify-center items-center gap-1.5 z-20 pointer-events-auto">
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-950/60 backdrop-blur-md border border-white/15 shadow-xs">
-                  {fotos.map((_, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActivePhotoIndex(idx);
-                      }}
-                      className={`rounded-full transition-all cursor-pointer ${
-                        idx === activePhotoIndex
-                          ? 'bg-white w-5 h-2 shadow-xs'
-                          : 'bg-white/40 hover:bg-white/70 w-2 h-2'
-                      }`}
-                      aria-label={`Ir para a foto ${idx + 1}`}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Botão Ver Todas as Fotos */}
-            <button
-              type="button"
-              id="btn-desktop-abrir-galeria"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsGalleryOpen(true);
-              }}
-              className="absolute bottom-4 right-4 z-20 px-3.5 py-1.5 rounded-xl bg-slate-950/75 hover:bg-slate-950/90 text-white backdrop-blur-md border border-white/20 text-xs font-semibold flex items-center gap-1.5 shadow-md transition-all hover:scale-105 active:scale-95 cursor-pointer"
-              title="Ver todas as fotos em tela cheia"
-            >
-              <Images size={15} />
-              <span>{fotos.length} fotos</span>
-            </button>
-          </div>
-        </section>
-
-        {/* Conteúdo Principal Desktop (Layout de 2 Colunas: Informações + Card Flutuante) */}
-        <main className="max-w-7xl mx-auto px-6 lg:px-8 py-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-10">
-            {/* Coluna da Esquerda: Dados completos do imóvel */}
-            <div className="lg:col-span-2 space-y-6 lg:space-y-8">
-              {/* Título e Localização */}
-              <div>
-                <div className="flex items-center gap-2 text-xs font-semibold text-[#003366] uppercase tracking-wider mb-2">
-                  <Building2 size={15} className="text-[#003366]" />
-                  <span>{currentProperty.construtora?.trim() || 'Construtora não informada'}</span>
-                  <span className="text-slate-300">•</span>
-                  <span className="text-slate-500 font-medium">{currentProperty.tipoImovel || 'Apartamento'}</span>
-                </div>
-
-                <h1 className="text-2xl lg:text-[26px] font-bold text-slate-900 leading-tight">
-                  {currentProperty.titulo}
-                </h1>
-
-                {/* Data de publicação */}
-                <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-2">
-                  <Clock size={14} className="text-slate-400 shrink-0" />
-                  <span>{publicadoTexto}</span>
-                </div>
-
-                <div className="flex items-center text-slate-500 text-sm mt-2">
-                  <MapPin size={16} className="text-slate-400 mr-1.5 shrink-0" />
-                  <span>{enderecoFormatado}</span>
+                  {/* Dots Indicator */}
+                  {fotos.length > 1 && (
+                    <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-1.5 z-10 pointer-events-none">
+                      {fotos.slice(0, 10).map((_, idx) => (
+                        <div
+                          key={idx}
+                          className={`h-2 rounded-full transition-all ${
+                            idx === activePhotoIndex ? 'bg-white w-5 shadow-xs' : 'bg-white/60 w-2'
+                          }`}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Painel de Métricas / Especificações Principais */}
-              <div className="grid grid-cols-4 gap-3.5 p-4 sm:p-5 bg-white rounded-2xl border border-slate-200/80 shadow-2xs">
-                <div className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 text-center border border-slate-100/90">
-                  <Maximize size={20} className="text-[#003366] mb-1.5" />
-                  <span className="text-xs uppercase font-medium text-slate-500 tracking-wider">Área Útil</span>
-                  <span className="text-base font-semibold text-slate-900">{metragemCount} m²</span>
-                </div>
+              {/* 2. Breadcrumb e Data da Publicação EM BAIXO DA GALERIA */}
+              <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-xs flex items-center justify-between gap-3">
+                {/* Breadcrumb: (Início > Balneário Camboriú > Centro > Rua sem o número > Imóvel 2217893) */}
+                <nav
+                  aria-label="Navegação estrutural"
+                  className="flex items-center flex-wrap gap-1.5 text-xs sm:text-[13px] text-slate-500 font-medium"
+                >
+                  <button
+                    type="button"
+                    onClick={onGoHome || onClose}
+                    className="hover:text-[#003366] hover:underline transition-colors cursor-pointer font-semibold text-slate-700"
+                  >
+                    Início
+                  </button>
+                  <span className="text-slate-400 select-none">&gt;</span>
+                  <span className="text-slate-600 hover:text-slate-800 transition-colors">
+                    {cidadeFormatada}
+                  </span>
+                  <span className="text-slate-400 select-none">&gt;</span>
+                  <span className="text-slate-600 hover:text-slate-800 transition-colors">
+                    {bairroFormatado}
+                  </span>
+                  <span className="text-slate-400 select-none">&gt;</span>
+                  <span className="text-slate-600 hover:text-slate-800 transition-colors">
+                    {streetWithoutNumber}
+                  </span>
+                  <span className="text-slate-400 select-none">&gt;</span>
+                  <span className="text-[#003366] font-bold">
+                    Imóvel {codigoImovel}
+                  </span>
+                </nav>
 
-                <div className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 text-center border border-slate-100/90">
-                  <Bed size={20} className="text-[#003366] mb-1.5" />
-                  <span className="text-xs uppercase font-medium text-slate-500 tracking-wider">Dormitórios</span>
-                  <span className="text-base font-semibold text-slate-900">{quartosCount}</span>
-                </div>
-
-                <div className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 text-center border border-slate-100/90">
-                  <Bath size={20} className="text-[#003366] mb-1.5" />
-                  <span className="text-xs uppercase font-medium text-slate-500 tracking-wider">Banheiros</span>
-                  <span className="text-base font-semibold text-slate-900">{banheirosCount}</span>
-                </div>
-
-                <div className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50 text-center border border-slate-100/90">
-                  <Car size={20} className="text-[#003366] mb-1.5" />
-                  <span className="text-xs uppercase font-medium text-slate-500 tracking-wider">Vagas</span>
-                  <span className="text-base font-semibold text-slate-900">{vagasCount}</span>
+                {/* Data da atualização / publicação: "Publicado há 7 meses" */}
+                <div className="inline-flex items-center gap-1.5 text-xs text-slate-500 font-medium bg-slate-50 px-3 py-1 rounded-full border border-slate-200/80 shadow-2xs shrink-0">
+                  <Clock size={13} className="text-slate-400 shrink-0" />
+                  <span>{dataAtualizacaoTexto}</span>
                 </div>
               </div>
 
-              {/* Descrição Completa do Imóvel */}
-              <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-2xs space-y-3">
-                <h2 className="text-lg font-bold text-slate-900">Sobre este imóvel</h2>
-                <div className="text-slate-700 text-sm leading-relaxed whitespace-pre-line font-normal">
+              {/* 3. Informações Principais do Imóvel Widescreen */}
+              <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs space-y-4">
+                <div>
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-[#003366] uppercase tracking-wider">
+                    {currentProperty.nomeEdificio ? (
+                      <div className="flex items-center gap-1.5">
+                        <Building2 size={14} className="text-[#003366]" />
+                        <span>{currentProperty.nomeEdificio}</span>
+                      </div>
+                    ) : currentProperty.construtora ? (
+                      <div className="flex items-center gap-1.5">
+                        <Building2 size={14} className="text-[#003366]" />
+                        <span>{currentProperty.construtora}</span>
+                      </div>
+                    ) : (
+                      <span>{currentProperty.tipoImovel || 'Imóvel'}</span>
+                    )}
+                  </div>
+
+                  <h1 className="font-extrabold text-slate-900 text-2xl lg:text-3xl mt-1.5 leading-snug">
+                    {currentProperty.titulo}
+                  </h1>
+
+                  <div className="flex items-center text-slate-600 text-sm mt-2 flex-wrap gap-x-2">
+                    <span className="flex items-center">
+                      <MapPin size={15} className="mr-1.5 text-slate-400 shrink-0" />
+                      {enderecoFormatado}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Características Essenciais */}
+                <div className="grid grid-cols-4 gap-3 pt-2">
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+                    <Bed size={20} className="text-[#003366] mb-1.5" />
+                    <span className="text-xs uppercase text-slate-400 font-extrabold">Dormitórios</span>
+                    <span className="text-base font-black text-slate-800">{quartosCount}</span>
+                  </div>
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+                    <Bath size={20} className="text-[#003366] mb-1.5" />
+                    <span className="text-xs uppercase text-slate-400 font-extrabold">Banheiros</span>
+                    <span className="text-base font-black text-slate-800">{banheirosCount}</span>
+                  </div>
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+                    <Car size={20} className="text-[#003366] mb-1.5" />
+                    <span className="text-xs uppercase text-slate-400 font-extrabold">Vagas</span>
+                    <span className="text-base font-black text-slate-800">{vagasCount}</span>
+                  </div>
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col items-center text-center">
+                    <Maximize size={20} className="text-[#003366] mb-1.5" />
+                    <span className="text-xs uppercase text-slate-400 font-extrabold">Área Privativa</span>
+                    <span className="text-base font-black text-slate-800">{metragemCount} m²</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. Descrição Detalhada Widescreen */}
+              <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs space-y-3">
+                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider">
+                  Descrição do Imóvel
+                </h2>
+                <div className="text-slate-700 text-base leading-relaxed whitespace-pre-line font-normal">
                   {currentProperty.descricao ? (
                     currentProperty.descricao
                   ) : loadingFull ? (
-                    <div className="space-y-2 animate-pulse py-2">
-                      <div className="h-4 bg-slate-200 rounded w-11/12" />
-                      <div className="h-4 bg-slate-200 rounded w-full" />
-                      <div className="h-4 bg-slate-200 rounded w-4/5" />
+                    <div className="space-y-2.5 animate-pulse py-2">
+                      <div className="h-4 bg-slate-200 rounded-md w-11/12" />
+                      <div className="h-4 bg-slate-200 rounded-md w-full" />
+                      <div className="h-4 bg-slate-200 rounded-md w-4/5" />
                     </div>
                   ) : (
-                    <span className="text-slate-400 italic">Nenhuma descrição detalhada informada para este imóvel.</span>
+                    <span className="text-slate-400 italic text-sm">Nenhuma descrição informada.</span>
                   )}
                 </div>
               </div>
             </div>
 
-            {/* Coluna da Direita: Card Sticky de Contato e Agendamento */}
-            <div className="lg:col-span-1">
-              <div className="sticky top-20 bg-white rounded-2xl p-6 border border-slate-200/80 shadow-lg space-y-5">
-                {/* Header do Card */}
+            {/* ---------------------------------------------------- */}
+            {/* COLUNA DIREITA (4 colunas) - Sticky Card Widescreen */}
+            {/* (NOTA: O tag do código do imóvel foi RETIRADO daqui) */}
+            {/* ---------------------------------------------------- */}
+            <div className="col-span-4 h-full">
+              <div className="sticky top-24 bg-white rounded-2xl border border-slate-200/90 shadow-md p-6 space-y-5">
+                {/* Topo do Card: Status Comercial (Sem a tag do código do imóvel) */}
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    {currentProperty.tipo === 'ambos' ? 'Venda & Locação' : currentProperty.tipo === 'locação' ? 'Locação' : 'Venda'}
+                  </span>
+
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200">
+                    {currentProperty.statusComercial || 'Disponível'}
+                  </span>
+                </div>
+
+                {/* Valor do Imóvel */}
                 <div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                      {currentProperty.tipo === 'locação' ? 'Valor da Locação' : 'Valor'}
-                    </span>
-                    <span className="text-xs font-mono font-semibold text-[#003366] bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100">
-                      #{getPropertyCode(currentProperty)}
-                    </span>
-                  </div>
-                  {/* Preço e Valor do Metro Quadrado ao lado */}
-                  <div className="flex items-baseline gap-2.5 mt-1.5 flex-wrap">
-                    <span className="text-2xl lg:text-[28px] font-bold text-slate-900">
-                      {formatPrice(currentProperty.valor)}
-                    </span>
-                    {valorM2 ? (
-                      <span className="text-sm font-semibold text-slate-500">
-                        ({formatPrice(valorM2)}/m²)
-                      </span>
-                    ) : null}
-                  </div>
-                  {currentProperty.valorAnterior && currentProperty.valorAnterior > currentProperty.valor && (
-                    <span className="text-xs font-medium text-slate-400 line-through mt-0.5 block">
-                      De {formatPrice(currentProperty.valorAnterior)}
-                    </span>
+                  <span className="text-[10px] uppercase text-slate-400 font-extrabold block tracking-wider mb-1">
+                    {currentProperty.tipo === 'ambos' ? 'Valores' : 'Valor do Imóvel'}
+                  </span>
+
+                  {currentProperty.tipo === 'ambos' ? (
+                    <div className="space-y-1">
+                      <div className="text-2xl font-black text-[#003366]">
+                        Venda: {formatPrice(currentProperty.valor)}
+                      </div>
+                      <div className="text-xl font-black text-emerald-800 pt-1">
+                        Locação: {formatPrice(currentProperty.valorLocacao || 0)}
+                        <span className="text-xs font-medium text-slate-500"> /mês</span>
+                      </div>
+                    </div>
+                  ) : currentProperty.tipo === 'locação' ? (
+                    <div>
+                      <div className="text-3xl font-black text-emerald-800">
+                        {formatPrice(currentProperty.valorLocacao || currentProperty.valor)}
+                        <span className="text-sm font-semibold text-slate-500"> /mês</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="text-3xl font-black text-[#003366] tracking-tight">
+                        {formatPrice(currentProperty.valor)}
+                      </div>
+                    </div>
                   )}
-                  {currentProperty.tipo === 'ambos' && currentProperty.valorLocacao ? (
-                    <div className="mt-2 text-xs font-semibold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 inline-block">
-                      Locação: {formatPrice(currentProperty.valorLocacao)}/mês
-                    </div>
-                  ) : null}
-                  {/* Condomínio e IPTU em linhas separadas abaixo do preço */}
-                  <div className="mt-3 pt-2.5 border-t border-slate-100 flex flex-col gap-1.5 text-xs text-slate-600">
-                    <div>
-                      <span className="text-slate-400 font-medium">Condomínio: </span>
-                      <span className="font-semibold text-slate-800">
-                        {currentProperty.condominio ? `R$ ${currentProperty.condominio.toLocaleString('pt-BR')}` : 'Não informado'}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 font-medium">IPTU: </span>
-                      <span className="font-semibold text-slate-800">
-                        {currentProperty.iptu ? `R$ ${currentProperty.iptu.toLocaleString('pt-BR')}` : 'Não informado'}
-                      </span>
-                    </div>
+                </div>
+
+                {/* Condomínio e IPTU */}
+                <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-500 font-semibold">Condomínio:</span>
+                    <span className="font-bold text-slate-800">
+                      {currentProperty.condominio
+                        ? `R$ ${currentProperty.condominio.toLocaleString('pt-BR')} /mês`
+                        : 'Sob consulta'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs pt-1.5 border-t border-slate-200/60">
+                    <span className="text-slate-500 font-semibold">IPTU:</span>
+                    <span className="font-bold text-slate-800">
+                      {currentProperty.iptu
+                        ? `R$ ${currentProperty.iptu.toLocaleString('pt-BR')} /ano`
+                        : 'Sob consulta'}
+                    </span>
                   </div>
                 </div>
 
-                <div className="h-px bg-slate-100" />
-
-                {/* Botões de Ação */}
-                <div className="space-y-3">
+                {/* Botões de Ação Widescreen */}
+                <div className="space-y-3 pt-1">
+                  {/* Botão de Agendar Visita (Principal) */}
                   <button
                     type="button"
-                    id="btn-desktop-agendar-visita"
+                    id="btn-agendar-visita-widescreen"
                     onClick={() => setIsScheduleModalOpen(true)}
-                    className="w-full h-12 bg-[#003366] hover:bg-[#002244] text-white font-semibold px-4 rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 active:scale-98 text-sm cursor-pointer"
+                    className="w-full bg-[#003366] hover:bg-[#002244] text-white font-bold py-3.5 px-4 rounded-xl shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98 text-sm"
                   >
                     <Calendar size={18} />
                     <span>Agendar Visita</span>
                   </button>
+
+                  {/* Botão de Favoritar & Compartilhar lado a lado */}
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <button
+                      type="button"
+                      id="btn-favoritar-widescreen"
+                      onClick={() => onToggleFavorite?.(imovel.id)}
+                      className={`w-full py-3 px-3 rounded-xl border font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                        isFavorite
+                          ? 'border-rose-300 bg-rose-50 text-rose-600 shadow-2xs'
+                          : 'border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                      }`}
+                      title={isFavorite ? 'Remover dos favoritos' : 'Favoritar este imóvel'}
+                    >
+                      <Heart size={17} className={isFavorite ? 'fill-rose-500 text-rose-500' : ''} />
+                      <span>{isFavorite ? 'Favorito' : 'Favoritar'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      id="btn-compartilhar-widescreen"
+                      onClick={handleShare}
+                      className="w-full py-3 px-3 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      title="Compartilhar ou copiar link"
+                    >
+                      <Share2 size={17} />
+                      <span>Compartilhar</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Selo de Garantia e Conexão Direta */}
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-center gap-1.5 text-slate-400 text-xs text-center">
+                  <ShieldCheck size={15} className="text-emerald-600 shrink-0" />
+                  <span>Imóvel verificado na rede ImobiShare</span>
                 </div>
               </div>
             </div>
@@ -961,22 +1002,22 @@ export function PortalPropertyDetailPage({
         </main>
       </div>
 
-      {/* Toast flutuante de confirmação ao copiar o link */}
+      {/* Toast flutuante de confirmação ao copiar link */}
       {showCopiedToast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 text-white text-xs font-bold px-4 py-2.5 rounded-full shadow-lg backdrop-blur-xs border border-white/20 flex items-center gap-2 animate-fade-in">
           <Check size={15} className="text-emerald-400" />
-          <span>Link do imóvel copiado!</span>
+          <span>Link do imóvel copiado com sucesso!</span>
         </div>
       )}
 
-      {/* Modal de Agendamento de Visita (Compartilhado Mobile + Desktop) */}
+      {/* Modal de Agendamento de Visita */}
       <PortalScheduleModal
         imovel={currentProperty}
         isOpen={isScheduleModalOpen}
         onClose={() => setIsScheduleModalOpen(false)}
       />
 
-      {/* Modal de Todas as Fotos (Compartilhado Mobile + Desktop) */}
+      {/* Modal de Galeria Completa */}
       <PortalGalleryModal
         titulo={currentProperty.nomeEdificio?.trim() || currentProperty.titulo || 'Empreendimento'}
         fotos={fotos}

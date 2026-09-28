@@ -3,717 +3,384 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import pg from 'pg';
+import { Pool, QueryResult } from 'pg';
+import bcrypt from 'bcryptjs';
 import fs from 'fs/promises';
 import path from 'path';
-import bcrypt from 'bcryptjs';
-import { Imovel, Corretor, CorretorImovel, ImovelOrigem, ImovelHistorico } from './src/types';
+import { Imovel, Corretor, Parceria, Favorito } from './src/types';
 
-interface DbSchema {
-  brokers: Corretor[];
-  properties: Imovel[];
-  partnerships: { corretorEmail: string; corretorParceiroEmail: string }[];
-  favorites: { corretorEmail: string; imovelId: string }[];
-  corretorImoveis?: CorretorImovel[];
-  imovelOrigens?: ImovelOrigem[];
-  imovelHistorico?: ImovelHistorico[];
+// Helper for error logging
+export function logBackendError(endpoint: string, err: any): void {
+  const msg = err?.message || String(err);
+  const stack = err?.stack || '';
+  console.error(`❌ [BACKEND ERROR] ${endpoint} -> ${msg}`, stack ? `\n${stack}` : '');
 }
 
-// In-memory log store for recent backend errors
-export const recentErrorLogs: Array<{ timestamp: string; route: string; error: string }> = [];
-
-export function logBackendError(route: string, error: any) {
-  const message = error?.message || String(error);
-  console.error(`❌ [BACKEND ERROR] [${route}]:`, message);
-  recentErrorLogs.unshift({
-    timestamp: new Date().toISOString(),
-    route,
-    error: message,
-  });
-  if (recentErrorLogs.length > 50) {
-    recentErrorLogs.pop();
+// Helper for memory logging
+export function logMemory(context?: string): void {
+  const mem = process.memoryUsage();
+  const heapMB = Math.round(mem.heapUsed / 1024 / 1024);
+  const rssMB = Math.round(mem.rss / 1024 / 1024);
+  if (heapMB > 300) {
+    console.warn(`⚠️ [HIGH MEMORY] ${context ? `(${context}) ` : ''}Heap: ${heapMB}MB, RSS: ${rssMB}MB`);
   }
 }
 
-export function logMemory(label: string) {
-  const memory = process.memoryUsage();
-  console.log(`[MEMORY] ${label}:`, {
-    rss: Math.round(memory.rss / 1024 / 1024) + ' MB',
-    heapUsed: Math.round(memory.heapUsed / 1024 / 1024) + ' MB',
-    heapTotal: Math.round(memory.heapTotal / 1024 / 1024) + ' MB'
-  });
-}
-
-export interface GetImoveisOptions {
-  userEmail?: string;
-  page?: number;
-  limit?: number;
-  paginate?: boolean;
-  cidade?: string;
-  bairro?: string;
-  finalidade?: string;
-  tipo?: string;
-  categoria?: string;
-  tipoImovel?: string;
-  statusImovel?: string;
-  busca?: string;
-  precoMin?: number;
-  precoMax?: number;
-  quartos?: number;
-  quartosMin?: number;
-  banheiros?: number;
-  banheirosMin?: number;
-  vagas?: number;
-  vagasMin?: number;
-  metragemMin?: number;
-  metragemMax?: number;
-  construtora?: string;
-}
-
-export interface PaginatedResult<T> {
-  data: T[];
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-  hasMore: boolean;
-}
-
-export interface MapFilterParams {
-  cidade?: string;
-  finalidade?: string;
-  categoria?: string;
-  tipoImovel?: string;
-  statusImovel?: string;
-  busca?: string;
-  precoMin?: number;
-  precoMax?: number;
-  quartosMin?: number;
-  banheirosMin?: number;
-  vagasMin?: number;
-  metragemMin?: number;
-  metragemMax?: number;
-  bairro?: string;
-  construtora?: string;
-}
-
-export interface MapMarkerResult {
-  id: string;
-  latitude: number;
-  longitude: number;
-  valor_venda?: number;
-  valor_locacao?: number;
-  tipo?: string;
-  modalidade?: string;
-  valor?: number;
-  titulo?: string;
-  nomeEdificio?: string;
-  bairro?: string;
-  cidade?: string;
-  dormitorios?: number;
-  vagas?: number;
-  metragem?: number;
-  corretorEmail?: string;
-  fotos?: string[];
+interface LocalJsonDb {
+  brokers: Corretor[];
+  properties: Imovel[];
+  partnerships: Parceria[];
+  favorites: Favorito[];
 }
 
 export class ServerDb {
-  private static pool: pg.Pool | null = null;
-  private static isPostgres = false;
-  private static jsonPath = path.resolve(process.cwd(), 'imobishare_db.json');
-
-  static async init(): Promise<void> {
-    const dbUrl = process.env.DATABASE_URL;
-    if (dbUrl) {
-      console.log('🔌 Conectando ao banco de dados PostgreSQL...');
-      try {
-        this.pool = new pg.Pool({
-          connectionString: dbUrl,
-          ssl: { rejectUnauthorized: false },
-          max: 10,
-          idleTimeoutMillis: 30000,
-          connectionTimeoutMillis: 5000,
-        });
-        this.pool.on('error', (err) => {
-          console.error('⚠️ [Postgres Pool Error]:', err?.message || err);
-        });
-        await this.pool.query('SELECT NOW()');
-        this.isPostgres = true;
-        console.log('✅ Conectado ao PostgreSQL com sucesso!');
-        await this.createTables();
-        await this.seedInitialAdminIfNeeded();
-      } catch (err: any) {
-        logBackendError('ServerDb.init', err);
-        console.error('⚠️ Falha ao conectar ao PostgreSQL. Ativando fallback JSON DB:', err?.message);
-        this.isPostgres = false;
-        await this.initJsonDb();
-      }
-    } else {
-      console.log('📂 Sem DATABASE_URL definida. Utilizando banco de dados JSON persistente...');
-      this.isPostgres = false;
-      await this.initJsonDb();
-    }
-  }
-
-  private static async createTables(): Promise<void> {
-    if (!this.pool) return;
-
-    // 1. Tabela corretores
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS corretores (
-        email VARCHAR(255) PRIMARY KEY,
-        id VARCHAR(100),
-        nome VARCHAR(255) NOT NULL,
-        creci VARCHAR(100),
-        telefone VARCHAR(100),
-        cidade VARCHAR(255),
-        estado VARCHAR(100),
-        imobiliaria_ou_autonomo VARCHAR(100),
-        foto_url TEXT,
-        slug_site VARCHAR(255) UNIQUE,
-        is_admin BOOLEAN DEFAULT false,
-        restringir_parceiros BOOLEAN DEFAULT false,
-        parceiros_emails TEXT DEFAULT '[]',
-        password TEXT
-      );
-    `);
-
-    // Ensure columns exist on legacy tables
-    await this.pool.query(`ALTER TABLE corretores ADD COLUMN IF NOT EXISTS slug_site VARCHAR(255);`);
-    await this.pool.query(`ALTER TABLE corretores ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT false;`);
-    await this.pool.query(`ALTER TABLE corretores ADD COLUMN IF NOT EXISTS imobiliaria_ou_autonomo VARCHAR(100);`);
-    await this.pool.query(`ALTER TABLE corretores ADD COLUMN IF NOT EXISTS restringir_parceiros BOOLEAN DEFAULT false;`);
-    await this.pool.query(`ALTER TABLE corretores ADD COLUMN IF NOT EXISTS parceiros_emails TEXT DEFAULT '[]';`);
-    await this.pool.query(`ALTER TABLE corretores ADD COLUMN IF NOT EXISTS password TEXT;`);
-    await this.pool.query(`ALTER TABLE corretores ADD COLUMN IF NOT EXISTS reset_token TEXT;`);
-    await this.pool.query(`ALTER TABLE corretores ADD COLUMN IF NOT EXISTS reset_token_expires BIGINT;`);
-
-    // 2. Tabela imoveis
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS imoveis (
-        id VARCHAR(100) PRIMARY KEY,
-        corretor_email VARCHAR(255) NOT NULL REFERENCES corretores(email) ON DELETE CASCADE,
-        cep VARCHAR(20),
-        endereco TEXT,
-        cidade VARCHAR(100) NOT NULL,
-        bairro VARCHAR(100) NOT NULL,
-        tipo VARCHAR(100) NOT NULL,
-        modalidade VARCHAR(50) NOT NULL,
-        valor_venda NUMERIC,
-        status_imovel TEXT,
-        valor_locacao NUMERIC,
-        quartos INTEGER DEFAULT 0,
-        bwc INTEGER DEFAULT 0,
-        vagas INTEGER DEFAULT 0,
-        area_privativa NUMERIC DEFAULT 0,
-        nome_edificio VARCHAR(255),
-        titulo VARCHAR(255) NOT NULL,
-        palavra_destacada VARCHAR(20),
-        descricao TEXT NOT NULL,
-        visibilidade VARCHAR(50) DEFAULT 'todos',
-        dados_proprietario TEXT,
-        imagens TEXT NOT NULL,
-        data_cadastro VARCHAR(100) NOT NULL,
-        origem VARCHAR(100) DEFAULT 'Imobishare',
-        construtora VARCHAR(255),
-        codigo VARCHAR(50)
-      );
-    `);
-
-    // Ensure columns on imoveis
-    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS palavra_destacada VARCHAR(20);`);
-    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS status_imovel TEXT;`);
-    await this.pool.query(`ALTER TABLE imoveis DROP COLUMN IF EXISTS valor_venda_com_desconto;`);
-    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS visibilidade VARCHAR(50) DEFAULT 'todos';`);
-    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS valor_anterior NUMERIC;`);
-    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS valor_locacao_anterior NUMERIC;`);
-    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS informacoes TEXT;`);
-    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS origem VARCHAR(100) DEFAULT 'Imobishare';`);
-    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS construtora VARCHAR(255);`);
-    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS website VARCHAR(10) DEFAULT 'SIM';`);
-    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS compartilhar VARCHAR(10) DEFAULT 'SIM';`);
-    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS codigo VARCHAR(50);`);
-    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS codigo_im VARCHAR(50);`);
-    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS unidade VARCHAR(50);`);
-    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS bloco_torre VARCHAR(50);`);
-    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS condicao_imovel VARCHAR(50);`);
-    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS status_global VARCHAR(50) DEFAULT 'Disponivel';`);
-    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS escopo VARCHAR(20) DEFAULT 'CARTEIRA';`);
-    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS latitude NUMERIC;`);
-    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS longitude NUMERIC;`);
-    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS condominio NUMERIC;`);
-    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS iptu NUMERIC;`);
-    await this.pool.query(`ALTER TABLE imoveis ADD COLUMN IF NOT EXISTS telefone_construtora VARCHAR(100);`);
-
-    // Ensure role on corretores
-    await this.pool.query(`ALTER TABLE corretores ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'corretor';`);
-
-    // 3. Tabela parcerias
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS parcerias (
-        corretor_email VARCHAR(255) NOT NULL,
-        corretor_parceiro_email VARCHAR(255) NOT NULL,
-        PRIMARY KEY (corretor_email, corretor_parceiro_email)
-      );
-    `);
-
-    // 4. Tabela favoritos
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS favoritos (
-        corretor_email VARCHAR(255) NOT NULL,
-        imovel_id VARCHAR(100) NOT NULL REFERENCES imoveis(id) ON DELETE CASCADE,
-        PRIMARY KEY (corretor_email, imovel_id)
-      );
-    `);
-
-    // 5. Nova Tabela corretor_imoveis (Relação Corretor ↔ Imóvel Central)
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS corretor_imoveis (
-        id VARCHAR(100) PRIMARY KEY,
-        corretor_email VARCHAR(255) NOT NULL REFERENCES corretores(email) ON DELETE CASCADE,
-        imovel_id VARCHAR(100) NOT NULL REFERENCES imoveis(id) ON DELETE CASCADE,
-        status_carteira VARCHAR(50) DEFAULT 'Disponivel',
-        dados_proprietario TEXT,
-        nome_proprietario VARCHAR(255),
-        telefone_proprietario VARCHAR(100),
-        comissao NUMERIC,
-        autorizacao VARCHAR(100),
-        observacoes_internas TEXT,
-        criado_em TIMESTAMP DEFAULT NOW(),
-        CONSTRAINT uq_corretor_imovel UNIQUE(corretor_email, imovel_id)
-      );
-    `);
-
-    // 6. Nova Tabela imovel_origens (Rastreamento DWV / Manual / XML)
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS imovel_origens (
-        id SERIAL PRIMARY KEY,
-        imovel_id VARCHAR(100) NOT NULL REFERENCES imoveis(id) ON DELETE CASCADE,
-        origem VARCHAR(100) NOT NULL,
-        origem_id VARCHAR(255),
-        ultima_sincronizacao TIMESTAMP DEFAULT NOW(),
-        CONSTRAINT uq_imovel_origem UNIQUE(imovel_id, origem)
-      );
-    `);
-
-    // 7. Nova Tabela imovel_historico (Auditoria de alterações)
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS imovel_historico (
-        id SERIAL PRIMARY KEY,
-        imovel_id VARCHAR(100) NOT NULL REFERENCES imoveis(id) ON DELETE CASCADE,
-        usuario_email VARCHAR(255) NOT NULL,
-        tipo_usuario VARCHAR(50) DEFAULT 'corretor',
-        campo_alterado VARCHAR(100) NOT NULL,
-        valor_anterior TEXT,
-        valor_novo TEXT,
-        data_hora TIMESTAMP DEFAULT NOW()
-      );
-    `);
-
-    // 8. Nova Tabela imovel_duplicidades_revisao (Fila de decisões para o Admin)
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS imovel_duplicidades_revisao (
-        id SERIAL PRIMARY KEY,
-        imovel_novo_id VARCHAR(100),
-        imovel_existente_id VARCHAR(100),
-        corretor_email VARCHAR(255),
-        grau_confianca VARCHAR(50),
-        motivo TEXT,
-        status VARCHAR(50) DEFAULT 'PENDENTE',
-        criado_em TIMESTAMP DEFAULT NOW()
-      );
-    `);
-
-    console.log('✅ Tabelas do PostgreSQL verificadas.');
-
-    // Auto-migração não destrutiva para gerar códigos IM únicos (IM000001, IM000002...)
-    try {
-      if (this.isPostgres && this.pool) {
-        // Encontrar maior sequência atual de IM
-        const maxImRes = await this.pool.query(`
-          SELECT codigo_im, id, codigo FROM imoveis 
-          WHERE codigo_im LIKE 'IM%' OR id LIKE 'IM%' OR codigo LIKE 'IM%'
-        `);
-        let maxImSeq = 0;
-        for (const row of maxImRes.rows) {
-          const val = (row.codigo_im || row.id || row.codigo || '').toUpperCase();
-          if (val.startsWith('IM')) {
-            const num = parseInt(val.substring(2), 10);
-            if (!isNaN(num) && num > maxImSeq) {
-              maxImSeq = num;
-            }
-          }
-        }
-
-        // Atribuir codigo_im para todos os imóveis que ainda não possuem
-        const semImRes = await this.pool.query(`
-          SELECT id, corretor_email, dados_proprietario, status_imovel, origem 
-          FROM imoveis 
-          WHERE codigo_im IS NULL OR codigo_im = ''
-          ORDER BY data_cadastro ASC
-        `);
-
-        if (semImRes.rows.length > 0) {
-          console.log(`🔄 Atribuindo códigos centrais IM para ${semImRes.rows.length} imóveis existentes...`);
-          for (const row of semImRes.rows) {
-            maxImSeq++;
-            const newImCode = `IM${String(maxImSeq).padStart(6, '0')}`;
-            const isDwv = (row.origem && (row.origem.toLowerCase().includes('dwv') || row.origem.toLowerCase().includes('portal')));
-            const escopo = isDwv ? 'REDE' : 'CARTEIRA';
-            const condicao = (row.status_imovel === 'Na planta' || row.status_imovel === 'Mobiliado' || row.status_imovel === 'Sem mobília')
-              ? row.status_imovel
-              : 'Pronto para morar';
-
-            await this.pool.query(`
-              UPDATE imoveis 
-              SET codigo_im = $1,
-                  escopo = COALESCE(escopo, $2),
-                  condicao_imovel = COALESCE(condicao_imovel, $3),
-                  status_global = COALESCE(status_global, 'Disponivel')
-              WHERE id = $4
-            `, [newImCode, escopo, condicao, row.id]);
-
-            // Se for imóvel de corretor, garantir registro na tabela corretor_imoveis
-            if (row.corretor_email) {
-              const relId = `rel-${row.id}-${row.corretor_email.replace(/[^a-z0-9]/gi, '_')}`;
-              await this.pool.query(`
-                INSERT INTO corretor_imoveis (id, corretor_email, imovel_id, status_carteira, dados_proprietario)
-                VALUES ($1, $2, $3, 'Disponivel', $4)
-                ON CONFLICT (corretor_email, imovel_id) DO NOTHING
-              `, [relId, row.corretor_email, row.id, row.dados_proprietario || '']);
-            }
-          }
-          console.log('✅ Atribuição de códigos centrais IM concluída com sucesso.');
-        }
-      }
-    } catch (migErr) {
-      console.warn('Aviso durante migração de códigos IM:', migErr);
-    }
-
-    // Run migration for legacy IDs (prop-*, imovel-*) to short codes (e.g., FRE1, FRE2)
-    try {
-      if (this.isPostgres && this.pool) {
-        const legacyRes = await this.pool.query(
-          `SELECT i.id, i.corretor_email, c.nome AS corretor_nome 
-           FROM imoveis i 
-           LEFT JOIN corretores c ON LOWER(i.corretor_email) = LOWER(c.email) 
-           WHERE i.id LIKE 'prop-%' OR i.id LIKE 'imovel-%' 
-           ORDER BY i.data_cadastro ASC`
-        );
-        if (legacyRes.rows.length > 0) {
-          console.log(`🔄 Migrando ${legacyRes.rows.length} imóveis para códigos curtos sequenciais...`);
-          for (const r of legacyRes.rows) {
-            const newId = await this.generateNextPropertyId(r.corretor_email, r.corretor_nome);
-            await this.pool.query("UPDATE imoveis SET id = $1, codigo = $1 WHERE id = $2", [newId, r.id]);
-            await this.pool.query("UPDATE favoritos SET imovel_id = $1 WHERE imovel_id = $2", [newId, r.id]).catch(() => {});
-          }
-          console.log('✅ Migração para códigos curtos concluída.');
-        }
-      }
-    } catch (migErr) {
-      console.warn('Aviso durante migração de códigos curtos:', migErr);
-    }
-  }
-
-  static async generateNextPropertyId(corretorEmail: string, corretorNome?: string): Promise<string> {
-    const cleanEmail = (corretorEmail || '').toLowerCase().trim();
-    let broker = await this.getCorretorByEmail(cleanEmail);
-    const name = corretorNome || broker?.nome || cleanEmail.split('@')[0] || 'Corretor';
-    
-    // Extract 3 uppercase letters from last name (e.g. Freccia -> FRE)
-    const normalized = name.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z\s]/g, '');
-    const words = normalized.split(/\s+/).filter(Boolean);
-    const lastName = words.length > 1 ? words[words.length - 1] : (words[0] || 'IMO');
-    let clean = lastName.toUpperCase().replace(/[^A-Z]/g, '');
-    if (clean.length < 3) clean = clean.padEnd(3, 'X');
-    const prefix = clean.substring(0, 3);
-
-    let allPropsWithPrefix: { id: string; codigo?: string }[] = [];
-    if (this.isPostgres && this.pool) {
-      const res = await this.pool.query('SELECT id, codigo FROM imoveis WHERE UPPER(id) LIKE $1 OR UPPER(codigo) LIKE $1', [`${prefix}%`]);
-      allPropsWithPrefix = res.rows;
-    } else {
-      const db = await this.readJson();
-      allPropsWithPrefix = db.properties.filter(p => (p.id || '').toUpperCase().startsWith(prefix) || (p.codigo || '').toUpperCase().startsWith(prefix));
-    }
-
-    let maxSeq = 0;
-    for (const p of allPropsWithPrefix) {
-      const valToCheck = (p.codigo || p.id || '').toUpperCase();
-      if (valToCheck.startsWith(prefix)) {
-        const numPart = valToCheck.substring(prefix.length);
-        const parsed = parseInt(numPart, 10);
-        if (!isNaN(parsed) && parsed > maxSeq) {
-          maxSeq = parsed;
-        }
-      }
-    }
-
-    const nextSeq = maxSeq + 1;
-    return `${prefix}${nextSeq}`;
-  }
+  public static isPostgres = false;
+  public static pool: Pool | null = null;
+  private static jsonDbPath = path.join(process.cwd(), 'imobishare_db.json');
+  private static localData: LocalJsonDb = {
+    brokers: [],
+    properties: [],
+    partnerships: [],
+    favorites: []
+  };
 
   /**
-   * Generates the next central unique property code (IM000001, IM000002, etc.)
-   * 1 Imóvel Físico = 1 Código Único IM.
+   * Inicializa o banco de dados (PostgreSQL Neon ou Local JSON fallback)
    */
-  static async generateNextCentralImCode(): Promise<string> {
-    let maxSeq = 0;
-    if (this.isPostgres && this.pool) {
-      const res = await this.pool.query(`
-        SELECT codigo_im, id, codigo FROM imoveis 
-        WHERE codigo_im LIKE 'IM%' OR id LIKE 'IM%' OR codigo LIKE 'IM%'
+  public static async init(): Promise<void> {
+    const dbUrl = process.env.DATABASE_URL;
+
+    if (dbUrl && dbUrl.trim() !== '') {
+      try {
+        console.log('🔌 Conectando ao PostgreSQL (Neon)...');
+        this.pool = new Pool({
+          connectionString: dbUrl.trim(),
+          ssl: { rejectUnauthorized: false },
+          max: 15,
+          idleTimeoutMillis: 30000,
+          connectionTimeoutMillis: 10000
+        });
+
+        // Test connection
+        const client = await this.pool.connect();
+        try {
+          const res = await client.query('SELECT NOW() as now, current_database() as db');
+          console.log(`✅ Conectado ao PostgreSQL Neon (${res.rows[0].db}) em ${res.rows[0].now}`);
+          this.isPostgres = true;
+
+          // Garantir tabelas e índices essenciais
+          await this.ensureTables(client);
+        } finally {
+          client.release();
+        }
+        return;
+      } catch (err: any) {
+        console.warn('⚠️ Falha ao conectar ao PostgreSQL. Alternando para banco local JSON:', err?.message);
+        this.isPostgres = false;
+        this.pool = null;
+      }
+    }
+
+    // Fallback JSON
+    console.log('📁 Inicializando banco de dados local JSON (imobishare_db.json)...');
+    await this.loadLocalJson();
+  }
+
+  private static async ensureTables(client: any): Promise<void> {
+    try {
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS corretores (
+          email VARCHAR PRIMARY KEY,
+          id VARCHAR,
+          nome VARCHAR,
+          creci VARCHAR,
+          telefone VARCHAR,
+          cidade VARCHAR,
+          estado VARCHAR,
+          imobiliaria_ou_autonomo VARCHAR,
+          foto_url TEXT,
+          slug_site VARCHAR,
+          is_admin BOOLEAN DEFAULT FALSE,
+          restringir_parceiros BOOLEAN DEFAULT FALSE,
+          parceiros_emails TEXT,
+          password TEXT,
+          reset_token TEXT,
+          reset_token_expires BIGINT,
+          role VARCHAR
+        );
+
+        CREATE TABLE IF NOT EXISTS imoveis (
+          id VARCHAR PRIMARY KEY,
+          corretor_email VARCHAR,
+          cep VARCHAR,
+          endereco TEXT,
+          cidade VARCHAR,
+          bairro VARCHAR,
+          tipo VARCHAR,
+          modalidade VARCHAR,
+          valor_venda NUMERIC,
+          valor_locacao NUMERIC,
+          quartos INTEGER,
+          bwc INTEGER,
+          vagas INTEGER,
+          area_privativa NUMERIC,
+          nome_edificio VARCHAR,
+          titulo VARCHAR,
+          palavra_destacada VARCHAR,
+          descricao TEXT,
+          visibilidade VARCHAR,
+          dados_proprietario TEXT,
+          imagens TEXT,
+          data_cadastro VARCHAR,
+          valor_anterior NUMERIC,
+          valor_locacao_anterior NUMERIC,
+          informacoes TEXT,
+          status_imovel TEXT,
+          origem VARCHAR,
+          construtora VARCHAR,
+          website VARCHAR,
+          compartilhar VARCHAR,
+          codigo VARCHAR,
+          latitude NUMERIC,
+          longitude NUMERIC,
+          condominio NUMERIC,
+          iptu NUMERIC,
+          codigo_im VARCHAR,
+          unidade VARCHAR,
+          bloco_torre VARCHAR,
+          condicao_imovel VARCHAR,
+          status_global VARCHAR,
+          escopo VARCHAR,
+          telefone_construtora VARCHAR,
+          atualizado_dw TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS parcerias (
+          corretor_email VARCHAR,
+          corretor_parceiro_email VARCHAR,
+          PRIMARY KEY (corretor_email, corretor_parceiro_email)
+        );
+
+        CREATE TABLE IF NOT EXISTS favoritos (
+          corretor_email VARCHAR,
+          imovel_id VARCHAR,
+          PRIMARY KEY (corretor_email, imovel_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS corretor_imoveis (
+          id VARCHAR PRIMARY KEY,
+          corretor_email VARCHAR,
+          imovel_id VARCHAR,
+          status_carteira VARCHAR,
+          dados_proprietario TEXT,
+          nome_proprietario VARCHAR,
+          telefone_proprietario VARCHAR,
+          comissao NUMERIC,
+          autorizacao VARCHAR,
+          observacoes_internas TEXT,
+          criado_em TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS imovel_origens (
+          id SERIAL PRIMARY KEY,
+          imovel_id VARCHAR,
+          origem VARCHAR,
+          origem_id VARCHAR,
+          ultima_sincronizacao TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS imovel_duplicidades_revisao (
+          id SERIAL PRIMARY KEY,
+          imovel_novo_id VARCHAR,
+          imovel_existente_id VARCHAR,
+          corretor_email VARCHAR,
+          grau_confianca VARCHAR,
+          motivo TEXT,
+          status VARCHAR,
+          criado_em TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS imovel_historico (
+          id SERIAL PRIMARY KEY,
+          imovel_id VARCHAR,
+          usuario_email VARCHAR,
+          tipo_usuario VARCHAR,
+          campo_alterado VARCHAR,
+          valor_anterior TEXT,
+          valor_novo TEXT,
+          data_hora TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+        );
       `);
-      for (const r of res.rows) {
-        const val = (r.codigo_im || r.id || r.codigo || '').toUpperCase();
-        if (val.startsWith('IM')) {
-          const num = parseInt(val.substring(2), 10);
-          if (!isNaN(num) && num > maxSeq) {
-            maxSeq = num;
-          }
-        }
-      }
-    } else {
-      const db = await this.readJson();
-      for (const p of db.properties) {
-        const val = (p.codigoIm || p.id || p.codigo || '').toUpperCase();
-        if (val.startsWith('IM')) {
-          const num = parseInt(val.substring(2), 10);
-          if (!isNaN(num) && num > maxSeq) {
-            maxSeq = num;
-          }
-        }
-      }
-    }
-    const nextSeq = maxSeq + 1;
-    return `IM${String(nextSeq).padStart(6, '0')}`;
-  }
 
-  private static async seedInitialAdminIfNeeded(): Promise<void> {
-    if (!this.pool) return;
-    try {
-      // Ensure admin flag and role = 'admin' is set for afreccia@gmail.com without overwriting user's real name/creci
-      const adminEmail = 'afreccia@gmail.com';
-      await this.pool.query(`
-        UPDATE corretores SET is_admin = true, role = 'admin' WHERE LOWER(email) = $1;
-      `, [adminEmail]);
-    } catch (e) {
-      // ignore
+      // Índices úteis
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_imoveis_cidade ON imoveis (cidade);
+        CREATE INDEX IF NOT EXISTS idx_imoveis_corretor ON imoveis (corretor_email);
+        CREATE INDEX IF NOT EXISTS idx_imoveis_codigo ON imoveis (codigo);
+        CREATE INDEX IF NOT EXISTS idx_imoveis_codigo_im ON imoveis (codigo_im);
+      `);
+    } catch (err: any) {
+      console.warn('Aviso ao validar tabelas no PostgreSQL:', err?.message);
     }
   }
 
-  private static async initJsonDb(): Promise<void> {
+  private static async loadLocalJson(): Promise<void> {
     try {
-      await fs.access(this.jsonPath);
-    } catch {
-      const defaultDb: DbSchema = {
-        brokers: [],
-        properties: [],
-        partnerships: [],
-        favorites: []
+      const data = await fs.readFile(this.jsonDbPath, 'utf-8');
+      const parsed = JSON.parse(data);
+      this.localData = {
+        brokers: parsed.brokers || [],
+        properties: parsed.properties || [],
+        partnerships: parsed.partnerships || [],
+        favorites: parsed.favorites || []
       };
-      await fs.writeFile(this.jsonPath, JSON.stringify(defaultDb, null, 2), 'utf-8');
-    }
-  }
-
-  private static async readJson(): Promise<DbSchema> {
-    try {
-      const data = await fs.readFile(this.jsonPath, 'utf-8');
-      return JSON.parse(data);
     } catch {
-      await this.initJsonDb();
-      const data = await fs.readFile(this.jsonPath, 'utf-8');
-      return JSON.parse(data);
+      this.localData = { brokers: [], properties: [], partnerships: [], favorites: [] };
+      await this.saveLocalJson();
     }
   }
 
-  private static async writeJson(db: DbSchema): Promise<void> {
-    await fs.writeFile(this.jsonPath, JSON.stringify(db, null, 2), 'utf-8');
-  }
-
-  // --- CORRETORES ---
-
-  static async getAllCorretores(): Promise<Corretor[]> {
-    if (this.isPostgres && this.pool) {
-      const res = await this.pool.query('SELECT * FROM corretores');
-      return res.rows.map(r => ({
-        id: r.id || `broker-${r.email.toLowerCase().replace(/[^a-z0-9]/gi, '_')}`,
-        email: r.email,
-        nome: r.nome,
-        creci: r.creci || '',
-        telefone: r.telefone || '',
-        whatsapp: r.telefone || '',
-        cidade: r.cidade || '',
-        estado: r.estado || '',
-        imobiliaria: r.imobiliaria_ou_autonomo || '',
-        tipoAtuacao: r.imobiliaria_ou_autonomo === 'autonomo' ? 'autonomo' : 'imobiliaria',
-        foto: r.foto_url || '',
-        slugSite: r.slug_site || '',
-        isAdmin: Boolean(r.is_admin),
-        restringirParceiros: Boolean(r.restringir_parceiros),
-        parceirosEmails: Array.isArray(r.parceiros_emails) ? r.parceiros_emails : (r.parceiros_emails ? JSON.parse(r.parceiros_emails) : [])
-      }));
-    } else {
-      const db = await this.readJson();
-      return db.brokers || [];
+  private static async saveLocalJson(): Promise<void> {
+    try {
+      await fs.writeFile(this.jsonDbPath, JSON.stringify(this.localData, null, 2), 'utf-8');
+    } catch (err) {
+      console.warn('Erro ao salvar imobishare_db.json:', err);
     }
   }
 
-  static async hashPassword(password: string): Promise<string> {
-    if (!password) return '';
-    if (password.startsWith('$2a$') || password.startsWith('$2b$')) return password;
+  public static async runDiagnostics(): Promise<any> {
+    let dbStatus: 'success' | 'error' = 'success';
+    let dbType = this.isPostgres ? 'PostgreSQL (Neon)' : 'Local JSON';
+    let countProperties = 0;
+    let countBrokers = 0;
+    let message = 'Banco de dados operacional';
+
+    try {
+      if (this.isPostgres && this.pool) {
+        const propCountRes = await this.pool.query('SELECT COUNT(*) as count FROM imoveis');
+        const brokerCountRes = await this.pool.query('SELECT COUNT(*) as count FROM corretores');
+        countProperties = parseInt(propCountRes.rows[0].count, 10);
+        countBrokers = parseInt(brokerCountRes.rows[0].count, 10);
+        message = `PostgreSQL Neon ativo com ${countProperties} imóveis e ${countBrokers} corretores.`;
+      } else {
+        countProperties = this.localData.properties.length;
+        countBrokers = this.localData.brokers.length;
+        message = `Banco Local JSON com ${countProperties} imóveis e ${countBrokers} corretores.`;
+      }
+    } catch (err: any) {
+      dbStatus = 'error';
+      message = `Erro ao diagnosticar banco: ${err?.message || err}`;
+    }
+
+    return {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      checks: {
+        database: {
+          id: 'db-check',
+          name: 'Banco de Dados',
+          description: 'Conexão e integridade com a base de dados',
+          status: dbStatus,
+          type: dbType,
+          message,
+          details: {
+            totalImoveis: countProperties,
+            totalCorretores: countBrokers
+          }
+        }
+      }
+    };
+  }
+
+  // --- PASSWORD UTILITIES ---
+  public static async hashPassword(password: string): Promise<string> {
     return await bcrypt.hash(password, 10);
   }
 
-  static async verifyPassword(password: string, hash: string): Promise<boolean> {
-    if (!hash || !password) return false;
+  public static async verifyPassword(password: string, hash: string): Promise<boolean> {
+    if (!hash) return false;
     if (hash.startsWith('$2a$') || hash.startsWith('$2b$')) {
-      return await bcrypt.compare(password, hash);
+      try {
+        return await bcrypt.compare(password, hash);
+      } catch {
+        return false;
+      }
     }
-    // Fallback for plain text legacy passwords
     return password === hash;
   }
 
-  static async getCorretorByPhone(phone: string): Promise<Corretor | null> {
-    const targetDigits = phone ? phone.replace(/\D/g, '') : '';
-    if (!targetDigits || targetDigits.length < 8) return null;
+  // --- CORRETORES ---
+  public static async getCorretorByEmail(email: string): Promise<Corretor | null> {
+    const cleanEmail = email.toLowerCase().trim();
+    if (this.isPostgres && this.pool) {
+      const res = await this.pool.query('SELECT * FROM corretores WHERE LOWER(email) = LOWER($1)', [cleanEmail]);
+      if (res.rows.length === 0) return null;
+      return this.mapRowToCorretor(res.rows[0]);
+    }
+
+    const found = this.localData.brokers.find(b => b.email.toLowerCase().trim() === cleanEmail);
+    return found ? { ...found } : null;
+  }
+
+  public static async getCorretorByPhone(phone: string): Promise<Corretor | null> {
+    const cleanDigits = phone.replace(/\D/g, '');
+    if (!cleanDigits) return null;
 
     if (this.isPostgres && this.pool) {
-      const res = await this.pool.query('SELECT * FROM corretores WHERE telefone IS NOT NULL AND telefone <> \'\'');
-      for (const r of res.rows) {
-        const dbDigits = (r.telefone || '').replace(/\D/g, '');
-        if (dbDigits && (dbDigits === targetDigits || (dbDigits.length >= 8 && targetDigits.length >= 8 && (dbDigits.endsWith(targetDigits) || targetDigits.endsWith(dbDigits))))) {
-          return {
-            id: r.id || `broker-${r.email.replace(/[^a-z0-9]/gi, '_')}`,
-            email: r.email,
-            nome: r.nome,
-            creci: r.creci || '',
-            telefone: r.telefone || '',
-            whatsapp: r.telefone || '',
-            cidade: r.cidade || '',
-            estado: r.estado || '',
-            imobiliaria: r.imobiliaria_ou_autonomo || '',
-            tipoAtuacao: r.imobiliaria_ou_autonomo === 'autonomo' ? 'autonomo' : 'imobiliaria',
-            foto: r.foto_url || '',
-            slugSite: r.slug_site || '',
-            isAdmin: Boolean(r.is_admin) || (r.email && r.email.toLowerCase().trim() === 'afreccia@gmail.com'),
-            password: r.password || '',
-            restringirParceiros: Boolean(r.restringir_parceiros),
-            parceirosEmails: Array.isArray(r.parceiros_emails) ? r.parceiros_emails : (r.parceiros_emails ? JSON.parse(r.parceiros_emails) : [])
-          };
+      const res = await this.pool.query('SELECT * FROM corretores');
+      for (const row of res.rows) {
+        const rowDigits = (row.telefone || '').replace(/\D/g, '');
+        if (rowDigits && (rowDigits === cleanDigits || rowDigits.endsWith(cleanDigits) || cleanDigits.endsWith(rowDigits))) {
+          return this.mapRowToCorretor(row);
         }
       }
       return null;
-    } else {
-      const db = await this.readJson();
-      const found = (db.brokers || []).find(b => {
-        const dbDigits = (b.telefone || b.whatsapp || '').replace(/\D/g, '');
-        return dbDigits && (dbDigits === targetDigits || (dbDigits.length >= 8 && targetDigits.length >= 8 && (dbDigits.endsWith(targetDigits) || targetDigits.endsWith(dbDigits))));
-      });
-      return found || null;
     }
+
+    const found = this.localData.brokers.find(b => {
+      const bDigits = (b.telefone || b.whatsapp || '').replace(/\D/g, '');
+      return bDigits && (bDigits === cleanDigits || bDigits.endsWith(cleanDigits) || cleanDigits.endsWith(bDigits));
+    });
+    return found ? { ...found } : null;
   }
 
-  static async getCorretorByEmail(email: string): Promise<Corretor | null> {
-    const cleanEmail = email.toLowerCase().trim();
-    if (!cleanEmail) return null;
+  public static async saveCorretor(corretorData: Partial<Corretor>): Promise<Corretor> {
+    const cleanEmail = (corretorData.email || '').toLowerCase().trim();
+    if (!cleanEmail) throw new Error('E-mail é obrigatório para salvar corretor.');
+
+    const existing = await this.getCorretorByEmail(cleanEmail);
+
+    const merged: Corretor = {
+      id: corretorData.id || existing?.id || `broker-${cleanEmail.replace(/[^a-z0-9]/gi, '_')}`,
+      email: cleanEmail,
+      nome: corretorData.nome || existing?.nome || cleanEmail.split('@')[0],
+      creci: corretorData.creci !== undefined ? corretorData.creci : (existing?.creci || ''),
+      telefone: corretorData.telefone !== undefined ? corretorData.telefone : (existing?.telefone || ''),
+      whatsapp: corretorData.whatsapp !== undefined ? corretorData.whatsapp : (existing?.whatsapp || corretorData.telefone || existing?.telefone || ''),
+      cidade: corretorData.cidade || existing?.cidade || 'Balneário Camboriú',
+      estado: corretorData.estado || existing?.estado || 'SC',
+      imobiliaria: corretorData.imobiliaria !== undefined ? corretorData.imobiliaria : (existing?.imobiliaria || ''),
+      tipoAtuacao: corretorData.tipoAtuacao || existing?.tipoAtuacao || 'autonomo',
+      foto: corretorData.foto !== undefined ? corretorData.foto : (existing?.foto || ''),
+      slugSite: corretorData.slugSite || existing?.slugSite || '',
+      isAdmin: cleanEmail === 'afreccia@gmail.com' ? true : (corretorData.isAdmin !== undefined ? corretorData.isAdmin : (existing?.isAdmin || false)),
+      role: cleanEmail === 'afreccia@gmail.com' ? 'admin' : (corretorData.role || existing?.role || 'corretor'),
+      password: corretorData.password !== undefined ? corretorData.password : (existing?.password || ''),
+      resetToken: corretorData.resetToken !== undefined ? corretorData.resetToken : existing?.resetToken,
+      resetTokenExpires: corretorData.resetTokenExpires !== undefined ? corretorData.resetTokenExpires : existing?.resetTokenExpires,
+      restringirParceiros: corretorData.restringirParceiros !== undefined ? corretorData.restringirParceiros : (existing?.restringirParceiros || false),
+      parceirosEmails: corretorData.parceirosEmails || existing?.parceirosEmails || []
+    };
 
     if (this.isPostgres && this.pool) {
-      const res = await this.pool.query('SELECT * FROM corretores WHERE LOWER(email) = $1', [cleanEmail]);
-      if (res.rows.length === 0) return null;
-      const r = res.rows[0];
-      return {
-        id: r.id || `broker-${cleanEmail.replace(/[^a-z0-9]/gi, '_')}`,
-        email: r.email,
-        nome: r.nome,
-        creci: r.creci || '',
-        telefone: r.telefone || '',
-        whatsapp: r.telefone || '',
-        cidade: r.cidade || '',
-        estado: r.estado || '',
-        imobiliaria: r.imobiliaria_ou_autonomo || '',
-        tipoAtuacao: r.imobiliaria_ou_autonomo === 'autonomo' ? 'autonomo' : 'imobiliaria',
-        foto: r.foto_url || '',
-        slugSite: r.slug_site || '',
-        isAdmin: Boolean(r.is_admin) || (cleanEmail === 'afreccia@gmail.com'),
-        password: r.password || '',
-        resetToken: r.reset_token || undefined,
-        resetTokenExpires: r.reset_token_expires ? Number(r.reset_token_expires) : undefined,
-        restringirParceiros: Boolean(r.restringir_parceiros),
-        parceirosEmails: Array.isArray(r.parceiros_emails) ? r.parceiros_emails : (r.parceiros_emails ? JSON.parse(r.parceiros_emails) : [])
-      };
-    } else {
-      const db = await this.readJson();
-      const found = db.brokers.find(b => b.email && b.email.toLowerCase().trim() === cleanEmail);
-      return found || null;
-    }
-  }
-
-  static async getCorretorByIdOrEmail(idOrEmail: string): Promise<Corretor | null> {
-    const q = (idOrEmail || '').toLowerCase().trim();
-    if (!q) return null;
-
-    const byEmail = await this.getCorretorByEmail(q);
-    if (byEmail) return byEmail;
-
-    if (this.isPostgres && this.pool) {
-      const res = await this.pool.query(
-        `SELECT * FROM corretores 
-         WHERE LOWER(id) = $1 
-            OR LOWER(slug_site) = $1 
-            OR LOWER(nome) LIKE $2
-         LIMIT 1`,
-        [q, `%${q}%`]
-      );
-      if (res.rows.length > 0) {
-        const r = res.rows[0];
-        return {
-          id: r.id || `broker-${r.email.replace(/[^a-z0-9]/gi, '_')}`,
-          email: r.email,
-          nome: r.nome,
-          creci: r.creci || '',
-          telefone: r.telefone || '',
-          whatsapp: r.telefone || '',
-          cidade: r.cidade || '',
-          estado: r.estado || '',
-          imobiliaria: r.imobiliaria_ou_autonomo || '',
-          tipoAtuacao: r.imobiliaria_ou_autonomo === 'autonomo' ? 'autonomo' : 'imobiliaria',
-          foto: r.foto_url || '',
-          slugSite: r.slug_site || '',
-          isAdmin: Boolean(r.is_admin) || (r.email === 'afreccia@gmail.com'),
-          password: r.password || '',
-          resetToken: r.reset_token || undefined,
-          resetTokenExpires: r.reset_token_expires ? Number(r.reset_token_expires) : undefined,
-          restringirParceiros: Boolean(r.restringir_parceiros),
-          parceirosEmails: Array.isArray(r.parceiros_emails) ? r.parceiros_emails : (r.parceiros_emails ? JSON.parse(r.parceiros_emails) : [])
-        };
-      }
-    } else {
-      const db = await this.readJson();
-      const found = (db.brokers || []).find(b => 
-        (b.id && b.id.toLowerCase().trim() === q) ||
-        (b.email && b.email.toLowerCase().trim() === q) ||
-        (b.slugSite && b.slugSite.toLowerCase() === q) ||
-        (b.nome && b.nome.toLowerCase().includes(q))
-      );
-      if (found) return found;
-    }
-    return null;
-  }
-
-  static async saveCorretor(corretor: Partial<Corretor> & { email: string }): Promise<Corretor> {
-    const cleanEmail = corretor.email.toLowerCase().trim();
-    const cleanNome = corretor.nome || cleanEmail.split('@')[0];
-
-    let passwordHash = corretor.password || '';
-    if (passwordHash && !passwordHash.startsWith('$2a$') && !passwordHash.startsWith('$2b$')) {
-      passwordHash = await this.hashPassword(passwordHash);
-    }
-
-    if (this.isPostgres && this.pool) {
-      await this.pool.query(`
-        INSERT INTO corretores (email, id, nome, creci, telefone, cidade, estado, imobiliaria_ou_autonomo, foto_url, slug_site, is_admin, restringir_parceiros, parceiros_emails, password, reset_token, reset_token_expires)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+      await this.pool.query(
+        `INSERT INTO corretores (
+          email, id, nome, creci, telefone, cidade, estado, 
+          imobiliaria_ou_autonomo, foto_url, slug_site, is_admin, 
+          restringir_parceiros, parceiros_emails, password, reset_token, reset_token_expires, role
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+        )
         ON CONFLICT (email) DO UPDATE SET
           nome = EXCLUDED.nome,
           creci = EXCLUDED.creci,
@@ -722,1050 +389,531 @@ export class ServerDb {
           estado = EXCLUDED.estado,
           imobiliaria_ou_autonomo = EXCLUDED.imobiliaria_ou_autonomo,
           foto_url = EXCLUDED.foto_url,
-          slug_site = COALESCE(NULLIF(EXCLUDED.slug_site, ''), corretores.slug_site),
-          is_admin = COALESCE(EXCLUDED.is_admin, corretores.is_admin),
+          slug_site = EXCLUDED.slug_site,
+          is_admin = EXCLUDED.is_admin,
           restringir_parceiros = EXCLUDED.restringir_parceiros,
           parceiros_emails = EXCLUDED.parceiros_emails,
-          password = COALESCE(NULLIF(EXCLUDED.password, ''), corretores.password),
+          password = EXCLUDED.password,
           reset_token = EXCLUDED.reset_token,
-          reset_token_expires = EXCLUDED.reset_token_expires;
-      `, [
-        cleanEmail,
-        corretor.id || `broker-${cleanEmail.replace(/[^a-z0-9]/gi, '_')}`,
-        cleanNome,
-        corretor.creci || '',
-        corretor.whatsapp || corretor.telefone || '',
-        corretor.cidade || '',
-        corretor.estado || '',
-        corretor.imobiliaria || corretor.tipoAtuacao || '',
-        corretor.foto || '',
-        corretor.slugSite || null,
-        Boolean(corretor.isAdmin),
-        Boolean(corretor.restringirParceiros),
-        JSON.stringify(corretor.parceirosEmails || []),
-        passwordHash,
-        corretor.resetToken || null,
-        corretor.resetTokenExpires || null
-      ]);
-
-      if (Array.isArray(corretor.parceirosEmails)) {
-        await this.pool.query(`DELETE FROM parcerias WHERE LOWER(corretor_email) = $1`, [cleanEmail]);
-        for (const pEmail of corretor.parceirosEmails) {
-          if (pEmail && pEmail.trim()) {
-            await this.pool.query(
-              `INSERT INTO parcerias (corretor_email, corretor_parceiro_email) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-              [cleanEmail, pEmail.trim().toLowerCase()]
-            );
-          }
-        }
-      }
-
-      const saved = await this.getCorretorByEmail(cleanEmail);
-      return saved!;
-    } else {
-      const db = await this.readJson();
-      let idx = db.brokers.findIndex(b => b.email && b.email.toLowerCase().trim() === cleanEmail);
-      const updatedBroker: Corretor = {
-        id: corretor.id || (idx >= 0 ? db.brokers[idx].id : `broker-${cleanEmail.replace(/[^a-z0-9]/gi, '_')}`),
-        email: cleanEmail,
-        nome: cleanNome,
-        creci: corretor.creci !== undefined ? corretor.creci : (idx >= 0 ? db.brokers[idx].creci : ''),
-        telefone: (corretor.whatsapp || corretor.telefone) !== undefined ? (corretor.whatsapp || corretor.telefone) : (idx >= 0 ? db.brokers[idx].telefone : ''),
-        whatsapp: (corretor.whatsapp || corretor.telefone) !== undefined ? (corretor.whatsapp || corretor.telefone) : (idx >= 0 ? db.brokers[idx].whatsapp : ''),
-        cidade: corretor.cidade !== undefined ? corretor.cidade : (idx >= 0 ? db.brokers[idx].cidade : ''),
-        estado: corretor.estado !== undefined ? corretor.estado : (idx >= 0 ? db.brokers[idx].estado : ''),
-        imobiliaria: corretor.imobiliaria !== undefined ? corretor.imobiliaria : (idx >= 0 ? db.brokers[idx].imobiliaria : ''),
-        foto: corretor.foto !== undefined ? corretor.foto : (idx >= 0 ? db.brokers[idx].foto : ''),
-        slugSite: corretor.slugSite || (idx >= 0 ? db.brokers[idx].slugSite : ''),
-        isAdmin: corretor.isAdmin !== undefined ? corretor.isAdmin : (idx >= 0 ? db.brokers[idx].isAdmin : cleanEmail === 'afreccia@gmail.com'),
-        password: passwordHash || (idx >= 0 ? db.brokers[idx].password : ''),
-        resetToken: corretor.resetToken !== undefined ? corretor.resetToken : (idx >= 0 ? db.brokers[idx].resetToken : undefined),
-        resetTokenExpires: corretor.resetTokenExpires !== undefined ? corretor.resetTokenExpires : (idx >= 0 ? db.brokers[idx].resetTokenExpires : undefined),
-        restringirParceiros: corretor.restringirParceiros !== undefined ? corretor.restringirParceiros : (idx >= 0 ? db.brokers[idx].restringirParceiros : false),
-        parceirosEmails: corretor.parceirosEmails !== undefined ? corretor.parceirosEmails : (idx >= 0 ? db.brokers[idx].parceirosEmails : [])
-      };
-
-      if (idx >= 0) {
-        db.brokers[idx] = updatedBroker;
-      } else {
-        db.brokers.push(updatedBroker);
-      }
-      await this.writeJson(db);
-      return updatedBroker;
+          reset_token_expires = EXCLUDED.reset_token_expires,
+          role = EXCLUDED.role`,
+        [
+          merged.email,
+          merged.id,
+          merged.nome,
+          merged.creci,
+          merged.telefone,
+          merged.cidade,
+          merged.estado,
+          merged.imobiliaria,
+          merged.foto,
+          merged.slugSite,
+          merged.isAdmin,
+          merged.restringirParceiros,
+          JSON.stringify(merged.parceirosEmails || []),
+          merged.password,
+          merged.resetToken || null,
+          merged.resetTokenExpires || null,
+          merged.role
+        ]
+      );
+      return merged;
     }
+
+    const idx = this.localData.brokers.findIndex(b => b.email.toLowerCase().trim() === cleanEmail);
+    if (idx >= 0) {
+      this.localData.brokers[idx] = merged;
+    } else {
+      this.localData.brokers.push(merged);
+    }
+    await this.saveLocalJson();
+    return merged;
   }
 
-  // --- IMOVEIS ---
-
-  /**
-   * Retorna os marcadores ultra-leves para o mapa de todos os imóveis disponíveis.
-   * Não retorna imagens, descrição, dados do proprietário, corretor ou campos pesados.
-   * Aplica exatamente os mesmos filtros selecionados pelo usuário.
-   */
-  static async getImoveisMapa(filters: MapFilterParams = {}): Promise<MapMarkerResult[]> {
-    logMemory('ServerDb.getImoveisMapa BEFORE');
-
+  public static async getAllCorretores(): Promise<Corretor[]> {
     if (this.isPostgres && this.pool) {
-      let query = `
-        SELECT 
-          i.id,
-          i.latitude,
-          i.longitude,
-          i.valor_venda,
-          i.valor_locacao,
-          i.tipo,
-          i.modalidade,
-          i.titulo,
-          i.status_imovel,
-          i.bairro,
-          i.cidade,
-          i.nome_edificio,
-          i.quartos,
-          i.vagas,
-          i.area_privativa,
-          i.corretor_email
-        FROM imoveis i
-        LEFT JOIN corretores c ON LOWER(i.corretor_email) = LOWER(c.email)
-        WHERE (
-          (i.latitude IS NOT NULL AND i.longitude IS NOT NULL AND i.latitude != 0 AND i.longitude != 0)
-          OR (i.cidade IS NOT NULL AND i.cidade != '')
-        )
-          AND (i.compartilhar IS NULL OR i.compartilhar = 'SIM' OR i.compartilhar = 'true')
-          AND (i.visibilidade IS NULL OR i.visibilidade = 'todos')
-          AND (c.parceiros_emails IS NULL OR c.parceiros_emails = '' OR c.parceiros_emails = '[]')
-          AND (c.restringir_parceiros IS NOT TRUE)
-          AND (i.website IS NULL OR i.website = 'SIM' OR i.website = 'true')
-          AND (i.status_imovel IS NULL OR i.status_imovel != 'Vendido')
-      `;
-      const params: any[] = [];
-
-      // Filtro de cidade
-      if (filters.cidade && filters.cidade !== 'Todas') {
-        params.push(filters.cidade.trim());
-        query += ` AND LOWER(i.cidade) = LOWER($${params.length}) `;
-      }
-
-      // Filtro de finalidade
-      if (filters.finalidade === 'Comprar') {
-        query += ` AND (LOWER(i.tipo) IN ('venda', 'ambos') OR LOWER(i.modalidade) IN ('venda', 'ambos') OR (i.valor_venda IS NOT NULL AND i.valor_venda > 0)) `;
-      } else if (filters.finalidade === 'Alugar') {
-        query += ` AND (LOWER(i.tipo) IN ('locação', 'locacao', 'ambos') OR LOWER(i.modalidade) IN ('locação', 'locacao', 'ambos') OR (i.valor_locacao IS NOT NULL AND i.valor_locacao > 0)) `;
-      }
-
-      // Filtro de categoria
-      if (filters.categoria === 'Lançamentos') {
-        query += ` AND (i.status_imovel = 'Na planta') `;
-      } else if (filters.categoria === 'Prontos') {
-        query += ` AND (i.status_imovel IS NULL OR i.status_imovel != 'Na planta') `;
-      }
-
-      // Filtro de Tipo de Imóvel
-      if (filters.tipoImovel && filters.tipoImovel.toLowerCase() !== 'todos') {
-        const t = filters.tipoImovel.toLowerCase().trim();
-        if (t === 'casa') {
-          query += ` AND (LOWER(i.tipo) LIKE '%casa%' OR LOWER(i.tipo) LIKE '%sobrado%' OR LOWER(i.modalidade) LIKE '%casa%') `;
-        } else {
-          params.push(`%${t}%`);
-          query += ` AND (LOWER(i.tipo) LIKE $${params.length} OR LOWER(i.modalidade) LIKE $${params.length}) `;
-        }
-      }
-
-      // Filtro de Status do Imóvel
-      if (filters.statusImovel && filters.statusImovel.toLowerCase() !== 'todos') {
-        params.push(filters.statusImovel.trim());
-        query += ` AND LOWER(i.status_imovel) = LOWER($${params.length}) `;
-      }
-
-      // Busca livre
-      if (filters.busca && filters.busca.trim()) {
-        params.push(`%${filters.busca.trim().toLowerCase()}%`);
-        const idx = params.length;
-        query += ` AND (
-          LOWER(i.titulo) LIKE $${idx}
-          OR LOWER(i.bairro) LIKE $${idx}
-          OR LOWER(i.cidade) LIKE $${idx}
-          OR LOWER(i.codigo) LIKE $${idx}
-          OR LOWER(i.construtora) LIKE $${idx}
-          OR LOWER(i.nome_edificio) LIKE $${idx}
-          OR LOWER(COALESCE(i.endereco, '')) LIKE $${idx}
-          OR LOWER(i.descricao) LIKE $${idx}
-        ) `;
-      }
-
-      // Preço
-      if (filters.precoMin && filters.precoMin > 0) {
-        params.push(filters.precoMin);
-        query += ` AND COALESCE(i.valor_venda, 0) >= $${params.length} `;
-      }
-      if (filters.precoMax && filters.precoMax > 0 && filters.precoMax < 15000000) {
-        params.push(filters.precoMax);
-        query += ` AND COALESCE(i.valor_venda, 0) <= $${params.length} `;
-      }
-
-      // Quartos
-      if (filters.quartosMin && filters.quartosMin > 0) {
-        params.push(filters.quartosMin);
-        query += ` AND COALESCE(i.quartos, 0) >= $${params.length} `;
-      }
-
-      // Banheiros
-      if (filters.banheirosMin && filters.banheirosMin > 0) {
-        params.push(filters.banheirosMin);
-        query += ` AND COALESCE(i.bwc, 0) >= $${params.length} `;
-      }
-
-      // Vagas
-      if (filters.vagasMin && filters.vagasMin > 0) {
-        params.push(filters.vagasMin);
-        query += ` AND COALESCE(i.vagas, 0) >= $${params.length} `;
-      }
-
-      // Metragem
-      if (filters.metragemMin && filters.metragemMin > 0) {
-        params.push(filters.metragemMin);
-        query += ` AND COALESCE(i.area_privativa, 0) >= $${params.length} `;
-      }
-      if (filters.metragemMax && filters.metragemMax > 0) {
-        params.push(filters.metragemMax);
-        query += ` AND COALESCE(i.area_privativa, 0) <= $${params.length} `;
-      }
-
-      // Bairro
-      if (filters.bairro && filters.bairro !== 'Todos os bairros') {
-        params.push(`%${filters.bairro.trim().toLowerCase()}%`);
-        query += ` AND LOWER(i.bairro) LIKE $${params.length} `;
-      }
-
-      // Construtora
-      if (filters.construtora && filters.construtora !== 'Todas as construtoras') {
-        params.push(`%${filters.construtora.trim().toLowerCase()}%`);
-        query += ` AND LOWER(i.construtora) LIKE $${params.length} `;
-      }
-
-      query += ` ORDER BY i.data_cadastro DESC `;
-
-      const res = await this.pool.query(query, params);
-      logMemory('ServerDb.getImoveisMapa AFTER');
-
-      return res.rows.map(r => ({
-        id: r.id,
-        latitude: r.latitude ? parseFloat(r.latitude) : 0,
-        longitude: r.longitude ? parseFloat(r.longitude) : 0,
-        valor_venda: r.valor_venda ? parseFloat(r.valor_venda) : undefined,
-        valor_locacao: r.valor_locacao ? parseFloat(r.valor_locacao) : undefined,
-        tipo: r.modalidade || r.tipo,
-        modalidade: r.modalidade || r.tipo,
-        valor: r.valor_venda ? parseFloat(r.valor_venda) : (r.valor_locacao ? parseFloat(r.valor_locacao) : 0),
-        titulo: r.titulo,
-        nomeEdificio: r.nome_edificio,
-        bairro: r.bairro,
-        cidade: r.cidade,
-        statusImovel: r.status_imovel,
-        tipoImovel: r.tipo_imovel || r.tipo,
-        quartos: r.quartos ? parseInt(r.quartos, 10) : undefined,
-        dormitorios: r.quartos ? parseInt(r.quartos, 10) : undefined,
-        vagas: r.vagas ? parseInt(r.vagas, 10) : undefined,
-        metragem: r.area_privativa ? parseFloat(r.area_privativa) : undefined,
-        corretorEmail: r.corretor_email,
-      }));
-    } else {
-      // Fallback JSON DB
-      const db = await this.readJson();
-      const list = db.properties.filter(p => {
-        const lat = typeof p.latitude === 'number' ? p.latitude : (p.latitude ? parseFloat(p.latitude as any) : 0);
-        const lng = typeof p.longitude === 'number' ? p.longitude : (p.longitude ? parseFloat(p.longitude as any) : 0);
-        if (!lat || !lng || isNaN(lat) || isNaN(lng)) return false;
-
-        const isShared = p.compartilhar === 'SIM' || p.compartilhar === true || p.compartilhar === undefined || (p.compartilhar as any) === 'true';
-        if (!isShared) return false;
-        if ((p as any).visibilidade === 'meus') return false;
-        if ((p as any).statusImovel === 'Vendido') return false;
-        if (p.website === 'NAO' || (p as any).website === false) return false;
-
-        // Filtro de cidade
-        if (filters.cidade && filters.cidade !== 'Todas') {
-          if ((p.cidade || '').toLowerCase().trim() !== filters.cidade.toLowerCase().trim()) return false;
-        }
-
-        // Filtro de finalidade
-        if (filters.finalidade === 'Comprar') {
-          if (p.tipo !== 'venda' && p.tipo !== 'ambos' && (!p.valorVenda || p.valorVenda <= 0)) return false;
-        } else if (filters.finalidade === 'Alugar') {
-          if (p.tipo !== 'locação' && p.tipo !== 'ambos' && (!p.valorLocacao || p.valorLocacao <= 0)) return false;
-        }
-
-        // Categoria
-        if (filters.categoria === 'Lançamentos') {
-          if (p.statusImovel !== 'Na planta' && !(p as any).isLancamento) return false;
-        } else if (filters.categoria === 'Prontos') {
-          if (p.statusImovel === 'Na planta' || (p as any).isLancamento) return false;
-        }
-
-        // Tipo de Imóvel
-        if (filters.tipoImovel && filters.tipoImovel.toLowerCase() !== 'todos') {
-          const t = filters.tipoImovel.toLowerCase();
-          const itemTipo = (p.tipoImovel || '').toLowerCase();
-          if (t === 'casa' && (itemTipo.includes('casa') || itemTipo.includes('sobrado'))) {
-            // ok
-          } else if (!itemTipo.includes(t)) {
-            return false;
-          }
-        }
-
-        // Status
-        if (filters.statusImovel && filters.statusImovel.toLowerCase() !== 'todos') {
-          if ((p.statusImovel || '').toLowerCase() !== filters.statusImovel.toLowerCase()) return false;
-        }
-
-        // Busca livre
-        if (filters.busca && filters.busca.trim()) {
-          const q = filters.busca.toLowerCase().trim();
-          const matches =
-            (p.titulo || '').toLowerCase().includes(q) ||
-            (p.bairro || '').toLowerCase().includes(q) ||
-            (p.cidade || '').toLowerCase().includes(q) ||
-            (p.codigo || '').toLowerCase().includes(q) ||
-            (p.construtora || '').toLowerCase().includes(q) ||
-            (p.nomeEdificio || '').toLowerCase().includes(q) ||
-            (p.endereco || '').toLowerCase().includes(q) ||
-            (p.descricao || '').toLowerCase().includes(q);
-          if (!matches) return false;
-        }
-
-        const valorVal = typeof p.valorVenda === 'number' ? p.valorVenda : (p.valor || 0);
-        if (filters.precoMin && filters.precoMin > 0 && valorVal < filters.precoMin) return false;
-        if (filters.precoMax && filters.precoMax > 0 && filters.precoMax < 15000000 && valorVal > filters.precoMax) return false;
-
-        const quartosVal = p.dormitorios || p.quartos || 0;
-        if (filters.quartosMin && filters.quartosMin > 0 && quartosVal < filters.quartosMin) return false;
-
-        if (filters.banheirosMin && filters.banheirosMin > 0 && (p.banheiros || 0) < filters.banheirosMin) return false;
-        if (filters.vagasMin && filters.vagasMin > 0 && (p.vagas || 0) < filters.vagasMin) return false;
-
-        const m = p.metragem || (p as any).areaPrivativa || 0;
-        if (filters.metragemMin && filters.metragemMin > 0 && m < filters.metragemMin) return false;
-        if (filters.metragemMax && filters.metragemMax > 0 && m > filters.metragemMax) return false;
-
-        if (filters.bairro && filters.bairro !== 'Todos os bairros') {
-          if (!p.bairro || !p.bairro.toLowerCase().includes(filters.bairro.toLowerCase().trim())) return false;
-        }
-
-        if (filters.construtora && filters.construtora !== 'Todas as construtoras') {
-          if (!p.construtora || !p.construtora.toLowerCase().includes(filters.construtora.toLowerCase().trim())) return false;
-        }
-
-        return true;
-      });
-
-      logMemory('ServerDb.getImoveisMapa (JSON) AFTER');
-
-      return list.map(p => ({
-        id: p.id,
-        latitude: typeof p.latitude === 'number' ? p.latitude : parseFloat(p.latitude as any),
-        longitude: typeof p.longitude === 'number' ? p.longitude : parseFloat(p.longitude as any),
-        valor_venda: p.valorVenda || (p.tipo === 'venda' ? p.valor : undefined),
-        valor_locacao: p.valorLocacao || (p.tipo === 'locação' ? p.valor : undefined),
-        tipo: p.tipo,
-        modalidade: p.tipo,
-        valor: typeof p.valorVenda === 'number' ? p.valorVenda : (p.valor || 0),
-        titulo: p.titulo,
-        nomeEdificio: p.nomeEdificio,
-        bairro: p.bairro,
-        cidade: p.cidade,
-        dormitorios: p.dormitorios,
-        vagas: p.vagas,
-        metragem: p.metragem,
-        corretorEmail: p.corretorEmail,
-      }));
+      const res = await this.pool.query('SELECT * FROM corretores ORDER BY nome ASC');
+      return res.rows.map(r => this.mapRowToCorretor(r));
     }
+    return [...this.localData.brokers];
   }
 
-  /**
-   * Retorna todas as cidades distintas e contagem real de imóveis disponíveis em cada uma.
-   */
-  static async getCidades(): Promise<{ cidade: string; count: number }[]> {
-    logMemory('ServerDb.getCidades BEFORE');
+  private static mapRowToCorretor(row: any): Corretor {
+    let parceiros: string[] = [];
+    try {
+      parceiros = row.parceiros_emails ? JSON.parse(row.parceiros_emails) : [];
+    } catch {}
+
+    return {
+      id: row.id || `broker-${row.email}`,
+      email: row.email,
+      nome: row.nome || '',
+      creci: row.creci || '',
+      telefone: row.telefone || '',
+      whatsapp: row.telefone || '',
+      cidade: row.cidade || 'Balneário Camboriú',
+      estado: row.estado || 'SC',
+      imobiliaria: row.imobiliaria_ou_autonomo || '',
+      tipoAtuacao: row.imobiliaria_ou_autonomo ? 'imobiliaria' : 'autonomo',
+      foto: row.foto_url || '',
+      slugSite: row.slug_site || '',
+      isAdmin: Boolean(row.is_admin || row.email === 'afreccia@gmail.com'),
+      role: row.role || (row.email === 'afreccia@gmail.com' ? 'admin' : 'corretor'),
+      password: row.password || '',
+      resetToken: row.reset_token || undefined,
+      resetTokenExpires: row.reset_token_expires ? Number(row.reset_token_expires) : undefined,
+      restringirParceiros: Boolean(row.restringir_parceiros),
+      parceirosEmails: parceiros
+    };
+  }
+
+  // --- CIDADES ---
+  public static async getCidades(): Promise<Array<{ cidade: string; count: number }>> {
     if (this.isPostgres && this.pool) {
       const res = await this.pool.query(`
-        SELECT 
-          TRIM(i.cidade) as cidade, 
-          COUNT(*)::int as count 
-        FROM imoveis i
-        LEFT JOIN corretores c ON LOWER(i.corretor_email) = LOWER(c.email)
-        WHERE (i.website IS NULL OR i.website = 'SIM' OR i.website = 'true') 
-          AND (i.status_imovel IS NULL OR i.status_imovel != 'Vendido')
-          AND (i.compartilhar IS NULL OR i.compartilhar = 'SIM' OR i.compartilhar = 'true')
-          AND (i.visibilidade IS NULL OR i.visibilidade = 'todos')
-          AND (c.parceiros_emails IS NULL OR c.parceiros_emails = '' OR c.parceiros_emails = '[]')
-          AND (c.restringir_parceiros IS NOT TRUE)
-          AND i.cidade IS NOT NULL 
-          AND TRIM(i.cidade) != ''
-        GROUP BY TRIM(i.cidade) 
-        ORDER BY count DESC, TRIM(i.cidade) ASC
+        SELECT cidade, COUNT(*) as count 
+        FROM imoveis 
+        WHERE cidade IS NOT NULL AND TRIM(cidade) <> ''
+        GROUP BY cidade 
+        ORDER BY count DESC, cidade ASC
       `);
-      logMemory('ServerDb.getCidades AFTER');
-      return res.rows;
-    } else {
-      const db = await this.readJson();
-      const counts: Record<string, number> = {};
-      db.properties.forEach(p => {
-        const isShared = p.compartilhar === 'SIM' || p.compartilhar === true || p.compartilhar === undefined || (p.compartilhar as any) === 'true';
-        if (!isShared) return;
-        if ((p as any).visibilidade === 'meus') return;
-        if ((p as any).statusImovel === 'Vendido') return;
-        if (p.website === 'NAO' || (p as any).website === false) return;
-        if (p.cidade && p.cidade.trim()) {
-          const c = p.cidade.trim();
-          counts[c] = (counts[c] || 0) + 1;
-        }
-      });
-      logMemory('ServerDb.getCidades (JSON) AFTER');
-      return Object.entries(counts)
-        .sort((a, b) => b[1] - a[1])
-        .map(([cidade, count]) => ({ cidade, count }));
+      return res.rows.map(r => ({ cidade: r.cidade, count: parseInt(r.count, 10) }));
     }
+
+    const counts: Record<string, number> = {};
+    for (const p of this.localData.properties) {
+      if (p.cidade) {
+        counts[p.cidade] = (counts[p.cidade] || 0) + 1;
+      }
+    }
+    return Object.entries(counts).map(([cidade, count]) => ({ cidade, count }));
   }
 
-  static async getImoveis(
-    optionsOrUserEmail?: string | GetImoveisOptions,
-    maxFotosLegacy = 1
-  ): Promise<Imovel[] | PaginatedResult<Imovel>> {
-    logMemory('ServerDb.getImoveis BEFORE');
-    let cleanUserEmail = '';
-    let page = 1;
-    let limit = 24;
-    let paginate = false;
-    let filterCidade = '';
-    let filterBairro = '';
-    let filterFinalidade = '';
-    let filterCategoria = '';
-    let filterTipoImovel = '';
-    let filterStatusImovel = '';
-    let filterBusca = '';
-    let filterPrecoMin = 0;
-    let filterPrecoMax = 0;
-    let filterQuartos = 0;
-    let filterBanheiros = 0;
-    let filterVagas = 0;
-    let filterMetragemMin = 0;
-    let filterMetragemMax = 0;
-    let filterConstrutora = '';
-
-    if (typeof optionsOrUserEmail === 'string') {
-      cleanUserEmail = optionsOrUserEmail.toLowerCase().trim();
-    } else if (optionsOrUserEmail && typeof optionsOrUserEmail === 'object') {
-      cleanUserEmail = (optionsOrUserEmail.userEmail || '').toLowerCase().trim();
-      if (optionsOrUserEmail.cidade && optionsOrUserEmail.cidade.trim() && optionsOrUserEmail.cidade !== 'Todas') {
-        filterCidade = optionsOrUserEmail.cidade.trim();
-      }
-      if (optionsOrUserEmail.page && optionsOrUserEmail.page > 0) {
-        page = optionsOrUserEmail.page;
-      }
-      if (optionsOrUserEmail.limit && optionsOrUserEmail.limit > 0) {
-        limit = Math.min(optionsOrUserEmail.limit, 1000);
-      }
-      paginate = optionsOrUserEmail.paginate !== undefined ? Boolean(optionsOrUserEmail.paginate) : Boolean(optionsOrUserEmail.page && optionsOrUserEmail.page > 1);
-      if (optionsOrUserEmail.bairro && optionsOrUserEmail.bairro !== 'Todos os bairros') {
-        filterBairro = optionsOrUserEmail.bairro.trim();
-      }
-      if (optionsOrUserEmail.finalidade) filterFinalidade = optionsOrUserEmail.finalidade;
-      if (optionsOrUserEmail.categoria) filterCategoria = optionsOrUserEmail.categoria;
-      if (optionsOrUserEmail.tipoImovel) filterTipoImovel = optionsOrUserEmail.tipoImovel;
-      if (optionsOrUserEmail.statusImovel) filterStatusImovel = optionsOrUserEmail.statusImovel;
-      if (optionsOrUserEmail.busca) filterBusca = optionsOrUserEmail.busca.trim();
-      if (optionsOrUserEmail.precoMin) filterPrecoMin = optionsOrUserEmail.precoMin;
-      if (optionsOrUserEmail.precoMax) filterPrecoMax = optionsOrUserEmail.precoMax;
-      if (optionsOrUserEmail.quartos || optionsOrUserEmail.quartosMin) filterQuartos = optionsOrUserEmail.quartos || optionsOrUserEmail.quartosMin || 0;
-      if (optionsOrUserEmail.banheiros || optionsOrUserEmail.banheirosMin) filterBanheiros = optionsOrUserEmail.banheiros || optionsOrUserEmail.banheirosMin || 0;
-      if (optionsOrUserEmail.vagas || optionsOrUserEmail.vagasMin) filterVagas = optionsOrUserEmail.vagas || optionsOrUserEmail.vagasMin || 0;
-      if (optionsOrUserEmail.metragemMin) filterMetragemMin = optionsOrUserEmail.metragemMin;
-      if (optionsOrUserEmail.metragemMax) filterMetragemMax = optionsOrUserEmail.metragemMax;
-      if (optionsOrUserEmail.construtora && optionsOrUserEmail.construtora !== 'Todas as construtoras') {
-        filterConstrutora = optionsOrUserEmail.construtora.trim();
+  // --- IMOVEIS MAPPER ---
+  private static mapRowToImovel(row: any): Imovel {
+    let fotos: string[] = [];
+    if (row.imagens) {
+      if (Array.isArray(row.imagens)) {
+        fotos = row.imagens;
+      } else if (typeof row.imagens === 'string') {
+        try {
+          fotos = JSON.parse(row.imagens);
+        } catch {
+          fotos = [row.imagens];
+        }
       }
     }
 
-    const offset = (page - 1) * limit;
+    return {
+      id: row.id,
+      codigo: row.codigo || undefined,
+      codigoIm: row.codigo_im || undefined,
+      corretorEmail: row.corretor_email || '',
+      corretorId: `broker-${row.corretor_email}`,
+      cep: row.cep || undefined,
+      endereco: row.endereco || undefined,
+      localizacao: row.endereco || undefined,
+      cidade: row.cidade || 'Balneário Camboriú',
+      bairro: row.bairro || '',
+      tipoImovel: (row.tipo as any) || 'Apartamento',
+      condicaoImovel: row.condicao_imovel || row.status_imovel || 'Na Planta',
+      statusImovel: row.status_imovel || row.condicao_imovel || 'Na Planta',
+      statusComercial: (row.status_global as any) || 'Disponível',
+      tipo: (row.modalidade as any) || 'venda',
+      unidade: row.unidade || undefined,
+      bloco: row.bloco_torre || undefined,
+      valor: row.valor_venda !== null && row.valor_venda !== undefined ? Number(row.valor_venda) : 0,
+      valorVenda: row.valor_venda !== null && row.valor_venda !== undefined ? Number(row.valor_venda) : undefined,
+      valorAnterior: row.valor_anterior !== null && row.valor_anterior !== undefined ? Number(row.valor_anterior) : undefined,
+      valorLocacao: row.valor_locacao !== null && row.valor_locacao !== undefined ? Number(row.valor_locacao) : undefined,
+      valorLocacaoAnterior: row.valor_locacao_anterior !== null && row.valor_locacao_anterior !== undefined ? Number(row.valor_locacao_anterior) : undefined,
+      condominio: row.condominio !== null && row.condominio !== undefined ? Number(row.condominio) : undefined,
+      iptu: row.iptu !== null && row.iptu !== undefined ? Number(row.iptu) : undefined,
+      dormitorios: row.quartos !== null && row.quartos !== undefined ? Number(row.quartos) : 0,
+      quartos: row.quartos !== null && row.quartos !== undefined ? Number(row.quartos) : 0,
+      banheiros: row.bwc !== null && row.bwc !== undefined ? Number(row.bwc) : 0,
+      vagas: row.vagas !== null && row.vagas !== undefined ? Number(row.vagas) : 0,
+      metragem: row.area_privativa !== null && row.area_privativa !== undefined ? Number(row.area_privativa) : 0,
+      nomeEdificio: row.nome_edificio || undefined,
+      titulo: row.titulo || '',
+      palavraDestacada: row.palavra_destacada || undefined,
+      descricao: row.descricao || '',
+      informacoes: row.informacoes || undefined,
+      website: (row.website as any) || 'SIM',
+      compartilhar: (row.compartilhar as any) || 'SIM',
+      visibilidade: (row.visibilidade as any) || 'todos',
+      dadosProprietario: row.dados_proprietario || undefined,
+      fotos,
+      dataCadastro: row.data_cadastro || new Date().toISOString(),
+      origem: row.origem || 'Imobishare',
+      construtora: row.construtora || undefined,
+      telefoneConstrutora: row.telefone_construtora || undefined,
+      latitude: row.latitude !== null && row.latitude !== undefined ? Number(row.latitude) : undefined,
+      longitude: row.longitude !== null && row.longitude !== undefined ? Number(row.longitude) : undefined,
+      escopo: (row.escopo as any) || 'CARTEIRA'
+    };
+  }
+
+  // --- GET IMOVEIS (PUBLIC / SEARCH) ---
+  public static async getImoveis(filters: any = {}): Promise<{ data: Imovel[]; total: number; page: number; limit: number; totalPages: number; hasMore: boolean } | Imovel[]> {
+    const page = filters.page ? Math.max(1, Number(filters.page)) : 1;
+    const limit = filters.limit ? Math.max(1, Math.min(1000, Number(filters.limit))) : 50;
+    const isPaginated = Boolean(filters.paginate || filters.page);
 
     if (this.isPostgres && this.pool) {
-      let query = `
-        SELECT 
-          COUNT(*) OVER() AS full_count,
-          i.id,
-          i.codigo,
-          i.codigo_im,
-          i.unidade,
-          i.bloco_torre,
-          i.condicao_imovel,
-          i.status_global,
-          i.escopo,
-          i.titulo,
-          i.cidade,
-          i.bairro,
-          i.endereco,
-          i.cep,
-          i.tipo,
-          i.modalidade,
-          i.valor_venda,
-          i.status_imovel,
-          i.valor_locacao,
-          i.quartos,
-          i.bwc,
-          i.vagas,
-          i.area_privativa,
-          i.nome_edificio,
-          i.palavra_destacada,
-          i.visibilidade,
-          i.data_cadastro,
-          i.origem,
-          i.construtora,
-          i.website,
-          i.compartilhar,
-          i.latitude,
-          i.longitude,
-          i.condominio,
-          i.iptu,
-          i.corretor_email,
-          c.id as corretor_id_db,
-          c.nome as corretor_nome_db,
-          c.foto_url as corretor_foto_db,
-          c.telefone as corretor_telefone_db,
-          CASE 
-            WHEN i.imagens IS NULL OR i.imagens = '' OR i.imagens = '[]' THEN ''
-            WHEN i.imagens LIKE '[%' THEN COALESCE(i.imagens::json->>0, '')
-            ELSE COALESCE(split_part(i.imagens, ',', 1), '')
-          END as imagem_capa
-        FROM imoveis i
-        LEFT JOIN corretores c ON LOWER(i.corretor_email) = LOWER(c.email)
-      `;
-      const params: any[] = [];
+      let conditions: string[] = [];
+      let params: any[] = [];
+      let pIdx = 1;
 
-      if (cleanUserEmail) {
-        query += `
-          WHERE LOWER(i.corretor_email) = $1
-             OR (
-               (i.compartilhar IS NULL OR i.compartilhar = 'SIM' OR i.compartilhar = 'true')
-               AND COALESCE(i.visibilidade, 'todos') != 'meus'
-               AND (
-                 CASE 
-                   WHEN i.visibilidade = 'parceiros' THEN (
-                     LOWER(c.parceiros_emails) LIKE '%' || $1 || '%'
-                     OR EXISTS (
-                       SELECT 1 FROM parcerias p 
-                       WHERE LOWER(p.corretor_email) = LOWER(i.corretor_email) 
-                         AND LOWER(p.corretor_parceiro_email) = $1
-                     )
-                   )
-                   ELSE (
-                     (c.parceiros_emails IS NULL OR c.parceiros_emails = '' OR c.parceiros_emails = '[]')
-                     AND (c.restringir_parceiros IS NOT TRUE)
-                     OR LOWER(c.parceiros_emails) LIKE '%' || $1 || '%'
-                     OR EXISTS (
-                       SELECT 1 FROM parcerias p 
-                       WHERE LOWER(p.corretor_email) = LOWER(i.corretor_email) 
-                         AND LOWER(p.corretor_parceiro_email) = $1
-                     )
-                   )
-                 END
-               )
-             )
-        `;
-        params.push(cleanUserEmail);
-      } else {
-        query += ` 
-          WHERE (i.compartilhar IS NULL OR i.compartilhar = 'SIM' OR i.compartilhar = 'true')
-            AND (i.visibilidade IS NULL OR i.visibilidade = 'todos')
-            AND (c.parceiros_emails IS NULL OR c.parceiros_emails = '' OR c.parceiros_emails = '[]')
-            AND (c.restringir_parceiros IS NOT TRUE)
-        `;
+      if (filters.cidade) {
+        conditions.push(`LOWER(cidade) LIKE LOWER($${pIdx++})`);
+        params.push(`%${filters.cidade.trim()}%`);
+      }
+      if (filters.bairro) {
+        conditions.push(`LOWER(bairro) LIKE LOWER($${pIdx++})`);
+        params.push(`%${filters.bairro.trim()}%`);
+      }
+      if (filters.tipoImovel) {
+        conditions.push(`LOWER(tipo) = LOWER($${pIdx++})`);
+        params.push(filters.tipoImovel.trim());
+      }
+      if (filters.statusImovel) {
+        conditions.push(`(LOWER(status_imovel) = LOWER($${pIdx}) OR LOWER(condicao_imovel) = LOWER($${pIdx}))`);
+        params.push(filters.statusImovel.trim());
+        pIdx++;
+      }
+      if (filters.construtora) {
+        conditions.push(`LOWER(construtora) LIKE LOWER($${pIdx++})`);
+        params.push(`%${filters.construtora.trim()}%`);
+      }
+      if (filters.precoMin !== undefined && !isNaN(filters.precoMin)) {
+        conditions.push(`valor_venda >= $${pIdx++}`);
+        params.push(filters.precoMin);
+      }
+      if (filters.precoMax !== undefined && !isNaN(filters.precoMax)) {
+        conditions.push(`valor_venda <= $${pIdx++}`);
+        params.push(filters.precoMax);
+      }
+      if (filters.quartos !== undefined && !isNaN(filters.quartos)) {
+        conditions.push(`quartos >= $${pIdx++}`);
+        params.push(filters.quartos);
+      }
+      if (filters.banheiros !== undefined && !isNaN(filters.banheiros)) {
+        conditions.push(`bwc >= $${pIdx++}`);
+        params.push(filters.banheiros);
+      }
+      if (filters.vagas !== undefined && !isNaN(filters.vagas)) {
+        conditions.push(`vagas >= $${pIdx++}`);
+        params.push(filters.vagas);
+      }
+      if (filters.metragemMin !== undefined && !isNaN(filters.metragemMin)) {
+        conditions.push(`area_privativa >= $${pIdx++}`);
+        params.push(filters.metragemMin);
+      }
+      if (filters.metragemMax !== undefined && !isNaN(filters.metragemMax)) {
+        conditions.push(`area_privativa <= $${pIdx++}`);
+        params.push(filters.metragemMax);
+      }
+      if (filters.busca) {
+        const q = `%${filters.busca.trim()}%`;
+        conditions.push(`(
+          LOWER(titulo) LIKE LOWER($${pIdx}) OR 
+          LOWER(descricao) LIKE LOWER($${pIdx}) OR 
+          LOWER(bairro) LIKE LOWER($${pIdx}) OR 
+          LOWER(cidade) LIKE LOWER($${pIdx}) OR 
+          LOWER(nome_edificio) LIKE LOWER($${pIdx}) OR 
+          LOWER(codigo) LIKE LOWER($${pIdx}) OR 
+          LOWER(codigo_im) LIKE LOWER($${pIdx}) OR 
+          LOWER(construtora) LIKE LOWER($${pIdx})
+        )`);
+        params.push(q);
+        pIdx++;
       }
 
-      if (filterCidade) {
-        params.push(filterCidade.toLowerCase().trim());
-        query += ` AND LOWER(TRIM(i.cidade)) = $${params.length} `;
-      }
+      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-      if (filterFinalidade === 'Comprar') {
-        query += ` AND (LOWER(i.tipo) IN ('venda', 'ambos') OR LOWER(i.modalidade) IN ('venda', 'ambos') OR (i.valor_venda IS NOT NULL AND i.valor_venda > 0)) `;
-      } else if (filterFinalidade === 'Alugar') {
-        query += ` AND (LOWER(i.tipo) IN ('locação', 'locacao', 'ambos') OR LOWER(i.modalidade) IN ('locação', 'locacao', 'ambos') OR (i.valor_locacao IS NOT NULL AND i.valor_locacao > 0)) `;
-      }
+      // Count query
+      const countRes = await this.pool.query(`SELECT COUNT(*) as total FROM imoveis ${whereClause}`, params);
+      const total = parseInt(countRes.rows[0].total, 10);
+      const totalPages = Math.ceil(total / limit) || 1;
 
-      if (filterCategoria === 'Lançamentos') {
-        query += ` AND (i.status_imovel = 'Na planta') `;
-      } else if (filterCategoria === 'Prontos') {
-        query += ` AND (i.status_imovel IS NULL OR i.status_imovel != 'Na planta') `;
-      }
+      // Select data query
+      const offset = (page - 1) * limit;
+      const dataRes = await this.pool.query(
+        `SELECT * FROM imoveis ${whereClause} ORDER BY data_cadastro DESC NULLS LAST, id DESC LIMIT $${pIdx++} OFFSET $${pIdx++}`,
+        [...params, limit, offset]
+      );
 
-      if (filterTipoImovel && filterTipoImovel.toLowerCase() !== 'todos') {
-        const t = filterTipoImovel.toLowerCase().trim();
-        if (t === 'casa') {
-          query += ` AND (LOWER(i.tipo) LIKE '%casa%' OR LOWER(i.tipo) LIKE '%sobrado%' OR LOWER(i.modalidade) LIKE '%casa%') `;
-        } else {
-          params.push(`%${t}%`);
-          query += ` AND (LOWER(i.tipo) LIKE $${params.length} OR LOWER(i.modalidade) LIKE $${params.length}) `;
-        }
-      }
+      const items = dataRes.rows.map(r => this.mapRowToImovel(r));
 
-      if (filterStatusImovel && filterStatusImovel.toLowerCase() !== 'todos') {
-        const s = filterStatusImovel.toLowerCase().trim();
-        if (s.includes('planta')) {
-          query += ` AND (LOWER(COALESCE(i.condicao_imovel, i.status_imovel, '')) LIKE '%planta%' OR LOWER(COALESCE(i.condicao_imovel, i.status_imovel, '')) LIKE '%obra%' OR LOWER(COALESCE(i.condicao_imovel, i.status_imovel, '')) LIKE '%constru%') `;
-        } else if (s.includes('sem')) {
-          query += ` AND LOWER(COALESCE(i.condicao_imovel, i.status_imovel, '')) LIKE '%sem%' `;
-        } else if (s.includes('mobil')) {
-          query += ` AND (LOWER(COALESCE(i.condicao_imovel, i.status_imovel, '')) LIKE '%mobil%' AND LOWER(COALESCE(i.condicao_imovel, i.status_imovel, '')) NOT LIKE '%sem%') `;
-        } else {
-          params.push(filterStatusImovel.trim());
-          query += ` AND (LOWER(COALESCE(i.condicao_imovel, i.status_imovel, '')) = LOWER($${params.length})) `;
-        }
-      }
-
-      if (filterBusca) {
-        params.push(`%${filterBusca.toLowerCase()}%`);
-        const idx = params.length;
-        query += ` AND (
-          LOWER(i.titulo) LIKE $${idx}
-          OR LOWER(i.bairro) LIKE $${idx}
-          OR LOWER(i.cidade) LIKE $${idx}
-          OR LOWER(i.codigo) LIKE $${idx}
-          OR LOWER(i.construtora) LIKE $${idx}
-          OR LOWER(i.nome_edificio) LIKE $${idx}
-          OR LOWER(i.descricao) LIKE $${idx}
-        ) `;
-      }
-
-      if (filterPrecoMin > 0) {
-        params.push(filterPrecoMin);
-        query += ` AND COALESCE(i.valor_venda, 0) >= $${params.length} `;
-      }
-      if (filterPrecoMax > 0 && filterPrecoMax < 15000000) {
-        params.push(filterPrecoMax);
-        query += ` AND COALESCE(i.valor_venda, 0) <= $${params.length} `;
-      }
-
-      if (filterQuartos > 0) {
-        params.push(filterQuartos);
-        query += ` AND COALESCE(i.quartos, 0) >= $${params.length} `;
-      }
-
-      if (filterBanheiros > 0) {
-        params.push(filterBanheiros);
-        query += ` AND COALESCE(i.bwc, 0) >= $${params.length} `;
-      }
-
-      if (filterVagas > 0) {
-        params.push(filterVagas);
-        query += ` AND COALESCE(i.vagas, 0) >= $${params.length} `;
-      }
-
-      if (filterMetragemMin > 0) {
-        params.push(filterMetragemMin);
-        query += ` AND COALESCE(i.area_privativa, 0) >= $${params.length} `;
-      }
-      if (filterMetragemMax > 0) {
-        params.push(filterMetragemMax);
-        query += ` AND COALESCE(i.area_privativa, 0) <= $${params.length} `;
-      }
-
-      if (filterBairro) {
-        params.push(`%${filterBairro.toLowerCase()}%`);
-        query += ` AND LOWER(i.bairro) LIKE $${params.length} `;
-      }
-
-      if (filterConstrutora) {
-        params.push(`%${filterConstrutora.toLowerCase()}%`);
-        query += ` AND LOWER(i.construtora) LIKE $${params.length} `;
-      }
-
-      query += ` ORDER BY i.data_cadastro DESC `;
-
-      if (paginate) {
-        params.push(limit);
-        params.push(offset);
-        query += ` LIMIT $${params.length - 1} OFFSET $${params.length} `;
-      } else {
-        params.push(limit || 1000);
-        query += ` LIMIT $${params.length} `;
-      }
-
-      const res = await this.pool.query(query, params);
-      const total = res.rows.length > 0 ? parseInt(res.rows[0].full_count || '0', 10) : 0;
-      const list = res.rows.map(r => this.mapPostgresSummaryRowToImovel(r));
-
-      logMemory('ServerDb.getImoveis AFTER');
-
-      if (paginate) {
-        const totalPages = Math.ceil(total / limit) || 1;
+      if (isPaginated) {
         return {
-          data: list,
+          data: items,
           total,
           page,
           limit,
           totalPages,
-          hasMore: page * limit < total
+          hasMore: page < totalPages
         };
       }
-
-      return list;
-    } else {
-      const db = await this.readJson();
-
-      const filtered = db.properties.filter(p => {
-        const propEmail = (p.corretorEmail || '').toLowerCase().trim();
-        const isMine = cleanUserEmail && propEmail === cleanUserEmail;
-        if (isMine) return true;
-
-        const isShared = p.compartilhar === 'SIM' || p.compartilhar === true || p.compartilhar === undefined || (p.compartilhar as any) === 'true';
-        if (!isShared) return false;
-
-        const vis = (p.visibilidade || 'todos') as string;
-        if (vis === 'meus') return false;
-
-        const ownerBroker = db.brokers.find(b => b.email && b.email.toLowerCase().trim() === propEmail);
-        const ownerPartners = (ownerBroker?.parceirosEmails || []).map(e => e.toLowerCase().trim());
-        const explicitPartners = (db.partnerships || [])
-          .filter(pr => pr.corretorEmail.toLowerCase().trim() === propEmail)
-          .map(pr => pr.corretorParceiroEmail.toLowerCase().trim());
-        const allPartners = new Set([...ownerPartners, ...explicitPartners]);
-
-        const isPartner = Boolean(cleanUserEmail && allPartners.has(cleanUserEmail));
-
-        if (vis === 'parceiros') {
-          return isPartner;
-        }
-
-        if (allPartners.size > 0 || ownerBroker?.restringirParceiros) {
-          return isPartner;
-        }
-
-        if (filterCidade) {
-          if ((p.cidade || '').trim().toLowerCase() !== filterCidade.toLowerCase()) return false;
-        }
-
-        return true;
-      });
-
-      const total = filtered.length;
-      const sliced = paginate ? filtered.slice(offset, offset + limit) : filtered.slice(0, 100);
-
-      const list: Imovel[] = sliced.map(p => {
-        const cover = (Array.isArray(p.fotos) && p.fotos.length > 0) ? [p.fotos[0]] : [];
-        return {
-          ...p,
-          corretorId: p.corretorId || `broker-${(p.corretorEmail || '').toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
-          website: (p.website === 'NAO' ? 'NAO' : 'SIM') as 'SIM' | 'NAO',
-          compartilhar: ((p.compartilhar === 'NAO' || p.compartilhar === false) ? 'NAO' : 'SIM') as 'SIM' | 'NAO',
-          descricao: '',
-          informacoes: undefined,
-          dadosProprietario: undefined,
-          nomeProprietario: 'Confidencial',
-          telefoneProprietario: 'Confidencial',
-          fotos: cover
-        };
-      });
-
-      logMemory('ServerDb.getImoveis (JSON) AFTER');
-
-      if (paginate) {
-        const totalPages = Math.ceil(total / limit) || 1;
-        return {
-          data: list,
-          total,
-          page,
-          limit,
-          totalPages,
-          hasMore: page * limit < total
-        };
-      }
-
-      return list;
+      return items;
     }
+
+    // Local JSON filter
+    let filtered = [...this.localData.properties];
+    if (filters.cidade) filtered = filtered.filter(p => p.cidade?.toLowerCase().includes(filters.cidade.toLowerCase()));
+    if (filters.bairro) filtered = filtered.filter(p => p.bairro?.toLowerCase().includes(filters.bairro.toLowerCase()));
+    if (filters.tipoImovel) filtered = filtered.filter(p => p.tipoImovel === filters.tipoImovel);
+    if (filters.busca) {
+      const q = filters.busca.toLowerCase();
+      filtered = filtered.filter(p => 
+        p.titulo?.toLowerCase().includes(q) ||
+        p.descricao?.toLowerCase().includes(q) ||
+        p.bairro?.toLowerCase().includes(q) ||
+        p.cidade?.toLowerCase().includes(q) ||
+        p.codigo?.toLowerCase().includes(q)
+      );
+    }
+
+    const total = filtered.length;
+    const totalPages = Math.ceil(total / limit) || 1;
+    const startIndex = (page - 1) * limit;
+    const data = filtered.slice(startIndex, startIndex + limit);
+
+    if (isPaginated) {
+      return {
+        data,
+        total,
+        page,
+        limit,
+        totalPages,
+        hasMore: page < totalPages
+      };
+    }
+    return data;
   }
 
-  static async getMeusImoveis(
-    tokenEmail: string,
-    optionsOrMaxFotos?: number | { page?: number; limit?: number; paginate?: boolean }
-  ): Promise<Imovel[] | PaginatedResult<Imovel>> {
-    logMemory('ServerDb.getMeusImoveis BEFORE');
-    const cleanEmail = tokenEmail.toLowerCase().trim();
-    if (!cleanEmail) return [];
-
-    let page = 1;
-    let limit = 50;
-    let paginate = false;
-
-    if (typeof optionsOrMaxFotos === 'object' && optionsOrMaxFotos) {
-      if (optionsOrMaxFotos.page && optionsOrMaxFotos.page > 0) page = optionsOrMaxFotos.page;
-      if (optionsOrMaxFotos.limit && optionsOrMaxFotos.limit > 0) limit = optionsOrMaxFotos.limit;
-      paginate = Boolean(optionsOrMaxFotos.paginate || optionsOrMaxFotos.page);
-    }
-    const offset = (page - 1) * limit;
+  // --- GET MEUS IMOVEIS ---
+  public static async getMeusImoveis(email: string, options: any = {}): Promise<{ data: Imovel[]; total: number; page: number; limit: number; totalPages: number; hasMore: boolean } | Imovel[]> {
+    const cleanEmail = email.toLowerCase().trim();
+    const page = options.page ? Math.max(1, Number(options.page)) : 1;
+    const limit = options.limit ? Math.max(1, Math.min(200, Number(options.limit))) : 50;
+    const isPaginated = Boolean(options.paginate || options.page);
 
     if (this.isPostgres && this.pool) {
-      let query = `
-        SELECT 
-          COUNT(*) OVER() AS full_count,
-          i.id,
-          i.codigo,
-          i.codigo_im,
-          i.unidade,
-          i.bloco_torre,
-          i.condicao_imovel,
-          i.status_global,
-          i.escopo,
-          i.titulo,
-          i.cidade,
-          i.bairro,
-          i.endereco,
-          i.cep,
-          i.tipo,
-          i.modalidade,
-          i.valor_venda,
-          i.status_imovel,
-          i.valor_locacao,
-          i.quartos,
-          i.bwc,
-          i.vagas,
-          i.area_privativa,
-          i.nome_edificio,
-          i.palavra_destacada,
-          i.visibilidade,
-          i.data_cadastro,
-          i.origem,
-          i.construtora,
-          i.website,
-          i.compartilhar,
-          i.latitude,
-          i.longitude,
-          i.condominio,
-          i.iptu,
-          i.corretor_email,
-          c.id as corretor_id_db,
-          c.nome as corretor_nome_db,
-          c.foto_url as corretor_foto_db,
-          c.telefone as corretor_telefone_db,
-          CASE 
-            WHEN i.imagens IS NULL OR i.imagens = '' OR i.imagens = '[]' THEN ''
-            WHEN i.imagens LIKE '[%' THEN COALESCE(i.imagens::json->>0, '')
-            ELSE COALESCE(split_part(i.imagens, ',', 1), '')
-          END as imagem_capa
-        FROM imoveis i
-        LEFT JOIN corretores c ON LOWER(i.corretor_email) = LOWER(c.email)
-        WHERE LOWER(i.corretor_email) = $1
-        ORDER BY i.data_cadastro DESC
-      `;
-      const params: any[] = [cleanEmail];
+      const countRes = await this.pool.query(
+        'SELECT COUNT(*) as total FROM imoveis WHERE LOWER(corretor_email) = LOWER($1)',
+        [cleanEmail]
+      );
+      const total = parseInt(countRes.rows[0].total, 10);
+      const totalPages = Math.ceil(total / limit) || 1;
+      const offset = (page - 1) * limit;
 
-      if (paginate) {
-        params.push(limit);
-        params.push(offset);
-        query += ` LIMIT $2 OFFSET $3 `;
-      } else {
-        params.push(100);
-        query += ` LIMIT $2 `;
-      }
+      const dataRes = await this.pool.query(
+        'SELECT * FROM imoveis WHERE LOWER(corretor_email) = LOWER($1) ORDER BY data_cadastro DESC NULLS LAST, id DESC LIMIT $2 OFFSET $3',
+        [cleanEmail, limit, offset]
+      );
 
-      const res = await this.pool.query(query, params);
-      const total = res.rows.length > 0 ? parseInt(res.rows[0].full_count || '0', 10) : 0;
-      const list = res.rows.map(r => this.mapPostgresSummaryRowToImovel(r));
+      const items = dataRes.rows.map(r => this.mapRowToImovel(r));
 
-      logMemory('ServerDb.getMeusImoveis AFTER');
-
-      if (paginate) {
-        const totalPages = Math.ceil(total / limit) || 1;
+      if (isPaginated) {
         return {
-          data: list,
+          data: items,
           total,
           page,
           limit,
           totalPages,
-          hasMore: page * limit < total
+          hasMore: page < totalPages
         };
       }
-
-      return list;
-    } else {
-      const db = await this.readJson();
-      const filtered = db.properties.filter(p => (p.corretorEmail || '').toLowerCase().trim() === cleanEmail);
-      const total = filtered.length;
-      const sliced = paginate ? filtered.slice(offset, offset + limit) : filtered.slice(0, 100);
-
-      const list = sliced.map(p => {
-        const cover = (Array.isArray(p.fotos) && p.fotos.length > 0) ? [p.fotos[0]] : [];
-        return {
-          ...p,
-          fotos: cover
-        };
-      });
-
-      logMemory('ServerDb.getMeusImoveis (JSON) AFTER');
-
-      if (paginate) {
-        const totalPages = Math.ceil(total / limit) || 1;
-        return {
-          data: list,
-          total,
-          page,
-          limit,
-          totalPages,
-          hasMore: page * limit < total
-        };
-      }
-
-      return list;
+      return items;
     }
+
+    const mine = this.localData.properties.filter(p => p.corretorEmail.toLowerCase().trim() === cleanEmail);
+    const total = mine.length;
+    const totalPages = Math.ceil(total / limit) || 1;
+    const startIndex = (page - 1) * limit;
+    const data = mine.slice(startIndex, startIndex + limit);
+
+    if (isPaginated) {
+      return {
+        data,
+        total,
+        page,
+        limit,
+        totalPages,
+        hasMore: page < totalPages
+      };
+    }
+    return data;
   }
 
-  static async getImovelById(id: string): Promise<Imovel | null> {
-    const cleanId = (id || '').trim();
-    if (!cleanId) return null;
-    const cleanWithoutPrefix = cleanId.replace(/^imovel-/, '').replace(/^prop-/, '');
-    const withImovelPrefix = `imovel-${cleanWithoutPrefix}`;
-    const withPropPrefix = `prop-${cleanWithoutPrefix}`;
+  // --- MAP MARKERS ---
+  public static async getImoveisMapa(filters: any = {}): Promise<any[]> {
+    if (this.isPostgres && this.pool) {
+      let conditions: string[] = [];
+      let params: any[] = [];
+      let pIdx = 1;
 
+      if (filters.cidade) {
+        conditions.push(`LOWER(cidade) LIKE LOWER($${pIdx++})`);
+        params.push(`%${filters.cidade.trim()}%`);
+      }
+      if (filters.bairro) {
+        conditions.push(`LOWER(bairro) LIKE LOWER($${pIdx++})`);
+        params.push(`%${filters.bairro.trim()}%`);
+      }
+      if (filters.tipoImovel) {
+        conditions.push(`LOWER(tipo) = LOWER($${pIdx++})`);
+        params.push(filters.tipoImovel.trim());
+      }
+      if (filters.precoMin) {
+        conditions.push(`valor_venda >= $${pIdx++}`);
+        params.push(filters.precoMin);
+      }
+      if (filters.precoMax) {
+        conditions.push(`valor_venda <= $${pIdx++}`);
+        params.push(filters.precoMax);
+      }
+
+      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+      const res = await this.pool.query(
+        `SELECT id, codigo, codigo_im, titulo, valor_venda, valor_locacao, cidade, bairro, latitude, longitude, imagens, tipo, status_imovel, condicao_imovel, quartos, bwc, vagas, area_privativa, corretor_email FROM imoveis ${whereClause} LIMIT 1000`,
+        params
+      );
+
+      return res.rows.map(r => {
+        let fotoCapa = '';
+        try {
+          const parsed = typeof r.imagens === 'string' ? JSON.parse(r.imagens) : r.imagens;
+          if (Array.isArray(parsed) && parsed.length > 0) fotoCapa = parsed[0];
+        } catch {}
+
+        return {
+          id: r.id,
+          codigo: r.codigo || r.codigo_im,
+          titulo: r.titulo,
+          valor: Number(r.valor_venda || 0),
+          valorLocacao: r.valor_locacao ? Number(r.valor_locacao) : undefined,
+          cidade: r.cidade,
+          bairro: r.bairro,
+          latitude: r.latitude ? Number(r.latitude) : undefined,
+          longitude: r.longitude ? Number(r.longitude) : undefined,
+          fotos: fotoCapa ? [fotoCapa] : [],
+          tipoImovel: r.tipo,
+          statusImovel: r.status_imovel,
+          condicaoImovel: r.condicao_imovel,
+          dormitorios: Number(r.quartos || 0),
+          banheiros: Number(r.bwc || 0),
+          vagas: Number(r.vagas || 0),
+          metragem: Number(r.area_privativa || 0),
+          corretorEmail: r.corretor_email
+        };
+      });
+    }
+
+    return this.localData.properties.map(p => ({
+      id: p.id,
+      codigo: p.codigo || p.codigoIm,
+      titulo: p.titulo,
+      valor: p.valor,
+      valorLocacao: p.valorLocacao,
+      cidade: p.cidade,
+      bairro: p.bairro,
+      latitude: p.latitude,
+      longitude: p.longitude,
+      fotos: p.fotos.slice(0, 1),
+      tipoImovel: p.tipoImovel,
+      statusImovel: p.statusImovel,
+      condicaoImovel: p.condicaoImovel,
+      dormitorios: p.dormitorios,
+      banheiros: p.banheiros,
+      vagas: p.vagas,
+      metragem: p.metragem,
+      corretorEmail: p.corretorEmail
+    }));
+  }
+
+  // --- GET SINGLE IMOVEL BY ID OR CODE ---
+  public static async getImovelById(idOrCode: string): Promise<Imovel | null> {
+    const clean = idOrCode.trim();
     if (this.isPostgres && this.pool) {
       const res = await this.pool.query(
-        `SELECT * FROM imoveis 
-         WHERE LOWER(id) = LOWER($1) 
-            OR LOWER(id) = LOWER($2) 
-            OR LOWER(id) = LOWER($3) 
-            OR LOWER(id) = LOWER($4) 
-            OR LOWER(codigo) = LOWER($1) 
-            OR LOWER(codigo) = LOWER($2) 
-            OR LOWER(COALESCE(codigo_im, '')) = LOWER($1)
-            OR LOWER(COALESCE(codigo_im, '')) = LOWER($2)
-         LIMIT 1`,
-        [cleanId, cleanWithoutPrefix, withImovelPrefix, withPropPrefix]
+        'SELECT * FROM imoveis WHERE id = $1 OR codigo = $1 OR codigo_im = $1 LIMIT 1',
+        [clean]
       );
       if (res.rows.length === 0) return null;
-      return this.mapPostgresRowToImovel(res.rows[0], '', true, 0);
-    } else {
-      const db = await this.readJson();
-      const t1 = cleanId.toLowerCase();
-      const t2 = cleanWithoutPrefix.toLowerCase();
-      return db.properties.find(p => {
-        const pId = (p.id || '').toLowerCase();
-        const pCod = (p.codigo || '').toLowerCase();
-        const pIm = (p.codigoIm || '').toLowerCase();
-        return pId === t1 || pId === t2 || pCod === t1 || pCod === t2 || pIm === t1 || pIm === t2 || pId === `imovel-${t2}` || pId === `prop-${t2}`;
-      }) || null;
+      return this.mapRowToImovel(res.rows[0]);
     }
+
+    const found = this.localData.properties.find(p => p.id === clean || p.codigo === clean || p.codigoIm === clean);
+    return found ? { ...found } : null;
   }
 
-  static async saveImovel(imovel: Imovel, tokenEmail: string): Promise<Imovel> {
-    const cleanEmail = tokenEmail.toLowerCase().trim();
-    if (!cleanEmail) throw new Error('Token de e-mail é obrigatório para salvar imóvel.');
+  // --- SAVE IMOVEL (CREATE / UPDATE) ---
+  public static async saveImovel(propertyData: any, ownerEmail: string): Promise<Imovel> {
+    const cleanEmail = ownerEmail.toLowerCase().trim();
+    let imovelId = propertyData.id;
 
-    // Guarantee corretor exists in DB
-    let broker = await this.getCorretorByEmail(cleanEmail);
-    if (!broker) {
-      broker = await this.saveCorretor({ email: cleanEmail, nome: cleanEmail.split('@')[0] });
+    const isNew = !imovelId;
+    if (isNew) {
+      imovelId = `imovel-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     }
 
-    const websiteDb: 'SIM' | 'NAO' = imovel.website === 'NAO' ? 'NAO' : 'SIM';
-    const compartilharDb: 'SIM' | 'NAO' = (imovel.compartilhar === 'NAO' || imovel.compartilhar === false) ? 'NAO' : 'SIM';
-
-    let propertyId = imovel.id;
-    let centralImCode = imovel.codigoIm;
-
-    // Existing property before update (for audit and duplicity detection)
-    const existingImovel = propertyId ? await this.getImovelById(propertyId) : null;
-
-    if (!propertyId || propertyId.startsWith('prop-') || propertyId.startsWith('imovel-')) {
-      if (propertyId && (propertyId.startsWith('prop-') || propertyId.startsWith('imovel-'))) {
-        const existing = existingImovel;
-        if (!existing) {
-          centralImCode = centralImCode || await this.generateNextCentralImCode();
-          propertyId = centralImCode;
-        } else {
-          centralImCode = existing.codigoIm || (existing.codigo && /^IM\d{6}$/i.test(existing.codigo) ? existing.codigo : await this.generateNextCentralImCode());
-        }
+    // Código IM central sequencial se novo
+    let codigoIm = propertyData.codigoIm;
+    if (!codigoIm) {
+      if (this.isPostgres && this.pool) {
+        const countRes = await this.pool.query('SELECT COUNT(*) as count FROM imoveis');
+        const nextNum = parseInt(countRes.rows[0].count, 10) + 1;
+        codigoIm = `IM${nextNum.toString().padStart(6, '0')}`;
       } else {
-        centralImCode = centralImCode || await this.generateNextCentralImCode();
-        propertyId = centralImCode;
-      }
-    } else if (!centralImCode) {
-      if (/^IM\d{6}$/i.test(propertyId)) {
-        centralImCode = propertyId.toUpperCase();
-      } else if (imovel.codigo && /^IM\d{6}$/i.test(imovel.codigo)) {
-        centralImCode = imovel.codigo.toUpperCase();
-      } else {
-        centralImCode = await this.generateNextCentralImCode();
+        codigoIm = `IM${(this.localData.properties.length + 1).toString().padStart(6, '0')}`;
       }
     }
 
-    const shortCode = centralImCode || imovel.codigo || propertyId;
+    let codigo = propertyData.codigo || codigoIm;
 
-    const rawCondicao = (imovel.condicaoImovel || imovel.statusImovel || '').toLowerCase().trim();
-    let condicaoImovelFinal = 'Na Planta';
-    if (rawCondicao.includes('sem')) {
-      condicaoImovelFinal = 'Sem Mobília';
-    } else if (rawCondicao.includes('mobil')) {
-      condicaoImovelFinal = 'Mobiliado';
-    } else {
-      condicaoImovelFinal = 'Na Planta';
-    }
+    const dataCadastro = propertyData.dataCadastro || new Date().toISOString();
 
-    const statusGlobalFinal = (
-      imovel.statusComercial || (
-        imovel.statusImovel === 'Vendido' || imovel.statusImovel === 'Reservado' || imovel.statusImovel === 'Disponível'
-          ? imovel.statusImovel
-          : 'Disponivel'
-      )
-    );
-
-    const escopoFinal = imovel.escopo || (
-      (imovel.origem && (imovel.origem.toLowerCase().includes('dwv') || imovel.origem.toLowerCase().includes('portal')))
-        ? 'REDE'
-        : 'CARTEIRA'
-    );
-
-    const finalImovel: Imovel = {
-      ...imovel,
-      id: propertyId,
-      codigo: shortCode,
-      codigoIm: centralImCode,
-      unidade: imovel.unidade || undefined,
-      bloco: imovel.bloco || undefined,
-      condicaoImovel: condicaoImovelFinal,
-      statusImovel: condicaoImovelFinal,
-      statusComercial: statusGlobalFinal as any,
-      escopo: escopoFinal as any,
-      corretorEmail: cleanEmail,
-      corretorNome: broker.nome || cleanEmail.split('@')[0],
-      corretorId: broker.id,
-      website: websiteDb,
-      compartilhar: compartilharDb,
-      origem: imovel.origem || 'Imobishare',
-      construtora: imovel.construtora || '',
-      fotos: Array.isArray(imovel.fotos) ? imovel.fotos.slice(0, 15) : [],
-      dataCadastro: imovel.dataCadastro || new Date().toISOString()
+    const imovelToSave: Imovel = {
+      ...propertyData,
+      id: imovelId,
+      corretorEmail: propertyData.corretorEmail || cleanEmail,
+      codigo,
+      codigoIm,
+      dataCadastro,
+      valor: propertyData.valor !== undefined ? Number(propertyData.valor) : 0,
+      valorVenda: propertyData.valorVenda !== undefined ? Number(propertyData.valorVenda) : (propertyData.valor ? Number(propertyData.valor) : undefined),
+      valorLocacao: propertyData.valorLocacao ? Number(propertyData.valorLocacao) : undefined,
+      condominio: propertyData.condominio ? Number(propertyData.condominio) : undefined,
+      iptu: propertyData.iptu ? Number(propertyData.iptu) : undefined,
+      dormitorios: propertyData.dormitorios !== undefined ? Number(propertyData.dormitorios) : 0,
+      quartos: propertyData.quartos !== undefined ? Number(propertyData.quartos) : (propertyData.dormitorios ? Number(propertyData.dormitorios) : 0),
+      banheiros: propertyData.banheiros !== undefined ? Number(propertyData.banheiros) : 0,
+      vagas: propertyData.vagas !== undefined ? Number(propertyData.vagas) : 0,
+      metragem: propertyData.metragem !== undefined ? Number(propertyData.metragem) : 0,
+      fotos: Array.isArray(propertyData.fotos) ? propertyData.fotos : []
     };
 
     if (this.isPostgres && this.pool) {
-      const fotosJson = JSON.stringify(finalImovel.fotos);
-      const valorVenda = finalImovel.valorVenda || finalImovel.valor || 0;
-      const modalidade = finalImovel.valorLocacao && valorVenda ? 'ambos' : (finalImovel.valorLocacao ? 'locação' : 'venda');
-
-      await this.pool.query(`
-        INSERT INTO imoveis (
+      await this.pool.query(
+        `INSERT INTO imoveis (
           id, corretor_email, cep, endereco, cidade, bairro, tipo, modalidade,
-          valor_venda, status_imovel, valor_locacao, quartos, bwc, vagas,
-          area_privativa, nome_edificio, titulo, palavra_destacada, descricao,
-          visibilidade, dados_proprietario, imagens, data_cadastro,
-          valor_anterior, valor_locacao_anterior, informacoes, origem, construtora, telefone_construtora,
-          website, compartilhar, codigo, latitude, longitude, condominio, iptu,
-          codigo_im, unidade, bloco_torre, condicao_imovel, status_global, escopo
+          valor_venda, valor_locacao, quartos, bwc, vagas, area_privativa,
+          nome_edificio, titulo, palavra_destacada, descricao, visibilidade,
+          dados_proprietario, imagens, data_cadastro, valor_anterior, valor_locacao_anterior,
+          informacoes, status_imovel, origem, construtora, website, compartilhar,
+          codigo, latitude, longitude, condominio, iptu, codigo_im, unidade, bloco_torre,
+          condicao_imovel, status_global, escopo, telefone_construtora
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8,
-          $9, $10, $11, $12, $13, $14,
-          $15, $16, $17, $18, $19,
-          $20, $21, $22, $23,
-          $24, $25, $26, $27, $28, $29,
-          $30, $31, $32, $33, $34, $35, $36,
-          $37, $38, $39, $40, $41, $42
-        ) ON CONFLICT (id) DO UPDATE SET
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+          $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26,
+          $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38,
+          $39, $40, $41, $42
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          corretor_email = EXCLUDED.corretor_email,
           cep = EXCLUDED.cep,
           endereco = EXCLUDED.endereco,
           cidade = EXCLUDED.cidade,
@@ -1773,7 +921,6 @@ export class ServerDb {
           tipo = EXCLUDED.tipo,
           modalidade = EXCLUDED.modalidade,
           valor_venda = EXCLUDED.valor_venda,
-          status_imovel = EXCLUDED.status_imovel,
           valor_locacao = EXCLUDED.valor_locacao,
           quartos = EXCLUDED.quartos,
           bwc = EXCLUDED.bwc,
@@ -1789,9 +936,9 @@ export class ServerDb {
           valor_anterior = EXCLUDED.valor_anterior,
           valor_locacao_anterior = EXCLUDED.valor_locacao_anterior,
           informacoes = EXCLUDED.informacoes,
+          status_imovel = EXCLUDED.status_imovel,
           origem = EXCLUDED.origem,
           construtora = EXCLUDED.construtora,
-          telefone_construtora = EXCLUDED.telefone_construtora,
           website = EXCLUDED.website,
           compartilhar = EXCLUDED.compartilhar,
           codigo = EXCLUDED.codigo,
@@ -1799,536 +946,208 @@ export class ServerDb {
           longitude = EXCLUDED.longitude,
           condominio = EXCLUDED.condominio,
           iptu = EXCLUDED.iptu,
-          codigo_im = COALESCE(EXCLUDED.codigo_im, imoveis.codigo_im),
-          unidade = COALESCE(EXCLUDED.unidade, imoveis.unidade),
-          bloco_torre = COALESCE(EXCLUDED.bloco_torre, imoveis.bloco_torre),
-          condicao_imovel = COALESCE(EXCLUDED.condicao_imovel, imoveis.condicao_imovel),
-          status_global = COALESCE(EXCLUDED.status_global, imoveis.status_global),
-          escopo = COALESCE(EXCLUDED.escopo, imoveis.escopo);
-      `, [
-        finalImovel.id,
-        cleanEmail,
-        finalImovel.cep || '',
-        finalImovel.endereco || finalImovel.localizacao || '',
-        finalImovel.cidade,
-        finalImovel.bairro,
-        finalImovel.tipoImovel,
-        modalidade,
-        valorVenda,
-        finalImovel.statusImovel || null,
-        finalImovel.valorLocacao || null,
-        finalImovel.dormitorios || finalImovel.quartos || 0,
-        finalImovel.banheiros || 0,
-        finalImovel.vagas || 0,
-        finalImovel.metragem || 0,
-        finalImovel.nomeEdificio || '',
-        finalImovel.titulo,
-        (finalImovel.palavraDestacada || '').substring(0, 20),
-        finalImovel.descricao,
-        finalImovel.visibilidade || 'todos',
-        finalImovel.dadosProprietario || finalImovel.nomeProprietario || '',
-        fotosJson,
-        finalImovel.dataCadastro,
-        finalImovel.valorAnterior || null,
-        finalImovel.valorLocacaoAnterior || null,
-        finalImovel.informacoes || null,
-        finalImovel.origem || 'Imobishare',
-        finalImovel.construtora || '',
-        finalImovel.telefoneConstrutora || null,
-        websiteDb,
-        compartilharDb,
-        finalImovel.codigo || null,
-        finalImovel.latitude !== undefined ? finalImovel.latitude : null,
-        finalImovel.longitude !== undefined ? finalImovel.longitude : null,
-        finalImovel.condominio !== undefined ? finalImovel.condominio : null,
-        finalImovel.iptu !== undefined ? finalImovel.iptu : null,
-        finalImovel.codigoIm || null,
-        finalImovel.unidade || null,
-        finalImovel.bloco || null,
-        finalImovel.condicaoImovel || null,
-        finalImovel.statusComercial || 'Disponivel',
-        finalImovel.escopo || 'CARTEIRA'
-      ]);
-
-      // Salvar na relação corretor_imoveis
-      const relId = `rel-${finalImovel.id}-${cleanEmail.replace(/[^a-z0-9]/gi, '_')}`;
-      await this.pool.query(`
-        INSERT INTO corretor_imoveis (
-          id, corretor_email, imovel_id, status_carteira, dados_proprietario,
-          nome_proprietario, telefone_proprietario
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-        ON CONFLICT (corretor_email, imovel_id) DO UPDATE SET
-          status_carteira = EXCLUDED.status_carteira,
-          dados_proprietario = COALESCE(NULLIF(EXCLUDED.dados_proprietario, ''), corretor_imoveis.dados_proprietario),
-          nome_proprietario = COALESCE(NULLIF(EXCLUDED.nome_proprietario, ''), corretor_imoveis.nome_proprietario),
-          telefone_proprietario = COALESCE(NULLIF(EXCLUDED.telefone_proprietario, ''), corretor_imoveis.telefone_proprietario);
-      `, [
-        relId,
-        cleanEmail,
-        finalImovel.id,
-        finalImovel.statusComercial || 'Disponivel',
-        finalImovel.dadosProprietario || '',
-        finalImovel.nomeProprietario || '',
-        finalImovel.telefoneProprietario || ''
-      ]).catch(err => console.warn('Aviso ao sincronizar corretor_imoveis:', err));
-
-      // Auditoria / Histórico de alterações (imovel_historico)
-      if (existingImovel) {
-        const auditFields: Array<{ key: keyof Imovel; label: string }> = [
-          { key: 'valor', label: 'valor' },
-          { key: 'valorVenda', label: 'valor_venda' },
-          { key: 'valorLocacao', label: 'valor_locacao' },
-          { key: 'statusComercial', label: 'status_global' },
-          { key: 'condicaoImovel', label: 'condicao_imovel' },
-          { key: 'unidade', label: 'unidade' },
-          { key: 'bloco', label: 'bloco_torre' },
-          { key: 'titulo', label: 'titulo' }
-        ];
-
-        for (const item of auditFields) {
-          const oldVal = String(existingImovel[item.key] ?? '');
-          const newVal = String(finalImovel[item.key] ?? '');
-          if (oldVal !== newVal && (oldVal || newVal)) {
-            await this.pool.query(`
-              INSERT INTO imovel_historico (
-                imovel_id, usuario_email, tipo_usuario, campo_alterado, valor_anterior, valor_novo
-              ) VALUES ($1, $2, $3, $4, $5, $6)
-            `, [
-              finalImovel.id,
-              cleanEmail,
-              cleanEmail === 'afreccia@gmail.com' ? 'admin' : 'corretor',
-              item.label,
-              oldVal,
-              newVal
-            ]).catch(err => console.warn('Aviso ao registrar historico:', err));
-          }
-        }
-      } else {
-        // Novo cadastro no histórico
-        await this.pool.query(`
-          INSERT INTO imovel_historico (
-            imovel_id, usuario_email, tipo_usuario, campo_alterado, valor_anterior, valor_novo
-          ) VALUES ($1, $2, $3, $4, $5, $6)
-        `, [
-          finalImovel.id,
-          cleanEmail,
-          cleanEmail === 'afreccia@gmail.com' ? 'admin' : 'corretor',
-          'criacao',
-          null,
-          finalImovel.codigoIm || finalImovel.id
-        ]).catch(err => console.warn('Aviso ao registrar historico inicial:', err));
-
-        // Verificação inteligente de duplicidade física se unidade ou edifício foram preenchidos
-        if (finalImovel.nomeEdificio && finalImovel.unidade) {
-          try {
-            const dupCheck = await this.pool.query(`
-              SELECT id, corretor_email, codigo_im FROM imoveis
-              WHERE id != $1
-                AND LOWER(TRIM(nome_edificio)) = LOWER(TRIM($2))
-                AND LOWER(TRIM(unidade)) = LOWER(TRIM($3))
-                AND (bloco_torre IS NULL OR $4::text IS NULL OR LOWER(TRIM(bloco_torre)) = LOWER(TRIM($4)))
-              LIMIT 1
-            `, [finalImovel.id, finalImovel.nomeEdificio, finalImovel.unidade, finalImovel.bloco || null]);
-
-            if (dupCheck.rows.length > 0) {
-              const dup = dupCheck.rows[0];
-              await this.pool.query(`
-                INSERT INTO imovel_duplicidades_revisao (
-                  imovel_novo_id, imovel_existente_id, corretor_email, grau_confianca, motivo
-                ) VALUES ($1, $2, $3, $4, $5)
-              `, [
-                finalImovel.id,
-                dup.id,
-                cleanEmail,
-                'ALTO',
-                `Mesmo edifício (${finalImovel.nomeEdificio}) e mesma unidade (${finalImovel.unidade}). Imóvel existente: ${dup.codigo_im || dup.id}`
-              ]).catch(() => {});
-            }
-          } catch (dupErr) {
-            console.warn('Aviso ao checar duplicidade:', dupErr);
-          }
-        }
-      }
-
-      return finalImovel;
-    } else {
-      const db = await this.readJson();
-      const idx = db.properties.findIndex(p => p.id === finalImovel.id);
-      if (idx >= 0) {
-        db.properties[idx] = finalImovel;
-      } else {
-        db.properties.unshift(finalImovel);
-      }
-      await this.writeJson(db);
-      return finalImovel;
+          codigo_im = EXCLUDED.codigo_im,
+          unidade = EXCLUDED.unidade,
+          bloco_torre = EXCLUDED.bloco_torre,
+          condicao_imovel = EXCLUDED.condicao_imovel,
+          status_global = EXCLUDED.status_global,
+          escopo = EXCLUDED.escopo,
+          telefone_construtora = EXCLUDED.telefone_construtora`,
+        [
+          imovelToSave.id,
+          imovelToSave.corretorEmail,
+          imovelToSave.cep || null,
+          imovelToSave.endereco || imovelToSave.localizacao || null,
+          imovelToSave.cidade || 'Balneário Camboriú',
+          imovelToSave.bairro || '',
+          imovelToSave.tipoImovel || 'Apartamento',
+          imovelToSave.tipo || 'venda',
+          imovelToSave.valor || null,
+          imovelToSave.valorLocacao || null,
+          imovelToSave.dormitorios || 0,
+          imovelToSave.banheiros || 0,
+          imovelToSave.vagas || 0,
+          imovelToSave.metragem || null,
+          imovelToSave.nomeEdificio || null,
+          imovelToSave.titulo || '',
+          imovelToSave.palavraDestacada || null,
+          imovelToSave.descricao || '',
+          imovelToSave.visibilidade || 'todos',
+          imovelToSave.dadosProprietario || null,
+          JSON.stringify(imovelToSave.fotos || []),
+          imovelToSave.dataCadastro,
+          imovelToSave.valorAnterior || null,
+          imovelToSave.valorLocacaoAnterior || null,
+          imovelToSave.informacoes || null,
+          imovelToSave.statusImovel || 'Na Planta',
+          imovelToSave.origem || 'Imobishare',
+          imovelToSave.construtora || null,
+          imovelToSave.website || 'SIM',
+          imovelToSave.compartilhar || 'SIM',
+          imovelToSave.codigo || null,
+          imovelToSave.latitude || null,
+          imovelToSave.longitude || null,
+          imovelToSave.condominio || null,
+          imovelToSave.iptu || null,
+          imovelToSave.codigoIm || null,
+          imovelToSave.unidade || null,
+          imovelToSave.bloco || null,
+          imovelToSave.condicaoImovel || 'Na Planta',
+          imovelToSave.statusComercial || 'Disponível',
+          imovelToSave.escopo || 'CARTEIRA',
+          imovelToSave.telefoneConstrutora || null
+        ]
+      );
+      return imovelToSave;
     }
+
+    const idx = this.localData.properties.findIndex(p => p.id === imovelToSave.id);
+    if (idx >= 0) {
+      this.localData.properties[idx] = imovelToSave;
+    } else {
+      this.localData.properties.unshift(imovelToSave);
+    }
+    await this.saveLocalJson();
+    return imovelToSave;
   }
 
-  static async deleteImovel(id: string, tokenEmail: string): Promise<boolean> {
-    const cleanEmail = tokenEmail.toLowerCase().trim();
-    const existing = await this.getImovelById(id);
-    if (!existing) return false;
-    
-    // Check if user is admin
-    const caller = await this.getCorretorByEmail(cleanEmail);
-    const isAdmin = caller?.isAdmin || caller?.role === 'admin' || cleanEmail === 'afreccia@gmail.com';
-
-    if (!isAdmin && existing.corretorEmail.toLowerCase().trim() !== cleanEmail) {
-      throw new Error('Permissão negada: você não é o dono deste imóvel.');
-    }
+  // --- DELETE IMOVEL ---
+  public static async deleteImovel(id: string, userEmail: string): Promise<void> {
+    const cleanEmail = userEmail.toLowerCase().trim();
+    const isAdmin = cleanEmail === 'afreccia@gmail.com';
 
     if (this.isPostgres && this.pool) {
       if (isAdmin) {
         await this.pool.query('DELETE FROM imoveis WHERE id = $1', [id]);
       } else {
-        await this.pool.query('DELETE FROM imoveis WHERE id = $1 AND LOWER(corretor_email) = $2', [id, cleanEmail]);
+        const res = await this.pool.query('DELETE FROM imoveis WHERE id = $1 AND LOWER(corretor_email) = LOWER($2)', [id, cleanEmail]);
+        if (res.rowCount === 0) {
+          throw new Error('Imóvel não encontrado ou você não tem permissão para excluí-lo.');
+        }
       }
-      return true;
-    } else {
-      const db = await this.readJson();
-      if (isAdmin) {
-        db.properties = db.properties.filter(p => p.id !== id);
-      } else {
-        db.properties = db.properties.filter(p => !(p.id === id && (p.corretorEmail || '').toLowerCase().trim() === cleanEmail));
-      }
-      await this.writeJson(db);
-      return true;
-    }
-  }
-
-  // Helper for lightweight PostgreSQL summary row conversion (avoids heavy base64 buffers and large text fields)
-  private static mapPostgresSummaryRowToImovel(r: any): Imovel {
-    const emailClean = (r.corretor_email || '').toLowerCase().trim();
-
-    const websiteVal: 'SIM' | 'NAO' = r.website === 'NAO' ? 'NAO' : 'SIM';
-    let compartilharVal: 'SIM' | 'NAO' = 'SIM';
-    if (r.compartilhar === 'NAO' || r.compartilhar === 'false' || r.compartilhar === false) {
-      compartilharVal = 'NAO';
-    } else if (r.compartilhar === 'SIM' || r.compartilhar === 'true' || r.compartilhar === true) {
-      compartilharVal = 'SIM';
-    } else if (r.visibilidade === 'exclusivo' || r.visibilidade === 'privado') {
-      compartilharVal = 'NAO';
+      return;
     }
 
-    const coverPhoto = r.imagem_capa ? [r.imagem_capa] : [];
-    const valorVenda = r.valor_venda ? parseFloat(r.valor_venda) : 0;
-    const valorLocacao = r.valor_locacao ? parseFloat(r.valor_locacao) : undefined;
-
-    return {
-      id: r.id,
-      corretorId: r.corretor_id || `broker-${emailClean.replace(/[^a-z0-9]/g, '_')}`,
-      corretorEmail: r.corretor_email,
-      corretorNome: r.corretor_nome_db || (emailClean ? emailClean.split('@')[0] : 'Corretor'),
-      website: websiteVal,
-      compartilhar: compartilharVal,
-      cep: r.cep || '',
-      endereco: r.endereco || '',
-      localizacao: r.endereco || `${r.bairro}, ${r.cidade}`,
-      cidade: r.cidade,
-      bairro: r.bairro,
-      tipoImovel: r.tipo || 'Apartamento',
-      statusImovel: r.status_imovel || undefined,
-      tipo: r.modalidade || (valorLocacao && valorVenda ? 'ambos' : (valorLocacao ? 'locação' : 'venda')),
-      valor: valorVenda,
-      valorVenda,
-      valorAnterior: r.valor_anterior ? parseFloat(r.valor_anterior) : undefined,
-      valorLocacao,
-      valorLocacaoAnterior: r.valor_locacao_anterior ? parseFloat(r.valor_locacao_anterior) : undefined,
-      dormitorios: parseInt(r.quartos || '0', 10),
-      quartos: parseInt(r.quartos || '0', 10),
-      banheiros: parseInt(r.bwc || '0', 10),
-      vagas: parseInt(r.vagas || '0', 10),
-      metragem: r.area_privativa ? parseFloat(r.area_privativa) : 0,
-      condominio: r.condominio ? parseFloat(r.condominio) : undefined,
-      iptu: r.iptu ? parseFloat(r.iptu) : undefined,
-      nomeEdificio: r.nome_edificio || '',
-      titulo: r.titulo,
-      palavraDestacada: r.palavra_destacada || '',
-      // Campos pesados omitidos nas listagens para economizar dezenas de megabytes de RAM
-      descricao: '',
-      informacoes: undefined,
-      origem: r.origem || 'Imobishare',
-      integrado: Boolean((r.origem && r.origem.toLowerCase() !== 'imobishare' && r.origem.trim() !== '') || (r.origem && (r.origem.toLowerCase().includes('dwv') || r.origem.toLowerCase().includes('portal')))),
-      integracaoOrigem: (r.origem && r.origem.toLowerCase() !== 'imobishare') ? r.origem : undefined,
-      construtora: r.construtora || '',
-      telefoneConstrutora: r.telefone_construtora || undefined,
-      codigo: r.codigo || undefined,
-      codigoIm: r.codigo_im || (r.codigo && /^IM\d{6}$/i.test(r.codigo) ? r.codigo.toUpperCase() : undefined),
-      unidade: r.unidade || undefined,
-      bloco: r.bloco_torre || undefined,
-      condicaoImovel: r.condicao_imovel || undefined,
-      statusComercial: r.status_global || 'Disponível',
-      escopo: r.escopo || 'CARTEIRA',
-      latitude: r.latitude !== null && r.latitude !== undefined && r.latitude !== '' ? parseFloat(r.latitude) : undefined,
-      longitude: r.longitude !== null && r.longitude !== undefined && r.longitude !== '' ? parseFloat(r.longitude) : undefined,
-      visibilidade: r.visibilidade || 'todos',
-      dadosProprietario: undefined,
-      nomeProprietario: 'Confidencial',
-      telefoneProprietario: 'Confidencial',
-      fotos: coverPhoto,
-      dataCadastro: r.data_cadastro
-    };
-  }
-
-  // Helper for PostgreSQL row conversion (detalhes completos de um imóvel individual)
-  private static mapPostgresRowToImovel(r: any, cleanUserEmail: string, forceIncludeOwnerData = false, maxFotos = 0): Imovel {
-    const isOwner = forceIncludeOwnerData || (cleanUserEmail && r.corretor_email && r.corretor_email.toLowerCase().trim() === cleanUserEmail);
-    const emailClean = (r.corretor_email || '').toLowerCase().trim();
-    
-    const websiteVal: 'SIM' | 'NAO' = r.website === 'NAO' ? 'NAO' : 'SIM';
-    let compartilharVal: 'SIM' | 'NAO' = 'SIM';
-    if (r.compartilhar === 'NAO' || r.compartilhar === 'false' || r.compartilhar === false) {
-      compartilharVal = 'NAO';
-    } else if (r.compartilhar === 'SIM' || r.compartilhar === 'true' || r.compartilhar === true) {
-      compartilharVal = 'SIM';
-    } else if (r.visibilidade === 'exclusivo' || r.visibilidade === 'privado') {
-      compartilharVal = 'NAO';
+    const idx = this.localData.properties.findIndex(p => p.id === id);
+    if (idx < 0) throw new Error('Imóvel não encontrado.');
+    if (!isAdmin && this.localData.properties[idx].corretorEmail.toLowerCase().trim() !== cleanEmail) {
+      throw new Error('Você não tem permissão para excluir este imóvel.');
     }
-
-    let fotosArr: string[] = [];
-    try {
-      if (r.imagens) {
-        fotosArr = typeof r.imagens === 'string' ? JSON.parse(r.imagens) : r.imagens;
-      }
-    } catch {
-      fotosArr = r.imagens ? r.imagens.split(',') : [];
-    }
-
-    const finalFotos = (maxFotos > 0 && Array.isArray(fotosArr) && fotosArr.length > maxFotos)
-      ? fotosArr.slice(0, maxFotos)
-      : (Array.isArray(fotosArr) ? fotosArr : []);
-
-    const valorVenda = r.valor_venda ? parseFloat(r.valor_venda) : 0;
-    const valorLocacao = r.valor_locacao ? parseFloat(r.valor_locacao) : undefined;
-
-    return {
-      id: r.id,
-      corretorId: r.corretor_id || `broker-${emailClean.replace(/[^a-z0-9]/g, '_')}`,
-      corretorEmail: r.corretor_email,
-      corretorNome: r.corretor_nome_db || (emailClean ? emailClean.split('@')[0] : 'Corretor'),
-      website: websiteVal,
-      compartilhar: compartilharVal,
-      cep: r.cep || '',
-      endereco: r.endereco || '',
-      localizacao: r.endereco || `${r.bairro}, ${r.cidade}`,
-      cidade: r.cidade,
-      bairro: r.bairro,
-      tipoImovel: r.tipo || 'Apartamento',
-      statusImovel: r.status_imovel || undefined,
-      tipo: r.modalidade || (valorLocacao && valorVenda ? 'ambos' : (valorLocacao ? 'locação' : 'venda')),
-      valor: valorVenda,
-      valorVenda,
-      valorAnterior: r.valor_anterior ? parseFloat(r.valor_anterior) : undefined,
-      valorLocacao,
-      valorLocacaoAnterior: r.valor_locacao_anterior ? parseFloat(r.valor_locacao_anterior) : undefined,
-      dormitorios: parseInt(r.quartos || '0', 10),
-      quartos: parseInt(r.quartos || '0', 10),
-      banheiros: parseInt(r.bwc || '0', 10),
-      vagas: parseInt(r.vagas || '0', 10),
-      metragem: r.area_privativa ? parseFloat(r.area_privativa) : 0,
-      condominio: r.condominio ? parseFloat(r.condominio) : undefined,
-      iptu: r.iptu ? parseFloat(r.iptu) : undefined,
-      nomeEdificio: r.nome_edificio || '',
-      titulo: r.titulo,
-      palavraDestacada: r.palavra_destacada || '',
-      descricao: r.descricao,
-      informacoes: r.informacoes || undefined,
-      origem: r.origem || 'Imobishare',
-      integrado: Boolean((r.origem && r.origem.toLowerCase() !== 'imobishare' && r.origem.trim() !== '') || (r.origem && (r.origem.toLowerCase().includes('dwv') || r.origem.toLowerCase().includes('portal')))),
-      integracaoOrigem: (r.origem && r.origem.toLowerCase() !== 'imobishare') ? r.origem : undefined,
-      construtora: r.construtora || '',
-      telefoneConstrutora: r.telefone_construtora || undefined,
-      codigo: r.codigo || undefined,
-      codigoIm: r.codigo_im || (r.codigo && /^IM\d{6}$/i.test(r.codigo) ? r.codigo.toUpperCase() : undefined),
-      unidade: r.unidade || undefined,
-      bloco: r.bloco_torre || undefined,
-      condicaoImovel: r.condicao_imovel || undefined,
-      statusComercial: r.status_global || 'Disponível',
-      escopo: r.escopo || 'CARTEIRA',
-      latitude: r.latitude !== null && r.latitude !== undefined && r.latitude !== '' ? parseFloat(r.latitude) : undefined,
-      longitude: r.longitude !== null && r.longitude !== undefined && r.longitude !== '' ? parseFloat(r.longitude) : undefined,
-      visibilidade: r.visibilidade || 'todos',
-      dadosProprietario: isOwner ? (r.dados_proprietario || '') : undefined,
-      nomeProprietario: isOwner ? (r.dados_proprietario || '') : 'Confidencial',
-      telefoneProprietario: isOwner ? (r.dados_proprietario || '') : 'Confidencial',
-      fotos: finalFotos,
-      dataCadastro: r.data_cadastro
-    };
+    this.localData.properties.splice(idx, 1);
+    await this.saveLocalJson();
   }
 
   // --- PARCERIAS ---
-
-  static async getPartners(tokenEmail: string): Promise<string[]> {
-    const cleanEmail = tokenEmail.toLowerCase().trim();
-    if (!cleanEmail) return [];
-
+  public static async getPartners(email: string): Promise<any[]> {
+    const clean = email.toLowerCase().trim();
     if (this.isPostgres && this.pool) {
-      const res = await this.pool.query('SELECT corretor_parceiro_email FROM parcerias WHERE LOWER(corretor_email) = $1', [cleanEmail]);
-      return res.rows.map(r => r.corretor_parceiro_email);
-    } else {
-      const db = await this.readJson();
-      return db.partnerships.filter(p => p.corretorEmail.toLowerCase().trim() === cleanEmail).map(p => p.corretorParceiroEmail);
+      const res = await this.pool.query(`
+        SELECT c.* 
+        FROM corretores c
+        INNER JOIN parcerias p ON LOWER(c.email) = LOWER(p.corretor_parceiro_email)
+        WHERE LOWER(p.corretor_email) = LOWER($1)
+        ORDER BY c.nome ASC
+      `, [clean]);
+      return res.rows.map(r => this.mapRowToCorretor(r));
     }
+
+    const partnerEmails = this.localData.partnerships
+      .filter(p => p.corretorEmail.toLowerCase().trim() === clean)
+      .map(p => p.corretorParceiroEmail.toLowerCase().trim());
+    return this.localData.brokers.filter(b => partnerEmails.includes(b.email.toLowerCase().trim()));
   }
 
-  static async addPartner(tokenEmail: string, partnerEmail: string): Promise<string[]> {
-    const cleanEmail = tokenEmail.toLowerCase().trim();
+  public static async addPartner(email: string, partnerEmail: string): Promise<any[]> {
+    const cleanUser = email.toLowerCase().trim();
     const cleanPartner = partnerEmail.toLowerCase().trim();
-    if (!cleanEmail || !cleanPartner || cleanEmail === cleanPartner) return this.getPartners(cleanEmail);
 
     if (this.isPostgres && this.pool) {
       await this.pool.query(`
         INSERT INTO parcerias (corretor_email, corretor_parceiro_email)
         VALUES ($1, $2)
-        ON CONFLICT DO NOTHING;
-      `, [cleanEmail, cleanPartner]);
-      return this.getPartners(cleanEmail);
-    } else {
-      const db = await this.readJson();
-      const exists = db.partnerships.some(p => p.corretorEmail.toLowerCase().trim() === cleanEmail && p.corretorParceiroEmail.toLowerCase().trim() === cleanPartner);
-      if (!exists) {
-        db.partnerships.push({ corretorEmail: cleanEmail, corretorParceiroEmail: cleanPartner });
-        await this.writeJson(db);
-      }
-      return this.getPartners(cleanEmail);
+        ON CONFLICT DO NOTHING
+      `, [cleanUser, cleanPartner]);
+      return await this.getPartners(cleanUser);
     }
+
+    const exists = this.localData.partnerships.some(p => 
+      p.corretorEmail.toLowerCase().trim() === cleanUser && 
+      p.corretorParceiroEmail.toLowerCase().trim() === cleanPartner
+    );
+    if (!exists) {
+      this.localData.partnerships.push({ corretorEmail: cleanUser, corretorParceiroEmail: cleanPartner });
+      await this.saveLocalJson();
+    }
+    return await this.getPartners(cleanUser);
   }
 
-  static async removePartner(tokenEmail: string, partnerEmail: string): Promise<string[]> {
-    const cleanEmail = tokenEmail.toLowerCase().trim();
+  public static async removePartner(email: string, partnerEmail: string): Promise<any[]> {
+    const cleanUser = email.toLowerCase().trim();
     const cleanPartner = partnerEmail.toLowerCase().trim();
 
     if (this.isPostgres && this.pool) {
-      await this.pool.query('DELETE FROM parcerias WHERE LOWER(corretor_email) = $1 AND LOWER(corretor_parceiro_email) = $2', [cleanEmail, cleanPartner]);
-      return this.getPartners(cleanEmail);
-    } else {
-      const db = await this.readJson();
-      db.partnerships = db.partnerships.filter(p => !(p.corretorEmail.toLowerCase().trim() === cleanEmail && p.corretorParceiroEmail.toLowerCase().trim() === cleanPartner));
-      await this.writeJson(db);
-      return this.getPartners(cleanEmail);
+      await this.pool.query(`
+        DELETE FROM parcerias
+        WHERE LOWER(corretor_email) = LOWER($1) AND LOWER(corretor_parceiro_email) = LOWER($2)
+      `, [cleanUser, cleanPartner]);
+      return await this.getPartners(cleanUser);
     }
+
+    this.localData.partnerships = this.localData.partnerships.filter(p => 
+      !(p.corretorEmail.toLowerCase().trim() === cleanUser && p.corretorParceiroEmail.toLowerCase().trim() === cleanPartner)
+    );
+    await this.saveLocalJson();
+    return await this.getPartners(cleanUser);
   }
 
   // --- FAVORITOS ---
-
-  static async getFavorites(tokenEmail: string): Promise<string[]> {
-    const cleanEmail = tokenEmail.toLowerCase().trim();
-    if (!cleanEmail) return [];
-
+  public static async getFavorites(email: string): Promise<string[]> {
+    const clean = email.toLowerCase().trim();
     if (this.isPostgres && this.pool) {
-      const res = await this.pool.query('SELECT imovel_id FROM favoritos WHERE LOWER(corretor_email) = $1', [cleanEmail]);
+      const res = await this.pool.query(
+        'SELECT imovel_id FROM favoritos WHERE LOWER(corretor_email) = LOWER($1)',
+        [clean]
+      );
       return res.rows.map(r => r.imovel_id);
-    } else {
-      const db = await this.readJson();
-      return db.favorites.filter(f => f.corretorEmail.toLowerCase().trim() === cleanEmail).map(f => f.imovelId);
     }
+
+    return this.localData.favorites
+      .filter(f => f.corretorEmail.toLowerCase().trim() === clean)
+      .map(f => f.imovelId);
   }
 
-  static async toggleFavorite(tokenEmail: string, imovelId: string): Promise<string[]> {
-    const cleanEmail = tokenEmail.toLowerCase().trim();
+  public static async toggleFavorite(email: string, imovelId: string): Promise<string[]> {
+    const clean = email.toLowerCase().trim();
+    const id = imovelId.trim();
 
     if (this.isPostgres && this.pool) {
-      const check = await this.pool.query('SELECT 1 FROM favoritos WHERE LOWER(corretor_email) = $1 AND imovel_id = $2', [cleanEmail, imovelId]);
+      const check = await this.pool.query(
+        'SELECT * FROM favoritos WHERE LOWER(corretor_email) = LOWER($1) AND imovel_id = $2',
+        [clean, id]
+      );
       if (check.rows.length > 0) {
-        await this.pool.query('DELETE FROM favoritos WHERE LOWER(corretor_email) = $1 AND imovel_id = $2', [cleanEmail, imovelId]);
+        await this.pool.query(
+          'DELETE FROM favoritos WHERE LOWER(corretor_email) = LOWER($1) AND imovel_id = $2',
+          [clean, id]
+        );
       } else {
-        await this.pool.query('INSERT INTO favoritos (corretor_email, imovel_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [cleanEmail, imovelId]);
+        await this.pool.query(
+          'INSERT INTO favoritos (corretor_email, imovel_id) VALUES ($1, $2)',
+          [clean, id]
+        );
       }
-      return this.getFavorites(cleanEmail);
+      return await this.getFavorites(clean);
+    }
+
+    const idx = this.localData.favorites.findIndex(f => 
+      f.corretorEmail.toLowerCase().trim() === clean && f.imovelId === id
+    );
+    if (idx >= 0) {
+      this.localData.favorites.splice(idx, 1);
     } else {
-      const db = await this.readJson();
-      const idx = db.favorites.findIndex(f => f.corretorEmail.toLowerCase().trim() === cleanEmail && f.imovelId === imovelId);
-      if (idx >= 0) {
-        db.favorites.splice(idx, 1);
-      } else {
-        db.favorites.push({ corretorEmail: cleanEmail, imovelId });
-      }
-      await this.writeJson(db);
-      return this.getFavorites(cleanEmail);
+      this.localData.favorites.push({ corretorEmail: clean, imovelId: id });
     }
-  }
-
-  // --- DIAGNOSTICS FOR ADMIN ---
-
-  static async runDiagnostics() {
-    const startTime = Date.now();
-    const checks: Record<string, any> = {};
-
-    // 1. Database connection check
-    try {
-      if (this.isPostgres && this.pool) {
-        const dbStart = Date.now();
-        const brokersCountRes = await this.pool.query('SELECT COUNT(*) FROM corretores');
-        const imoveisCountRes = await this.pool.query('SELECT COUNT(*) FROM imoveis');
-        checks.database = {
-          status: 'success',
-          type: 'PostgreSQL (Neon)',
-          brokersCount: parseInt(brokersCountRes.rows[0].count, 10),
-          propertiesCount: parseInt(imoveisCountRes.rows[0].count, 10),
-          responseTimeMs: Date.now() - dbStart
-        };
-      } else {
-        const db = await this.readJson();
-        checks.database = {
-          status: 'success',
-          type: 'JSON DB Fallback',
-          brokersCount: db.brokers.length,
-          propertiesCount: db.properties.length,
-          jsonPath: this.jsonPath
-        };
-      }
-    } catch (err: any) {
-      checks.database = { status: 'error', error: err?.message || String(err) };
-    }
-
-    // 2. Data Integrity / Orphan Check
-    try {
-      if (this.isPostgres && this.pool) {
-        const orphansRes = await this.pool.query(`
-          SELECT COUNT(*) as count 
-          FROM imoveis i 
-          LEFT JOIN corretores c ON LOWER(i.corretor_email) = LOWER(c.email) 
-          WHERE c.email IS NULL OR i.corretor_email IS NULL
-        `);
-        const orphanCount = parseInt(orphansRes.rows[0].count, 10);
-        checks.dataIntegrity = {
-          status: orphanCount === 0 ? 'success' : 'error',
-          orphanPropertiesCount: orphanCount,
-          message: orphanCount === 0 ? 'Todos os imóveis possuem vínculo válido com um corretor cadastrado.' : `Existem ${orphanCount} imóveis órfãos no banco de dados.`
-        };
-      } else {
-        const db = await this.readJson();
-        const orphanCount = db.properties.filter(p => !db.brokers.some(b => b.email.toLowerCase() === (p.corretorEmail || '').toLowerCase())).length;
-        checks.dataIntegrity = {
-          status: orphanCount === 0 ? 'success' : 'error',
-          orphanPropertiesCount: orphanCount,
-          message: orphanCount === 0 ? 'Todos os imóveis possuem vínculo válido com um corretor.' : `Existem ${orphanCount} imóveis sem corretor correspondente.`
-        };
-      }
-    } catch (err: any) {
-      checks.dataIntegrity = { status: 'error', error: err?.message || String(err) };
-    }
-
-    // 3. Environment Variables Check
-    checks.environment = {
-      status: 'success',
-      hasGeminiApiKey: Boolean(process.env.GEMINI_API_KEY),
-      hasDatabaseUrl: Boolean(process.env.DATABASE_URL),
-      hasFirebaseProjectId: Boolean(process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID),
-      nodeEnv: process.env.NODE_ENV || 'development'
-    };
-
-    // 4. Recent Backend Error Logs
-    checks.errorLogs = {
-      status: 'success',
-      totalCaptured: recentErrorLogs.length,
-      logs: recentErrorLogs.slice(0, 10)
-    };
-
-    return {
-      timestamp: new Date().toISOString(),
-      executionDurationMs: Date.now() - startTime,
-      checks
-    };
+    await this.saveLocalJson();
+    return await this.getFavorites(clean);
   }
 }

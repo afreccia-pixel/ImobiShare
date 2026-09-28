@@ -253,7 +253,11 @@ export function MapView({
               position: relative;
               z-index: 20;
             "
-            title="${count} imóveis nesta região. Clique para aproximar ou ver opções."
+            title="${
+              count > 4
+                ? `${count} imóveis nesta região. Clique para aproximar.`
+                : `${count} imóveis nesta região. Clique para ver os cards.`
+            }"
           >
             <div style="
               min-width: 42px;
@@ -293,29 +297,36 @@ export function MapView({
 
         const marker = L.marker([cluster.lat, cluster.lng], { icon: clusterIcon });
 
-        // Ao clicar no cluster: aproxima a visão para abrir os imóveis (como no portal) E abre o carrossel inferior com as características do corretor
+        // Ao clicar no cluster: só vai mostrar os cards quando tiver até 4 imóveis na região
         marker.on('click', (e) => {
           L.DomEvent.stopPropagation(e);
 
-          const bounds = L.latLngBounds(cluster.items.map((p) => [p.resolvedLat, p.resolvedLng]));
+          if (cluster.items.length > 4) {
+            // Mais de 4 imóveis: apenas aproxima a visão para desagrupar (não mostra os cards)
+            setSelectedCluster(null);
 
-          if (map.getZoom() < 16) {
-            if (bounds.getNorthEast().equals(bounds.getSouthWest())) {
-              map.setView([cluster.lat, cluster.lng], Math.min(map.getZoom() + 2, 17), {
-                animate: true,
-              });
+            const bounds = L.latLngBounds(cluster.items.map((p) => [p.resolvedLat, p.resolvedLng]));
+
+            if (map.getZoom() < 16) {
+              if (bounds.getNorthEast().equals(bounds.getSouthWest())) {
+                map.setView([cluster.lat, cluster.lng], Math.min(map.getZoom() + 2, 17), {
+                  animate: true,
+                });
+              } else {
+                map.fitBounds(bounds, {
+                  padding: [50, 50],
+                  maxZoom: 16,
+                  animate: true,
+                });
+              }
             } else {
-              map.fitBounds(bounds, {
-                padding: [50, 50],
-                maxZoom: 16,
-                animate: true,
-              });
+              map.panTo([cluster.lat, cluster.lng], { animate: true, duration: 0.35 });
             }
           } else {
+            // Quando tiver até 4 imóveis na região: centraliza e abre os cards
             map.panTo([cluster.lat, cluster.lng], { animate: true, duration: 0.35 });
+            setSelectedCluster(cluster);
           }
-
-          setSelectedCluster(cluster);
         });
 
         marker.addTo(group);
@@ -467,7 +478,7 @@ export function MapView({
       const remaining = selectedCluster.items.filter((i) =>
         imoveisWithCoords.some((curr) => curr.id === i.id)
       );
-      if (remaining.length === 0) {
+      if (remaining.length === 0 || remaining.length > 4) {
         setSelectedCluster(null);
       } else if (remaining.length !== selectedCluster.items.length) {
         setSelectedCluster({
@@ -486,8 +497,11 @@ export function MapView({
     onClusterChange?.(Boolean(selectedCluster));
   }, [selectedCluster, onClusterChange]);
 
-  // Limita a exibição a no máximo 10 imóveis no carrossel inferior do corretor
-  const displayedImoveis = selectedCluster ? selectedCluster.items.slice(0, 10) : [];
+  // Só mostra os cards quando tiver até 4 imóveis na região (limitado a no máximo 4 cards)
+  const displayedImoveis =
+    selectedCluster && selectedCluster.items.length <= 4
+      ? selectedCluster.items.slice(0, 4)
+      : [];
 
   return (
     <div
@@ -512,8 +526,8 @@ export function MapView({
         </div>
       )}
 
-      {/* CARDS ROLANTES COM AS CARACTERÍSTICAS DE VISUALIZAÇÃO DO CORRETOR */}
-      {selectedCluster && displayedImoveis.length > 0 && (
+      {/* CARDS ROLANTES: SÓ MOSTRA QUANDO TIVER ATÉ 4 IMÓVEIS NA REGIÃO */}
+      {selectedCluster && displayedImoveis.length > 0 && selectedCluster.items.length <= 4 && (
         <div
           className="absolute bottom-16 sm:bottom-18 left-2 right-2 sm:left-4 sm:right-4 z-20 pointer-events-auto animate-in fade-in slide-in-from-bottom-3 duration-200"
           id="cluster-scrollable-cards-drawer"
@@ -522,8 +536,8 @@ export function MapView({
           <div className="flex items-center justify-between px-2 mb-1.5">
             <span className="text-[11px] font-extrabold text-slate-800 bg-white/90 backdrop-blur-md px-2.5 py-0.5 rounded-full shadow-xs border border-slate-200/80">
               {selectedCluster.items.length === 1
-                ? '1 imóvel selecionado'
-                : `${selectedCluster.items.length} imóveis neste local`}
+                ? '1 imóvel nesta região'
+                : `${selectedCluster.items.length} imóveis nesta região`}
             </span>
             <button
               type="button"
