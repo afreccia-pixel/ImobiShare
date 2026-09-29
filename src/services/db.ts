@@ -452,7 +452,7 @@ export class DbService {
     construtora?: string;
   }): Promise<Imovel[]> {
     const page = options?.page || 1;
-    const limit = options?.limit || (options?.page ? 20 : 500);
+    const limit = options?.limit || 20;
     const append = Boolean(options?.append);
     const cidade = options?.cidade;
 
@@ -519,32 +519,11 @@ export class DbService {
             const existingIds = new Set(cachedImoveis.map(i => i.id));
             const newItems = list.filter(item => !existingIds.has(item.id));
             cachedImoveis = [...cachedImoveis, ...newItems];
-          } else if (cidade || options?.busca || options?.bairro) {
-            // Quando busca com filtro específico, mescla os resultados garantindo que todos os imóveis da cidade existam no cache sem descartar os das outras cidades
-            const freshMap = new Map(list.map(item => [item.id, item]));
-            const updated = cachedImoveis.map(existing => {
-              const fresh = freshMap.get(existing.id);
-              if (!fresh) return existing;
-              freshMap.delete(existing.id);
-              return {
-                ...fresh,
-                fotos: (Array.isArray(existing.fotos) && existing.fotos.length > (fresh.fotos?.length || 0)) ? existing.fotos : fresh.fotos,
-                descricao: existing.descricao || fresh.descricao
-              };
-            });
-            // Adiciona quaisquer imóveis novos retornados que ainda não constavam no cache
-            cachedImoveis = [...updated, ...Array.from(freshMap.values())];
-          } else if (limit >= 100 || list.length >= cachedImoveis.length || cachedImoveis.length === 0) {
-            // Mesclar com imóveis do cache que já possuem fotos completas carregadas
-            cachedImoveis = list.map(fresh => {
-              const existing = cachedImoveis.find(e => e.id === fresh.id);
-              if (existing && Array.isArray(existing.fotos) && existing.fotos.length > (fresh.fotos?.length || 0)) {
-                return { ...fresh, fotos: existing.fotos, descricao: existing.descricao || fresh.descricao };
-              }
-              return fresh;
-            });
+          } else if (!append && page === 1) {
+            // Primeira página: inicializa com os 20 imóveis da página atual
+            cachedImoveis = list;
           } else {
-            // Atualiza os dados dos itens que vieram na página, sem descartar os demais imóveis do catálogo em memória
+            // Mescla / atualiza dados dos itens
             const freshMap = new Map(list.map(item => [item.id, item]));
             cachedImoveis = cachedImoveis.map(existing => {
               const fresh = freshMap.get(existing.id);
@@ -618,13 +597,16 @@ export class DbService {
       return list.find(p => {
         const pId = (p.id || '').toLowerCase();
         const pCod = (p.codigo || '').toLowerCase();
+        const pCodIm = ((p as any).codigoIm || (p as any).codigo_im || '').toLowerCase();
         const pIdClean = pId.replace(/^imovel-/, '').replace(/^prop-/, '');
         return (
           pId === t1 ||
           pId === t2 ||
           pIdClean === t2 ||
           pCod === t1 ||
-          pCod === t2
+          pCod === t2 ||
+          pCodIm === t1 ||
+          pCodIm === t2
         );
       }) || null;
     };
@@ -905,7 +887,7 @@ export class DbService {
       try {
         const promises: Promise<any>[] = [
           this.fetchBrokers(),
-          this.getImoveis({ limit: 500 })
+          this.getImoveis({ page: 1, limit: 20 })
         ];
         if (this.getActiveCorretor()) {
           promises.push(this.verifyAndFetchProfile());

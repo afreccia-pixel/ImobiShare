@@ -44,6 +44,47 @@ function formatMapPrice(val?: number): string {
 }
 
 /**
+ * Garante coordenadas válidas para qualquer imóvel, usando coordenadas centrais do bairro/cidade como fallback se necessário
+ */
+export function getValidPropertyCoordinate(p: PortalProperty | MapPropertyMarker): { lat: number; lng: number } {
+  if (
+    typeof p.latitude === 'number' &&
+    typeof p.longitude === 'number' &&
+    !isNaN(p.latitude) &&
+    !isNaN(p.longitude) &&
+    p.latitude !== 0 &&
+    p.longitude !== 0
+  ) {
+    return { lat: p.latitude, lng: p.longitude };
+  }
+
+  const neighborhoodCoords: Record<string, { lat: number; lng: number }> = {
+    'centro': { lat: -26.9935, lng: -48.6330 },
+    'pioneiros': { lat: -26.9705, lng: -48.6350 },
+    'barra sul': { lat: -27.0080, lng: -48.6110 },
+    'barra norte': { lat: -26.9740, lng: -48.6320 },
+    'nações': { lat: -26.9815, lng: -48.6420 },
+    'vila real': { lat: -27.0080, lng: -48.6390 },
+    'praia dos amores': { lat: -26.9605, lng: -48.6385 },
+    'praia brava': { lat: -26.9475, lng: -48.6380 },
+    'barra': { lat: -27.0107, lng: -48.6010 },
+    'fazenda': { lat: -26.9150, lng: -48.6550 },
+  };
+
+  const b = (p.bairro || '').toLowerCase().trim();
+  for (const [key, coord] of Object.entries(neighborhoodCoords)) {
+    if (b.includes(key)) {
+      const hash = (p.id || '').split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+      const jitterLat = ((hash % 100) - 50) * 0.00005;
+      const jitterLng = (((hash * 7) % 100) - 50) * 0.00005;
+      return { lat: coord.lat + jitterLat, lng: coord.lng + jitterLng };
+    }
+  }
+
+  return { lat: -26.9924, lng: -48.6341 };
+}
+
+/**
  * Agrupa imóveis baseado na distância em pixels na tela (clustering dinâmico).
  * Conforme o usuário aproxima (zoom in), os agrupamentos diminuem até exibirem
  * os imóveis individualmente com o badge de valor conforme a visualização padrão.
@@ -56,16 +97,15 @@ function computeClusters(
 ): ClusterGroup[] {
   const currentZoom = map.getZoom();
 
-  // Filtra ESTRITAMENTE apenas imóveis com coordenadas reais válidas
-  const validItems = imoveis.filter(
-    (p) =>
-      typeof p.latitude === 'number' &&
-      typeof p.longitude === 'number' &&
-      !isNaN(p.latitude) &&
-      !isNaN(p.longitude) &&
-      p.latitude !== 0 &&
-      p.longitude !== 0
-  );
+  // Assegura coordenadas válidas para TODOS os imóveis do filtro
+  const validItems = imoveis.map((p) => {
+    const coord = getValidPropertyCoordinate(p);
+    return {
+      ...p,
+      latitude: coord.lat,
+      longitude: coord.lng,
+    };
+  });
 
   // Em zoom alto (16+), desativa agrupamento e exibe todos individualmente
   if (currentZoom >= maxClusterZoom) {
@@ -395,17 +435,10 @@ export function PortalMap({
     renderMarkers();
 
     // Redimensiona o mapa para mostrar todos os imóveis do filtro selecionado
-    const validCoordinates: [number, number][] = imoveis
-      .filter(
-        (p) =>
-          typeof p.latitude === 'number' &&
-          typeof p.longitude === 'number' &&
-          !isNaN(p.latitude) &&
-          !isNaN(p.longitude) &&
-          p.latitude !== 0 &&
-          p.longitude !== 0
-      )
-      .map((p) => [p.latitude!, p.longitude!]);
+    const validCoordinates: [number, number][] = imoveis.map((p) => {
+      const c = getValidPropertyCoordinate(p);
+      return [c.lat, c.lng];
+    });
 
     if (validCoordinates.length > 0) {
       try {

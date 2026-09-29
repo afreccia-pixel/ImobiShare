@@ -565,15 +565,36 @@ export class ServerDb {
       let params: any[] = [];
       let pIdx = 1;
 
-      if (filters.cidade) {
-        conditions.push(`LOWER(cidade) LIKE LOWER($${pIdx++})`);
-        params.push(`%${filters.cidade.trim()}%`);
+      if (filters.cidade && filters.cidade !== 'Todas') {
+        const c = filters.cidade.trim().toLowerCase();
+        if (c === 'camboriú' || c === 'camboriu') {
+          conditions.push(`LOWER(TRIM(cidade)) = $${pIdx++}`);
+          params.push('camboriú');
+        } else {
+          conditions.push(`LOWER(cidade) LIKE LOWER($${pIdx++})`);
+          params.push(`%${filters.cidade.trim()}%`);
+        }
       }
-      if (filters.bairro) {
+      if (filters.bairro && filters.bairro !== 'Todos os bairros') {
         conditions.push(`LOWER(bairro) LIKE LOWER($${pIdx++})`);
         params.push(`%${filters.bairro.trim()}%`);
       }
-      if (filters.tipoImovel) {
+      if (filters.finalidade && filters.finalidade !== 'Todos') {
+        const f = filters.finalidade.toLowerCase();
+        if (f.includes('compr') || f.includes('venda')) {
+          conditions.push(`(LOWER(modalidade) = 'venda' OR LOWER(modalidade) = 'ambos' OR modalidade IS NULL OR TRIM(modalidade) = '')`);
+        } else if (f.includes('alug') || f.includes('loca')) {
+          conditions.push(`(LOWER(modalidade) = 'locação' OR LOWER(modalidade) = 'ambos' OR LOWER(modalidade) = 'locacao')`);
+        }
+      }
+      if (filters.categoria && filters.categoria !== 'Todos') {
+        if (filters.categoria === 'Lançamentos') {
+          conditions.push(`(LOWER(status_imovel) LIKE '%planta%' OR LOWER(condicao_imovel) LIKE '%planta%')`);
+        } else if (filters.categoria === 'Prontos') {
+          conditions.push(`(LOWER(status_imovel) NOT LIKE '%planta%' AND LOWER(condicao_imovel) NOT LIKE '%planta%')`);
+        }
+      }
+      if (filters.tipoImovel && filters.tipoImovel.toLowerCase() !== 'todos') {
         conditions.push(`LOWER(tipo) = LOWER($${pIdx++})`);
         params.push(filters.tipoImovel.trim());
       }
@@ -755,25 +776,90 @@ export class ServerDb {
       let params: any[] = [];
       let pIdx = 1;
 
-      if (filters.cidade) {
-        conditions.push(`LOWER(cidade) LIKE LOWER($${pIdx++})`);
-        params.push(`%${filters.cidade.trim()}%`);
+      if (filters.cidade && filters.cidade !== 'Todas') {
+        const c = filters.cidade.trim().toLowerCase();
+        if (c === 'camboriú' || c === 'camboriu') {
+          conditions.push(`LOWER(TRIM(cidade)) = $${pIdx++}`);
+          params.push('camboriú');
+        } else {
+          conditions.push(`LOWER(cidade) LIKE LOWER($${pIdx++})`);
+          params.push(`%${filters.cidade.trim()}%`);
+        }
       }
-      if (filters.bairro) {
+      if (filters.bairro && filters.bairro !== 'Todos os bairros') {
         conditions.push(`LOWER(bairro) LIKE LOWER($${pIdx++})`);
         params.push(`%${filters.bairro.trim()}%`);
       }
-      if (filters.tipoImovel) {
-        conditions.push(`LOWER(tipo) = LOWER($${pIdx++})`);
-        params.push(filters.tipoImovel.trim());
+      if (filters.finalidade && filters.finalidade !== 'Todos') {
+        const f = filters.finalidade.toLowerCase();
+        if (f.includes('compr') || f.includes('venda')) {
+          conditions.push(`(LOWER(modalidade) = 'venda' OR LOWER(modalidade) = 'ambos' OR modalidade IS NULL OR TRIM(modalidade) = '')`);
+        } else if (f.includes('alug') || f.includes('loca')) {
+          conditions.push(`(LOWER(modalidade) = 'locação' OR LOWER(modalidade) = 'ambos' OR LOWER(modalidade) = 'locacao')`);
+        }
       }
-      if (filters.precoMin) {
+      if (filters.categoria && filters.categoria !== 'Todos') {
+        if (filters.categoria === 'Lançamentos') {
+          conditions.push(`(LOWER(status_imovel) LIKE '%planta%' OR LOWER(condicao_imovel) LIKE '%planta%')`);
+        } else if (filters.categoria === 'Prontos') {
+          conditions.push(`(LOWER(status_imovel) NOT LIKE '%planta%' AND LOWER(condicao_imovel) NOT LIKE '%planta%')`);
+        }
+      }
+      if (filters.tipoImovel && filters.tipoImovel.toLowerCase() !== 'todos') {
+        conditions.push(`LOWER(tipo) LIKE LOWER($${pIdx++})`);
+        params.push(`%${filters.tipoImovel.trim()}%`);
+      }
+      if (filters.statusImovel && filters.statusImovel.toLowerCase() !== 'todos') {
+        conditions.push(`(LOWER(status_imovel) LIKE LOWER($${pIdx}) OR LOWER(condicao_imovel) LIKE LOWER($${pIdx}))`);
+        params.push(`%${filters.statusImovel.trim()}%`);
+        pIdx++;
+      }
+      if (filters.construtora && filters.construtora !== 'Todas as construtoras') {
+        conditions.push(`LOWER(construtora) LIKE LOWER($${pIdx++})`);
+        params.push(`%${filters.construtora.trim()}%`);
+      }
+      if (filters.precoMin !== undefined && !isNaN(filters.precoMin) && Number(filters.precoMin) > 0) {
         conditions.push(`valor_venda >= $${pIdx++}`);
-        params.push(filters.precoMin);
+        params.push(Number(filters.precoMin));
       }
-      if (filters.precoMax) {
+      if (filters.precoMax !== undefined && !isNaN(filters.precoMax) && Number(filters.precoMax) > 0 && Number(filters.precoMax) < 15000000) {
         conditions.push(`valor_venda <= $${pIdx++}`);
-        params.push(filters.precoMax);
+        params.push(Number(filters.precoMax));
+      }
+      if (filters.quartosMin !== undefined && !isNaN(filters.quartosMin) && Number(filters.quartosMin) > 0) {
+        conditions.push(`quartos >= $${pIdx++}`);
+        params.push(Number(filters.quartosMin));
+      }
+      if (filters.banheirosMin !== undefined && !isNaN(filters.banheirosMin) && Number(filters.banheirosMin) > 0) {
+        conditions.push(`bwc >= $${pIdx++}`);
+        params.push(Number(filters.banheirosMin));
+      }
+      if (filters.vagasMin !== undefined && !isNaN(filters.vagasMin) && Number(filters.vagasMin) > 0) {
+        conditions.push(`vagas >= $${pIdx++}`);
+        params.push(Number(filters.vagasMin));
+      }
+      if (filters.metragemMin !== undefined && !isNaN(filters.metragemMin) && Number(filters.metragemMin) > 0) {
+        conditions.push(`area_privativa >= $${pIdx++}`);
+        params.push(Number(filters.metragemMin));
+      }
+      if (filters.metragemMax !== undefined && !isNaN(filters.metragemMax) && Number(filters.metragemMax) > 0) {
+        conditions.push(`area_privativa <= $${pIdx++}`);
+        params.push(Number(filters.metragemMax));
+      }
+      if (filters.busca && filters.busca.trim()) {
+        const q = `%${filters.busca.trim()}%`;
+        conditions.push(`(
+          LOWER(titulo) LIKE LOWER($${pIdx}) OR 
+          LOWER(descricao) LIKE LOWER($${pIdx}) OR 
+          LOWER(bairro) LIKE LOWER($${pIdx}) OR 
+          LOWER(cidade) LIKE LOWER($${pIdx}) OR 
+          LOWER(nome_edificio) LIKE LOWER($${pIdx}) OR 
+          LOWER(codigo) LIKE LOWER($${pIdx}) OR 
+          LOWER(codigo_im) LIKE LOWER($${pIdx}) OR 
+          LOWER(construtora) LIKE LOWER($${pIdx})
+        )`);
+        params.push(q);
+        pIdx++;
       }
 
       const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -812,7 +898,23 @@ export class ServerDb {
       });
     }
 
-    return this.localData.properties.map(p => ({
+    let localFiltered = [...this.localData.properties];
+    if (filters.cidade && filters.cidade !== 'Todas') {
+      const c = filters.cidade.trim().toLowerCase();
+      localFiltered = localFiltered.filter(p => (p.cidade || '').toLowerCase().trim() === c || (p.cidade || '').toLowerCase().includes(c));
+    }
+    if (filters.bairro && filters.bairro !== 'Todos os bairros') {
+      const b = filters.bairro.trim().toLowerCase();
+      localFiltered = localFiltered.filter(p => (p.bairro || '').toLowerCase().includes(b));
+    }
+    if (filters.precoMin) {
+      localFiltered = localFiltered.filter(p => p.valor >= Number(filters.precoMin));
+    }
+    if (filters.precoMax) {
+      localFiltered = localFiltered.filter(p => p.valor <= Number(filters.precoMax));
+    }
+
+    return localFiltered.map(p => ({
       id: p.id,
       codigo: p.codigo || p.codigoIm,
       titulo: p.titulo,
@@ -837,16 +939,26 @@ export class ServerDb {
   // --- GET SINGLE IMOVEL BY ID OR CODE ---
   public static async getImovelById(idOrCode: string): Promise<Imovel | null> {
     const clean = idOrCode.trim();
+    const cleanLower = clean.toLowerCase();
+    const cleanNoPrefix = cleanLower.replace(/^imovel-/, '').replace(/^prop-/, '');
+
     if (this.isPostgres && this.pool) {
       const res = await this.pool.query(
-        'SELECT * FROM imoveis WHERE id = $1 OR codigo = $1 OR codigo_im = $1 LIMIT 1',
-        [clean]
+        'SELECT * FROM imoveis WHERE LOWER(id) = $1 OR LOWER(codigo) = $1 OR LOWER(codigo_im) = $1 OR LOWER(codigo) = $2 OR LOWER(codigo_im) = $2 LIMIT 1',
+        [cleanLower, cleanNoPrefix]
       );
       if (res.rows.length === 0) return null;
       return this.mapRowToImovel(res.rows[0]);
     }
 
-    const found = this.localData.properties.find(p => p.id === clean || p.codigo === clean || p.codigoIm === clean);
+    const found = this.localData.properties.find(
+      p =>
+        (p.id || '').toLowerCase() === cleanLower ||
+        (p.codigo || '').toLowerCase() === cleanLower ||
+        (p.codigoIm || '').toLowerCase() === cleanLower ||
+        (p.codigo || '').toLowerCase() === cleanNoPrefix ||
+        (p.codigoIm || '').toLowerCase() === cleanNoPrefix
+    );
     return found ? { ...found } : null;
   }
 

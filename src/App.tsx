@@ -94,6 +94,11 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     const hash = window.location.hash;
 
+    // Acesso direto a URL amigável de imóvel (/imovel/...)
+    if (window.location.pathname.startsWith('/imovel/')) {
+      return 'portal';
+    }
+
     // Regra do projeto: Se acessar via imobishare.app.br (ou www.imobishare.app.br),
     // sempre abre diretamente o portal dos clientes
     if (hostname.includes('imobishare.app.br')) {
@@ -131,7 +136,10 @@ export default function App() {
       const hostname = window.location.hostname.toLowerCase();
       const isRender = hostname.includes('imobishare.onrender.com') || hostname.includes('onrender.com');
 
-      if (hash === '#app' || hash.startsWith('#app/')) {
+      if (window.location.pathname.startsWith('/imovel/')) {
+        setAppMode('portal');
+        return;
+      } else if (hash === '#app' || hash.startsWith('#app/')) {
         setAppMode('broker');
       } else if (
         hash === '#portal' ||
@@ -152,7 +160,11 @@ export default function App() {
       }
     };
     window.addEventListener('hashchange', handleHash);
-    return () => window.removeEventListener('hashchange', handleHash);
+    window.addEventListener('popstate', handleHash);
+    return () => {
+      window.removeEventListener('hashchange', handleHash);
+      window.removeEventListener('popstate', handleHash);
+    };
   }, []);
 
   // Reset password token modal states
@@ -1831,8 +1843,8 @@ useEffect(() => {
     sortBy
   ]);
 
-  // Batch size for property search with high performance (24 properties per load)
-  const PAGE_SIZE = 24;
+  // Batch size for property search (20 properties per load)
+  const PAGE_SIZE = 20;
   const [homePage, setHomePage] = useState<number>(1);
 
   // Automatically reset to page 1 whenever any filter or search query changes
@@ -1871,9 +1883,8 @@ useEffect(() => {
     setHomePage(targetPage);
   };
 
-  // Carregamento contínuo automático de 24 em 24 ao rolar até o final da lista (sem necessidade de botão)
+  // Carregamento sob demanda com botão 'Ver mais' (20 imóveis por vez)
   const [isLoadingMoreHome, setIsLoadingMoreHome] = useState(false);
-  const homeInfiniteScrollSentinelRef = useRef<HTMLDivElement | null>(null);
   const isHandlingLoadMoreHomeRef = useRef(false);
 
   const triggerLoadMoreHome = useCallback(async () => {
@@ -1888,7 +1899,7 @@ useEffect(() => {
         setTimeout(() => {
           isHandlingLoadMoreHomeRef.current = false;
         }, 150);
-      }, 200);
+      }, 150);
     } else {
       // Verifica se o servidor possui mais imóveis
       const pgState = DbService.getPaginationState();
@@ -1898,10 +1909,11 @@ useEffect(() => {
         try {
           const res = await DbService.loadMoreImoveis();
           if (res.properties && res.properties.length > 0) {
-            setAllImoveis(res.properties);
+            setAllImoveis([...res.properties]);
+            setHomePage((prev) => prev + 1);
           }
         } catch (err) {
-          console.error('Erro ao carregar mais imóveis automaticamente:', err);
+          console.error('Erro ao carregar mais imóveis:', err);
         } finally {
           setIsLoadingMoreHome(false);
           setTimeout(() => {
@@ -1911,74 +1923,6 @@ useEffect(() => {
       }
     }
   }, [isLoadingMoreHome, currentHomePage, totalHomePages]);
-
-  useEffect(() => {
-    if (searchViewMode === 'mapa' || activeTab !== 'home') return;
-    const canLoad = currentHomePage < totalHomePages || DbService.getPaginationState().hasMore;
-    if (!canLoad) return;
-
-    const container = document.getElementById('main-app-content-container');
-
-    let ticking = false;
-    const checkAndTrigger = () => {
-      if (isLoadingMoreHome || isHandlingLoadMoreHomeRef.current) return;
-
-      if (container) {
-        const remaining = container.scrollHeight - container.scrollTop - container.clientHeight;
-        if (remaining <= 600) {
-          triggerLoadMoreHome();
-          return;
-        }
-      }
-
-      const docRemaining = document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
-      if (docRemaining <= 600) {
-        triggerLoadMoreHome();
-      }
-    };
-
-    const handleScroll = () => {
-      if (!ticking) {
-        window.requestAnimationFrame(() => {
-          checkAndTrigger();
-          ticking = false;
-        });
-        ticking = true;
-      }
-    };
-
-    if (container) {
-      container.addEventListener('scroll', handleScroll, { passive: true });
-    }
-    window.addEventListener('scroll', handleScroll, { passive: true });
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const first = entries[0];
-        if (first.isIntersecting && !isLoadingMoreHome && !isHandlingLoadMoreHomeRef.current) {
-          triggerLoadMoreHome();
-        }
-      },
-      {
-        root: container || null,
-        rootMargin: '300px'
-      }
-    );
-
-    const currentEl = homeInfiniteScrollSentinelRef.current;
-    if (currentEl) {
-      observer.observe(currentEl);
-    }
-
-    return () => {
-      if (container) {
-        container.removeEventListener('scroll', handleScroll);
-      }
-      window.removeEventListener('scroll', handleScroll);
-      if (currentEl) observer.unobserve(currentEl);
-      observer.disconnect();
-    };
-  }, [currentHomePage, totalHomePages, isLoadingMoreHome, searchViewMode, activeTab, triggerLoadMoreHome]);
 
   // Carregamento de marcadores completos para o mapa do painel do corretor (mesma lógica do portal)
   const [mapMarkers, setMapMarkers] = useState<any[]>([]);
@@ -2100,6 +2044,13 @@ useEffect(() => {
     favoritos,
     activeCorretor,
   ]);
+
+  // Contagem total real de imóveis no sistema obedecendo rigorosamente aos filtros
+  const homeTotalCount = useMemo(() => {
+    const pgTotal = DbService.getPaginationState().total;
+    const mapCount = Array.isArray(mapImoveis) ? mapImoveis.length : 0;
+    return Math.max(pgTotal, mapCount, filteredImoveis.length);
+  }, [mapImoveis, filteredImoveis.length]);
 
   // Check which properties are stories (registered within 24h by others and shared)
   const storyImoveis = useMemo(() => {
@@ -2257,8 +2208,8 @@ useEffect(() => {
     allImoveis
   ]);
 
-  // Batch size for My Properties tab (24 properties per load)
-  const MY_PAGE_SIZE = 24;
+  // Batch size for My Properties tab (20 properties per load)
+  const MY_PAGE_SIZE = 20;
   const [myPage, setMyPage] = useState<number>(1);
 
   // Automatically reset to page 1 whenever any filter or search query changes in My Properties
@@ -2291,9 +2242,8 @@ useEffect(() => {
     setMyPage(targetPage);
   };
 
-  // Carregamento contínuo de 24 em 24 ao rolar até o final da lista de Meus Imóveis / Carteira
+  // Carregamento de mais 20 imóveis ao clicar em 'Ver mais' na Carteira
   const [isLoadingMoreMy, setIsLoadingMoreMy] = useState(false);
-  const myInfiniteScrollSentinelRef = useRef<HTMLDivElement | null>(null);
   const isHandlingLoadMoreMyRef = useRef(false);
 
   const triggerLoadMoreMy = useCallback(() => {
@@ -2306,77 +2256,10 @@ useEffect(() => {
         setIsLoadingMoreMy(false);
         setTimeout(() => {
           isHandlingLoadMoreMyRef.current = false;
-        }, 300);
-      }, 350);
+        }, 150);
+      }, 150);
     }
   }, [isLoadingMoreMy, currentMyPage, totalMyPages]);
-
-  useEffect(() => {
-    if (activeTab !== 'my-properties') return;
-    if (currentMyPage >= totalMyPages) return;
-
-    const container = document.getElementById('main-app-content-container');
-
-    let ticking = false;
-    const checkAndTrigger = () => {
-      if (isLoadingMoreMy || isHandlingLoadMoreMyRef.current) return;
-
-      if (container) {
-        const remaining = container.scrollHeight - container.scrollTop - container.clientHeight;
-        if (remaining <= 600) {
-          triggerLoadMoreMy();
-          return;
-        }
-      }
-
-      const docRemaining = document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
-      if (docRemaining <= 600) {
-        triggerLoadMoreMy();
-      }
-    };
-
-    const handleScroll = () => {
-      if (!ticking) {
-        window.requestAnimationFrame(() => {
-          checkAndTrigger();
-          ticking = false;
-        });
-        ticking = true;
-      }
-    };
-
-    if (container) {
-      container.addEventListener('scroll', handleScroll, { passive: true });
-    }
-    window.addEventListener('scroll', handleScroll, { passive: true });
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const first = entries[0];
-        if (first.isIntersecting && !isLoadingMoreMy && !isHandlingLoadMoreMyRef.current) {
-          triggerLoadMoreMy();
-        }
-      },
-      {
-        root: container || null,
-        rootMargin: '300px'
-      }
-    );
-
-    const currentEl = myInfiniteScrollSentinelRef.current;
-    if (currentEl) {
-      observer.observe(currentEl);
-    }
-
-    return () => {
-      if (container) {
-        container.removeEventListener('scroll', handleScroll);
-      }
-      window.removeEventListener('scroll', handleScroll);
-      if (currentEl) observer.unobserve(currentEl);
-      observer.disconnect();
-    };
-  }, [currentMyPage, totalMyPages, isLoadingMoreMy, activeTab, triggerLoadMoreMy]);
 
   // Indicador unificado: sempre que o sistema estiver processando (carga inicial, carregando mais 24 imóveis, marcadores do mapa, busca, sincronização, etc.)
   const isSystemProcessing = Boolean(
@@ -2703,7 +2586,8 @@ Toque abaixo para ver a seleção completa:
   if (appMode === 'portal') {
     const params = new URLSearchParams(window.location.search);
     const hash = window.location.hash;
-    const urlImovelId = params.get('imovel') || (hash.startsWith('#imovel/') ? hash.replace('#imovel/', '') : null);
+    const parsedPath = parsePropertyUrl(window.location.pathname);
+    const urlImovelId = parsedPath?.code || params.get('imovel') || (hash.startsWith('#imovel/') ? hash.replace('#imovel/', '') : null);
 
     return (
       <PortalApp
@@ -3472,7 +3356,7 @@ Toque abaixo para ver a seleção completa:
                       {/* Left: Contagem de imóveis em negrito / tom granito */}
                       <div className="flex items-baseline gap-2 min-w-0 flex-wrap">
                         <span className="text-xs sm:text-sm font-bold text-slate-700 tracking-tight whitespace-nowrap">
-                          {filteredImoveis.length.toLocaleString('pt-BR')} {filteredImoveis.length === 1 ? 'Imóvel' : 'Imóveis'}
+                          {homeTotalCount.toLocaleString('pt-BR')} {homeTotalCount === 1 ? 'Imóvel' : 'Imóveis'}
                         </span>
                       </div>
 
@@ -3582,26 +3466,23 @@ Toque abaixo para ver a seleção completa:
                         </div>
                       )}
 
-                      {/* Sentinela de Infinite Scroll para carregar automaticamente mais 24 imóveis ao rolar até o fim */}
-                      <div ref={homeInfiniteScrollSentinelRef} className="h-8 w-full pointer-events-none" />
-
-                      {/* Feedback suave ao carregar automaticamente o próximo lote de 24 imóveis */}
-                      {isLoadingMoreHome && (
-                        <div className="flex items-center justify-center gap-2 py-4 text-slate-500 text-xs font-semibold">
-                          <div className="w-4 h-4 border-2 border-[#003366] border-t-transparent rounded-full animate-spin" />
-                          <span>Carregando mais 24 imóveis...</span>
-                        </div>
-                      )}
-
-                      {/* Botão sutil de carregar mais caso queira acionar imediatamente ou o scroll pare no final */}
-                      {!isLoadingMoreHome && (currentHomePage < totalHomePages || DbService.getPaginationState().hasMore) && (
-                        <div className="flex justify-center py-2">
+                      {/* Botão Ver mais no tamanho da página (largura total) */}
+                      {(currentHomePage < totalHomePages || DbService.getPaginationState().hasMore) && (
+                        <div className="pt-2 pb-6 w-full">
                           <button
                             type="button"
                             onClick={() => triggerLoadMoreHome()}
-                            className="text-xs font-semibold text-[#003366] bg-blue-50/80 hover:bg-blue-100/90 active:scale-95 px-4 py-2 rounded-xl border border-blue-200/80 transition-all cursor-pointer shadow-2xs"
+                            disabled={isLoadingMoreHome}
+                            className="w-full py-3.5 px-6 rounded-2xl bg-[#003366] hover:bg-[#002244] active:scale-[0.99] text-white text-sm font-bold shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60"
                           >
-                            Carregar mais imóveis
+                            {isLoadingMoreHome ? (
+                              <>
+                                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                <span>Carregando...</span>
+                              </>
+                            ) : (
+                              <span>Ver mais</span>
+                            )}
                           </button>
                         </div>
                       )}
@@ -3738,14 +3619,24 @@ Toque abaixo para ver a seleção completa:
                         );
                       })}
 
-                      {/* Sentinela de Infinite Scroll para carregar automaticamente mais 24 imóveis ao rolar até o fim */}
-                      <div ref={myInfiniteScrollSentinelRef} className="h-6 w-full pointer-events-none" />
-
-                      {/* Feedback suave ao carregar automaticamente o próximo lote de 24 imóveis */}
-                      {isLoadingMoreMy && (
-                        <div className="flex items-center justify-center gap-2 py-4 text-slate-500 text-xs font-semibold">
-                          <div className="w-4 h-4 border-2 border-[#003366] border-t-transparent rounded-full animate-spin" />
-                          <span>Carregando mais 24 imóveis...</span>
+                      {/* Botão Ver mais no tamanho da página (largura total) */}
+                      {currentMyPage < totalMyPages && (
+                        <div className="pt-2 pb-6 w-full">
+                          <button
+                            type="button"
+                            onClick={() => triggerLoadMoreMy()}
+                            disabled={isLoadingMoreMy}
+                            className="w-full py-3.5 px-6 rounded-2xl bg-[#003366] hover:bg-[#002244] active:scale-[0.99] text-white text-sm font-bold shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60"
+                          >
+                            {isLoadingMoreMy ? (
+                              <>
+                                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                <span>Carregando...</span>
+                              </>
+                            ) : (
+                              <span>Ver mais</span>
+                            )}
+                          </button>
                         </div>
                       )}
 

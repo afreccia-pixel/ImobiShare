@@ -564,10 +564,10 @@ app.get(['/api/properties', '/api/imoveis'], optionalAuthToken, async (req: Auth
     const limitParam = req.query.limit;
     const cidadeParam = req.query.cidade ? String(req.query.cidade) : undefined;
     const page = pageParam ? Math.max(1, parseInt(pageParam as string, 10)) : undefined;
-    const isPaginated = page !== undefined || req.query.format === 'paginated';
+    const isPaginated = true;
     const limit = limitParam 
       ? Math.min(1000, Math.max(1, parseInt(limitParam as string, 10))) 
-      : (isPaginated ? 20 : 1000);
+      : 20;
 
     const result = await ServerDb.getImoveis({
       userEmail: req.userEmail,

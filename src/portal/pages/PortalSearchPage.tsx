@@ -261,7 +261,7 @@ export function PortalSearchPage({
   const selectedCity = filters.cidade;
   useEffect(() => {
     if (selectedCity && selectedCity !== 'Todas') {
-      DbService.getImoveis({ limit: 500, cidade: selectedCity });
+      DbService.getImoveis({ page: 1, limit: 20, cidade: selectedCity });
     }
   }, [selectedCity]);
 
@@ -424,54 +424,24 @@ export function PortalSearchPage({
     return filteredAndSortedProperties.slice(0, displayCount);
   }, [filteredAndSortedProperties, displayCount]);
 
+  // Contagem total real de imóveis no sistema obedecendo aos filtros aplicados
+  const totalFilteredCount = useMemo(() => {
+    const pgTotal = DbService.getPaginationInfo().total;
+    const markersCount = Array.isArray(mapMarkers) ? mapMarkers.length : 0;
+    return Math.max(pgTotal, markersCount, filteredAndSortedProperties.length);
+  }, [mapMarkers, filteredAndSortedProperties.length]);
+
   const canLoadMore = displayCount < filteredAndSortedProperties.length || hasMore;
 
   const handleShowMoreCards = useCallback(() => {
+    if (loadingMore) return;
     if (displayCount < filteredAndSortedProperties.length) {
-      setDisplayCount((prev) => Math.min(prev + 20, filteredAndSortedProperties.length));
+      setDisplayCount((prev) => prev + 20);
     } else if (hasMore && onLoadMore) {
       onLoadMore();
+      setDisplayCount((prev) => prev + 20);
     }
-  }, [displayCount, filteredAndSortedProperties.length, hasMore, onLoadMore]);
-
-  // Infinite scroll automático: ao chegar no final da lista carrega mais 20 imóveis sucessivamente
-  const desktopSentinelRef = useRef<HTMLDivElement | null>(null);
-  const mobileSentinelRef = useRef<HTMLDivElement | null>(null);
-
-  const handleScrollContainer = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    if (!canLoadMore || loadingMore) return;
-    const target = e.currentTarget;
-    const remaining = target.scrollHeight - target.scrollTop - target.clientHeight;
-    if (remaining <= 500) {
-      handleShowMoreCards();
-    }
-  }, [canLoadMore, loadingMore, handleShowMoreCards]);
-
-  useEffect(() => {
-    if (!canLoadMore || loadingMore) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const first = entries[0];
-        if (first.isIntersecting && !loadingMore) {
-          handleShowMoreCards();
-        }
-      },
-      { rootMargin: '450px' }
-    );
-
-    const desktopEl = desktopSentinelRef.current;
-    const mobileEl = mobileSentinelRef.current;
-
-    if (desktopEl) observer.observe(desktopEl);
-    if (mobileEl) observer.observe(mobileEl);
-
-    return () => {
-      if (desktopEl) observer.unobserve(desktopEl);
-      if (mobileEl) observer.unobserve(mobileEl);
-      observer.disconnect();
-    };
-  }, [canLoadMore, loadingMore, handleShowMoreCards]);
+  }, [loadingMore, displayCount, filteredAndSortedProperties.length, hasMore, onLoadMore]);
 
   // Sincronização ao clicar no marcador do mapa:
   // "no mapa ao clicar no imovel vai para a vizualizacao, apos clicar no botao fechar volta para o map"
@@ -628,7 +598,7 @@ export function PortalSearchPage({
                       <li className="text-slate-400">›</li>
                       <li>
                         <span className="text-slate-700 font-semibold">
-                          {filteredAndSortedProperties.length} {filteredAndSortedProperties.length === 1 ? 'imóvel' : 'imóveis'}
+                          {totalFilteredCount} {totalFilteredCount === 1 ? 'imóvel' : 'imóveis'}
                         </span>
                       </li>
                     </ol>
@@ -641,7 +611,6 @@ export function PortalSearchPage({
 
                 {/* ÁREA DE CARDS QUE ROLA SUAVEMENTE ABAIXO DA BARRA FIXA */}
                 <div 
-                  onScroll={handleScrollContainer}
                   className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 lg:px-8 py-5 scroll-smooth"
                 >
                   {/* GRID DE CARDS DESKTOP */}
@@ -662,16 +631,22 @@ export function PortalSearchPage({
                       </div>
 
                       {canLoadMore && (
-                        <div className="flex flex-col items-center justify-center pt-2 pb-6">
-                          {/* Sentinela de Infinite Scroll Desktop */}
-                          <div ref={desktopSentinelRef} className="h-6 w-full pointer-events-none" />
-
-                          {loadingMore && (
-                            <div className="flex items-center justify-center gap-2 py-4 text-slate-500 text-xs font-semibold">
-                              <Loader2 className="animate-spin w-4 h-4 text-[#003366]" />
-                              <span>Carregando mais imóveis...</span>
-                            </div>
-                          )}
+                        <div className="pt-2 pb-8 w-full">
+                          <button
+                            type="button"
+                            onClick={handleShowMoreCards}
+                            disabled={loadingMore}
+                            className="w-full py-3.5 px-6 rounded-2xl bg-[#003366] text-white text-sm font-bold shadow-md hover:bg-[#002244] active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60"
+                          >
+                            {loadingMore ? (
+                              <>
+                                <Loader2 className="animate-spin w-4 h-4" />
+                                <span>Carregando...</span>
+                              </>
+                            ) : (
+                              <span>Ver mais</span>
+                            )}
+                          </button>
                         </div>
                       )}
                     </div>
@@ -744,7 +719,7 @@ export function PortalSearchPage({
                 {/* Cabeçalho resumido com contagem e ordenação FIXADO NO TOPO */}
                 <div className="shrink-0 px-4 py-2.5 bg-white border-b border-slate-100 flex items-center justify-between gap-2 relative z-40 shadow-2xs">
                   <div className="text-xs font-bold text-slate-700">
-                    <span>{filteredAndSortedProperties.length} imóveis</span>
+                    <span>{totalFilteredCount} {totalFilteredCount === 1 ? 'imóvel' : 'imóveis'}</span>
                     <span className="text-slate-400 font-normal ml-1">
                       em {filters.cidade || topCity}
                     </span>
@@ -756,7 +731,6 @@ export function PortalSearchPage({
 
                 {/* LISTAGEM DE CARDS DE IMÓVEIS (ÚNICA ÁREA QUE ROLA) */}
                 <div 
-                  onScroll={handleScrollContainer}
                   className="flex-1 min-h-0 overflow-y-auto scrollbar-none no-scrollbar px-4 py-3.5 space-y-4 pb-28 scroll-smooth"
                 >
                   {filteredAndSortedProperties.length > 0 ? (
@@ -774,16 +748,22 @@ export function PortalSearchPage({
                       ))}
 
                       {canLoadMore && (
-                        <div className="flex flex-col items-center justify-center pt-2 pb-6">
-                          {/* Sentinela de Infinite Scroll Mobile */}
-                          <div ref={mobileSentinelRef} className="h-6 w-full pointer-events-none" />
-
-                          {loadingMore && (
-                            <div className="flex items-center justify-center gap-2 py-4 text-slate-500 text-xs font-semibold">
-                              <Loader2 className="animate-spin w-4 h-4 text-[#003366]" />
-                              <span>Carregando mais imóveis...</span>
-                            </div>
-                          )}
+                        <div className="pt-2 pb-8 w-full">
+                          <button
+                            type="button"
+                            onClick={handleShowMoreCards}
+                            disabled={loadingMore}
+                            className="w-full py-3.5 px-6 rounded-2xl bg-[#003366] text-white text-sm font-bold shadow-md hover:bg-[#002244] active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60"
+                          >
+                            {loadingMore ? (
+                              <>
+                                <Loader2 className="animate-spin w-4 h-4" />
+                                <span>Carregando...</span>
+                              </>
+                            ) : (
+                              <span>Ver mais</span>
+                            )}
+                          </button>
                         </div>
                       )}
                     </div>

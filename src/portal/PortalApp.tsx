@@ -14,6 +14,7 @@ import { PortalProperty } from './types';
 import { Imovel } from '../types';
 import { DbService } from '../services/db';
 import { Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { parsePropertyUrl, getCanonicalPropertyPath, getCanonicalPropertyCode } from '../utils/propertyUrlUtils';
 
 interface PortalAppProps {
   realProperties?: Imovel[];
@@ -103,6 +104,7 @@ export function mapImovelToPortalProperty(p: Imovel): PortalProperty {
     ...p,
     id: p.id,
     codigo: p.codigo || p.id,
+    codigoIm: p.codigoIm || (p as any).codigo_im || (p as any).codigoImovel,
     titulo: p.titulo || nomeEdificioLimpo || 'Imóvel em ' + (p.cidade || 'Balneário Camboriú'),
     nomeEdificio: nomeEdificioLimpo,
     construtora: construtoraLimpa,
@@ -185,7 +187,8 @@ export function PortalApp({
     if (loadingMore || !paginationInfo.hasMore) return;
     setLoadingMore(true);
     try {
-      await DbService.loadMoreImoveis();
+      const res = await DbService.loadMoreImoveis();
+      setInternalList([...res.properties]);
       setPaginationInfo(DbService.getPaginationInfo());
     } catch (err) {
       console.error('[PortalApp] Erro ao carregar mais imóveis:', err);
@@ -198,7 +201,7 @@ export function PortalApp({
     try {
       setIsLoading(true);
       setLoadError(null);
-      const data = await DbService.getImoveis({ limit: 500 });
+      const data = await DbService.getImoveis({ page: 1, limit: 20 });
       setInternalList(data);
       setPaginationInfo(DbService.getPaginationInfo());
     } catch (err: any) {
@@ -255,9 +258,16 @@ export function PortalApp({
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(() => {
     if (initialPropertyId) return initialPropertyId;
     try {
+      // 1. Verifica rota amigável no pathname: /imovel/:code/:modalidade/:slug
+      const parsedPath = parsePropertyUrl(window.location.pathname);
+      if (parsedPath && parsedPath.code) {
+        return parsedPath.code;
+      }
+      // 2. Parâmetro de busca antigo ?imovel=
       const params = new URLSearchParams(window.location.search);
       const q = params.get('imovel');
       if (q) return q;
+      // 3. Hash antigo #imovel/
       const hash = window.location.hash;
       if (hash.startsWith('#imovel/')) return hash.replace('#imovel/', '');
     } catch {
@@ -291,34 +301,84 @@ export function PortalApp({
     });
   };
 
-  // Sincroniza com rota / hash da URL
+  // Imóvel individual carregado sob demanda (GET /api/imoveis/:id) ao clicar num marcador do mapa fora da lista de cards
+  const [fetchedDetailProperty, setFetchedDetailProperty] = useState<PortalProperty | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState<boolean>(false);
+
+  const findPropertyMatch = useCallback((list: PortalProperty[], targetId: string | null): PortalProperty | null => {
+    if (!targetId || !Array.isArray(list) || list.length === 0) return null;
+    const clean = targetId.trim().toLowerCase();
+    const cleanNoPrefix = clean.replace(/^imovel-/, '').replace(/^prop-/, '');
+    return list.find((p) => {
+      const pId = (p.id || '').toLowerCase();
+      const pCod = (p.codigo || '').toLowerCase();
+      const pCodIm = ((p as any).codigoIm || (p as any).codigo_im || '').toLowerCase();
+      const pIdClean = pId.replace(/^imovel-/, '').replace(/^prop-/, '');
+      let pCanonical = '';
+      try {
+        pCanonical = getCanonicalPropertyCode(p).toLowerCase();
+      } catch {}
+      return (
+        pId === clean ||
+        pId === cleanNoPrefix ||
+        pIdClean === cleanNoPrefix ||
+        pCod === clean ||
+        pCod === cleanNoPrefix ||
+        pCodIm === clean ||
+        pCodIm === cleanNoPrefix ||
+        (pCanonical && (pCanonical === clean || pCanonical === cleanNoPrefix))
+      );
+    }) || null;
+  }, []);
+
+  // Sincroniza com rota amigável (pathname) e hash da URL
   useEffect(() => {
-    const handleHashChange = () => {
+    const handleUrlChange = () => {
+      const parsedPath = parsePropertyUrl(window.location.pathname);
+      if (parsedPath && parsedPath.code) {
+        setSelectedPropertyId((current) => {
+          if (current) {
+            const matchedCurrent = findPropertyMatch(properties, current);
+            if (matchedCurrent) {
+              const currentCanonical = getCanonicalPropertyCode(matchedCurrent).toLowerCase();
+              const targetCode = parsedPath.code.toLowerCase();
+              if (currentCanonical === targetCode || (matchedCurrent.id && matchedCurrent.id.toLowerCase() === targetCode)) {
+                return current;
+              }
+            }
+          }
+          return parsedPath.code;
+        });
+        return;
+      }
       const hash = window.location.hash;
       if (hash.startsWith('#imovel/')) {
         const id = hash.replace('#imovel/', '');
         setSelectedPropertyId(id);
+      } else if (hash === '#home' || hash === '' || hash === '#busca') {
+        setSelectedPropertyId(null);
       } else {
         const params = new URLSearchParams(window.location.search);
-        if (!params.get('imovel')) {
+        const q = params.get('imovel');
+        if (q) {
+          setSelectedPropertyId(q);
+        } else if (!window.location.pathname.startsWith('/imovel/')) {
           setSelectedPropertyId(null);
         }
       }
     };
 
-    window.addEventListener('hashchange', handleHashChange);
-    // Checagem inicial
-    if (window.location.hash.startsWith('#imovel/')) {
-      const id = window.location.hash.replace('#imovel/', '');
-      setSelectedPropertyId(id);
-    } else {
-      const params = new URLSearchParams(window.location.search);
-      const q = params.get('imovel');
-      if (q) setSelectedPropertyId(q);
-    }
+    window.addEventListener('popstate', handleUrlChange);
+    window.addEventListener('hashchange', handleUrlChange);
 
-    return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
+    // Checagem inicial
+    handleUrlChange();
+
+    return () => {
+      window.removeEventListener('popstate', handleUrlChange);
+      window.removeEventListener('hashchange', handleUrlChange);
+    };
+  }, [properties, findPropertyMatch]);
 
   const handleSelectProperty = (id: string, fromMap: boolean = false) => {
     const cleanId = id.replace('imovel-', '');
@@ -327,15 +387,32 @@ export function PortalApp({
     if (fromMap) {
       setLastSelectedPinId(id);
     }
-    window.location.hash = `#imovel/${cleanId}`;
+    const matched = findPropertyMatch(properties, id);
+    if (matched) {
+      setFetchedDetailProperty(matched);
+      const canonicalPath = getCanonicalPropertyPath(matched);
+      try {
+        if (window.location.pathname !== canonicalPath) {
+          window.history.pushState({ propertyId: id }, '', canonicalPath);
+        }
+      } catch {}
+    } else {
+      try {
+        window.history.pushState({ propertyId: id }, '', `/imovel/${cleanId}`);
+      } catch {}
+    }
     window.scrollTo({ top: 0, behavior: 'instant' });
   };
 
   const handleCloseDetail = () => {
     setSelectedPropertyId(null);
+    setFetchedDetailProperty(null);
     try {
       const url = new URL(window.location.href);
-      if (url.searchParams.has('imovel')) {
+      if (url.pathname.startsWith('/imovel/')) {
+        window.history.pushState({}, '', '/#busca');
+        window.location.hash = '#busca';
+      } else if (url.searchParams.has('imovel')) {
         url.searchParams.delete('imovel');
         window.history.replaceState({}, '', url.pathname + (url.search ? url.search : '') + '#busca');
       } else {
@@ -348,30 +425,14 @@ export function PortalApp({
 
   const handleGoHome = () => {
     setSelectedPropertyId(null);
+    setFetchedDetailProperty(null);
+    try {
+      if (window.location.pathname.startsWith('/imovel/')) {
+        window.history.pushState({}, '', '/#home');
+      }
+    } catch {}
     window.location.hash = '#home';
   };
-
-  // Imóvel individual carregado sob demanda (GET /api/imoveis/:id) ao clicar num marcador do mapa fora da lista de cards
-  const [fetchedDetailProperty, setFetchedDetailProperty] = useState<PortalProperty | null>(null);
-  const [loadingDetail, setLoadingDetail] = useState<boolean>(false);
-
-  const findPropertyMatch = useCallback((list: PortalProperty[], targetId: string | null): PortalProperty | null => {
-    if (!targetId || !Array.isArray(list) || list.length === 0) return null;
-    const clean = targetId.trim().toLowerCase();
-    const cleanNoPrefix = clean.replace(/^imovel-/, '').replace(/^prop-/, '');
-    return list.find((p) => {
-      const pId = (p.id || '').toLowerCase();
-      const pCod = (p.codigo || '').toLowerCase();
-      const pIdClean = pId.replace(/^imovel-/, '').replace(/^prop-/, '');
-      return (
-        pId === clean ||
-        pId === cleanNoPrefix ||
-        pIdClean === cleanNoPrefix ||
-        pCod === clean ||
-        pCod === cleanNoPrefix
-      );
-    }) || null;
-  }, []);
 
   useEffect(() => {
     if (!selectedPropertyId) {
@@ -461,7 +522,12 @@ export function PortalApp({
         </div>
       )}
 
-      <div className={activeProperty ? 'hidden' : 'contents'}>
+      <div
+        id="portal-search-container"
+        style={{ display: activeProperty ? 'none' : 'block' }}
+        className={activeProperty ? 'hidden' : 'block'}
+        aria-hidden={Boolean(activeProperty)}
+      >
         <PortalSearchPage
           properties={properties}
           favorites={favorites}

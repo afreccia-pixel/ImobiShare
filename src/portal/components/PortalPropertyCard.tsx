@@ -8,6 +8,7 @@ import { MapPin } from 'lucide-react';
 import { PortalProperty } from '../types';
 import { formatCurrencyBRL } from '../data/mockPortalData';
 import { getValidImage, handleImageError } from '../../utils/imageUtils';
+import { getCanonicalPropertyPath } from '../../utils/propertyUrlUtils';
 
 interface PortalPropertyCardProps {
   imovel: PortalProperty;
@@ -26,6 +27,7 @@ export function PortalPropertyCard({
   onSelect,
   onToggleFavorite,
 }: PortalPropertyCardProps) {
+  const canonicalPath = getCanonicalPropertyPath(imovel);
   const mainPhoto = getValidImage(imovel.fotos?.[0]);
   const enderecoFormatado = imovel.endereco
     ? (imovel.bairro ? `${imovel.endereco} - ${imovel.bairro}` : imovel.endereco)
@@ -73,7 +75,12 @@ export function PortalPropertyCard({
     badgeClasses = 'bg-blue-600 text-white';
   }
 
-  const handleClick = () => {
+  const handleClick = (e: React.MouseEvent) => {
+    // Se clicou em um botão interativo interno (ex: favoritos), não navega
+    if ((e.target as HTMLElement).closest('button, [data-prevent-card-nav]')) {
+      e.stopPropagation();
+      return;
+    }
     onSelect?.(imovel.id);
   };
 

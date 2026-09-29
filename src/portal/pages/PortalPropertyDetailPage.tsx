@@ -29,6 +29,7 @@ import { DbService } from '../../services/db';
 import { LOGO_IMAGE } from '../../assets/logo';
 import { PortalGalleryModal } from '../components/PortalGalleryModal';
 import { PortalScheduleModal } from '../components/PortalScheduleModal';
+import { getCanonicalPropertyPath, getCanonicalPropertyUrl } from '../../utils/propertyUrlUtils';
 
 interface PortalPropertyDetailPageProps {
   imovel: PortalProperty;
@@ -119,10 +120,37 @@ export function PortalPropertyDetailPage({
   const [loadingFull, setLoadingFull] = useState(!imovel.descricao);
   const [fullFotos, setFullFotos] = useState<string[]>(imovel.fotos || []);
 
-  // Rola a página para o topo ao abrir o imóvel
+  // Detecta se a tela é desktop (>= 1024px) para garantir renderização do layout adequado
+  const [isDesktop, setIsDesktop] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 1024;
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsDesktop(window.innerWidth >= 1024);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Rola a página para o topo e sincroniza a URL amigável na barra do navegador
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' });
-  }, [imovel.id]);
+    try {
+      const canonicalPath = getCanonicalPropertyPath(imovel);
+      if (window.location.pathname !== canonicalPath) {
+        window.history.replaceState({}, '', canonicalPath);
+      }
+      if (imovel.titulo) {
+        document.title = `${imovel.titulo} - ImobiShare`;
+      }
+    } catch {
+      // ignore
+    }
+  }, [imovel.id, imovel.titulo]);
 
   // Rola suavemente para centralizar a miniatura selecionada (apenas no mobile)
   useEffect(() => {
@@ -213,8 +241,8 @@ export function PortalPropertyDetailPage({
     }).format(value);
   };
 
-  // Link público do imóvel
-  const publicLink = `${window.location.origin}/?imovel=${currentProperty.id.replace('imovel-', '')}`;
+  // Link público amigável do imóvel
+  const publicLink = getCanonicalPropertyUrl(currentProperty, window.location.origin);
 
   const handleShare = async () => {
     if (navigator.share && navigator.canShare) {
@@ -268,55 +296,56 @@ export function PortalPropertyDetailPage({
       id={`portal-property-details-${imovel.id}`}
     >
       {/* ========================================================================= */}
-      {/* 1. VISUALIZAÇÃO CELULAR (MOBILE) - < lg                                   */}
+      {/* 1. VISUALIZAÇÃO CELULAR (MOBILE) - < 1024px                               */}
       {/* - Sem contador de fotos na galeria                                        */}
       {/* - Sem o responsável pelo imóvel                                           */}
       {/* - Indicação destacada "Publicado há 7 meses" em baixo do código do imóvel */}
       {/* ========================================================================= */}
-      <div className="block lg:hidden">
-        {/* Header no estilo do corretor com Voltar e Título */}
-        <div className="bg-white border-b border-slate-100 px-4 py-3.5 flex items-center justify-between sticky top-0 z-30 shadow-2xs">
-          <button
-            type="button"
-            id="btn-voltar-topo"
-            onClick={onClose}
-            className="p-1 text-slate-600 hover:text-[#003366] hover:bg-slate-100 rounded-full transition-colors flex items-center cursor-pointer"
-            title="Voltar para a busca"
-          >
-            <ArrowLeft size={20} className="mr-1" />
-            <span className="text-xs font-semibold">Voltar</span>
-          </button>
-
-          <span className="font-bold text-slate-800 text-sm">Visualização de Imóvel</span>
-
-          <div className="flex items-center gap-1.5">
+      {!isDesktop && (
+        <div className="block lg:hidden">
+          {/* Header com Voltar e Visualização de Imóvel */}
+          <div className="bg-white border-b border-slate-100 px-4 py-3.5 flex items-center justify-between sticky top-0 z-30 shadow-2xs">
             <button
               type="button"
-              id="btn-favoritar-mobile"
-              onClick={() => onToggleFavorite?.(imovel.id)}
-              className={`p-1.5 rounded-full transition-all cursor-pointer ${
-                isFavorite
-                  ? 'text-rose-600 bg-rose-50'
-                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
-              }`}
-              title={isFavorite ? 'Remover dos favoritos' : 'Favoritar'}
-              aria-label="Favoritar"
+              id="btn-voltar-topo"
+              onClick={onClose}
+              className="p-1 text-slate-600 hover:text-[#003366] hover:bg-slate-100 rounded-full transition-colors flex items-center cursor-pointer"
+              title="Voltar para a busca"
             >
-              <Heart size={19} className={isFavorite ? 'fill-rose-500 text-rose-500' : ''} />
+              <ArrowLeft size={20} className="mr-1" />
+              <span className="text-xs font-semibold">Voltar</span>
             </button>
 
-            <button
-              type="button"
-              id="btn-compartilhar-mobile"
-              onClick={handleShare}
-              className="p-1.5 rounded-full text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
-              title="Compartilhar"
-              aria-label="Compartilhar"
-            >
-              <Share2 size={19} />
-            </button>
+            <span className="font-bold text-slate-800 text-sm">Visualização de Imóvel</span>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                id="btn-favoritar-mobile"
+                onClick={() => onToggleFavorite?.(imovel.id)}
+                className={`p-1.5 rounded-full transition-all cursor-pointer ${
+                  isFavorite
+                    ? 'text-rose-600 bg-rose-50'
+                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+                }`}
+                title={isFavorite ? 'Remover dos favoritos' : 'Favoritar'}
+                aria-label="Favoritar"
+              >
+                <Heart size={19} className={isFavorite ? 'fill-rose-500 text-rose-500' : ''} />
+              </button>
+
+              <button
+                type="button"
+                id="btn-compartilhar-mobile"
+                onClick={handleShare}
+                className="p-1.5 rounded-full text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                title="Compartilhar"
+                aria-label="Compartilhar"
+              >
+                <Share2 size={19} />
+              </button>
+            </div>
           </div>
-        </div>
 
         {/* Conteúdo Centralizado Mobile */}
         <div
@@ -612,12 +641,14 @@ export function PortalPropertyDetailPage({
           </div>
         </div>
       </div>
+      )}
 
       {/* ========================================================================= */}
-      {/* 2. VISUALIZAÇÃO COMPUTADOR / NOTEBOOK (WIDESCREEN) - >= lg               */}
+      {/* 2. VISUALIZAÇÃO COMPUTADOR / NOTEBOOK (WIDESCREEN) - >= 1024px            */}
       {/* - Retirado 'Buscar outros imóveis' do cabeçalho                           */}
       {/* - Retirado o tag do código do imóvel do card da direita                  */}
       {/* ========================================================================= */}
+      {isDesktop && (
       <div className="hidden lg:block">
         {/* Cabeçalho Widescreen (Sem botão Voltar e SEM 'Buscar outros imóveis') */}
         <header className="bg-white border-b border-slate-200/80 px-6 lg:px-8 py-3.5 sticky top-0 z-30 shadow-2xs">
@@ -1001,6 +1032,7 @@ export function PortalPropertyDetailPage({
           </div>
         </main>
       </div>
+      )}
 
       {/* Toast flutuante de confirmação ao copiar link */}
       {showCopiedToast && (
