@@ -490,7 +490,7 @@ export class ServerDb {
   }
 
   // --- IMOVEIS MAPPER ---
-  private static mapRowToImovel(row: any): Imovel {
+  private static mapRowToImovel(row: any, isSummary: boolean = false): Imovel {
     let fotos: string[] = [];
     if (row.imagens) {
       if (Array.isArray(row.imagens)) {
@@ -502,6 +502,12 @@ export class ServerDb {
           fotos = [row.imagens];
         }
       }
+    }
+
+    // Em listagens e resumos, envia apenas a foto de capa (fotos[0]).
+    // Isso reduz o payload JSON de ~30MB para ~200KB, evitando travamentos de rede e OOM no Render.
+    if (isSummary && fotos.length > 1) {
+      fotos = [fotos[0]];
     }
 
     return {
@@ -665,7 +671,7 @@ export class ServerDb {
         [...params, limit, offset]
       );
 
-      const items = dataRes.rows.map(r => this.mapRowToImovel(r));
+      const items = dataRes.rows.map(r => this.mapRowToImovel(r, true));
 
       if (isPaginated) {
         return {
@@ -735,7 +741,7 @@ export class ServerDb {
         [cleanEmail, limit, offset]
       );
 
-      const items = dataRes.rows.map(r => this.mapRowToImovel(r));
+      const items = dataRes.rows.map(r => this.mapRowToImovel(r, true));
 
       if (isPaginated) {
         return {
@@ -864,17 +870,11 @@ export class ServerDb {
 
       const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
       const res = await this.pool.query(
-        `SELECT id, codigo, codigo_im, titulo, valor_venda, valor_locacao, cidade, bairro, latitude, longitude, imagens, tipo, status_imovel, condicao_imovel, quartos, bwc, vagas, area_privativa, corretor_email FROM imoveis ${whereClause} LIMIT 1000`,
+        `SELECT id, codigo, codigo_im, titulo, valor_venda, valor_locacao, cidade, bairro, latitude, longitude, tipo, status_imovel, condicao_imovel, quartos, bwc, vagas, area_privativa, corretor_email FROM imoveis ${whereClause} LIMIT 1000`,
         params
       );
 
       return res.rows.map(r => {
-        let fotoCapa = '';
-        try {
-          const parsed = typeof r.imagens === 'string' ? JSON.parse(r.imagens) : r.imagens;
-          if (Array.isArray(parsed) && parsed.length > 0) fotoCapa = parsed[0];
-        } catch {}
-
         return {
           id: r.id,
           codigo: r.codigo || r.codigo_im,
@@ -885,7 +885,7 @@ export class ServerDb {
           bairro: r.bairro,
           latitude: r.latitude ? Number(r.latitude) : undefined,
           longitude: r.longitude ? Number(r.longitude) : undefined,
-          fotos: fotoCapa ? [fotoCapa] : [],
+          fotos: [], // Marcadores do mapa não utilizam fotos (economiza centenas de MB de memória e evita 502 Bad Gateway)
           tipoImovel: r.tipo,
           statusImovel: r.status_imovel,
           condicaoImovel: r.condicao_imovel,

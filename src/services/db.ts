@@ -490,7 +490,13 @@ export class DbService {
 
         const res = await fetch(url, { headers });
         if (res.ok) {
-          const json = await res.json();
+          let json: any = null;
+          try {
+            json = await res.json();
+          } catch (jsonErr) {
+            console.warn('Resposta da API de imóveis não pôde ser decodificada como JSON:', jsonErr);
+            return cachedImoveis;
+          }
           let list: Imovel[] = [];
           if (Array.isArray(json)) {
             list = json;
@@ -722,9 +728,15 @@ export class DbService {
   static async getMeusImoveis(): Promise<Imovel[]> {
     try {
       const headers = await this.getAuthHeader();
-      const res = await fetch(getApiUrl('/api/properties/mine?limit=500'), { headers });
+      const res = await fetch(getApiUrl('/api/properties/mine?limit=100'), { headers });
       if (res.ok) {
-        const json = await res.json();
+        let json: any = null;
+        try {
+          json = await res.json();
+        } catch (jsonErr) {
+          console.warn('Erro ao decodificar JSON de meus imóveis:', jsonErr);
+          return [];
+        }
         const list: Imovel[] = Array.isArray(json) ? json : (json?.data || []);
         if (list.length > 0) {
           const existingIds = new Set(cachedImoveis.map(i => i.id));
