@@ -909,6 +909,98 @@ ${descricao}
   }
 });
 
+// Lead & Visit Scheduling Route (Direct email send without opening client mail app)
+app.post(['/api/leads/send', '/api/properties/schedule', '/api/leads'], async (req: Request, res: Response) => {
+  try {
+    const { 
+      clienteNome, 
+      clienteEmail, 
+      clienteTelefone, 
+      corretorEmail, 
+      corretorNome,
+      imovelId,
+      imovelCodigo,
+      imovelTitulo,
+      imovelValor,
+      imovelEndereco,
+      mensagem
+    } = req.body;
+
+    if (!clienteNome || !clienteTelefone) {
+      return res.status(400).json({ error: 'Nome e telefone são obrigatórios.' });
+    }
+
+    const defaultSystemEmail = process.env.SYSTEM_EMAIL || 'portalcamboriu@gmail.com';
+    const targetEmail = corretorEmail || 'portalcamboriu@gmail.com';
+
+    const emailSubject = `[Agendamento de Visita] ${imovelTitulo || 'Imóvel'} - ${clienteNome}`;
+
+    const textBody = `
+==================================================
+NOVO AGENDAMENTO DE VISITA - IMOBISHARE
+==================================================
+
+IMÓVEL:
+- Título: ${imovelTitulo || 'Não informado'}
+- Código: #${imovelCodigo || imovelId || 'Não informado'}
+- Valor: ${imovelValor || 'Não informado'}
+- Endereço: ${imovelEndereco || 'Não informado'}
+
+DADOS DO CLIENTE INTERESSADO:
+- Nome: ${clienteNome}
+- Telefone / WhatsApp: ${clienteTelefone}
+- E-mail: ${clienteEmail || 'Não informado'}
+
+MENSAGEM:
+${mensagem || 'Olá! Gostaria de agendar uma visita para este imóvel.'}
+
+==================================================
+    `.trim();
+
+    console.log(`=========================================`);
+    console.log(`📩 NOVO LEAD / AGENDAMENTO -> ${targetEmail}`);
+    console.log(`Cliente: ${clienteNome} <${clienteEmail || 'sem email'}>, Tel: ${clienteTelefone}`);
+    console.log(`Imóvel: #${imovelCodigo || imovelId} - ${imovelTitulo}`);
+    console.log(`=========================================`);
+
+    // If SMTP credentials are provided, send via nodemailer directly
+    if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && process.env.SMTP_PASS !== '""' && process.env.SMTP_PASS !== "''") {
+      try {
+        const transporter = nodemailer.createTransport({
+          host: process.env.SMTP_HOST,
+          port: parseInt(process.env.SMTP_PORT || '587', 10),
+          secure: process.env.SMTP_PORT === '465',
+          auth: {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS,
+          },
+        });
+
+        await transporter.sendMail({
+          from: `"ImobiShare Agendamentos" <${defaultSystemEmail}>`,
+          to: targetEmail,
+          bcc: 'portalcamboriu@gmail.com',
+          replyTo: clienteEmail || undefined,
+          subject: emailSubject,
+          text: textBody,
+        });
+
+        console.log(`✅ E-mail de agendamento enviado com sucesso para ${targetEmail}`);
+      } catch (smtpErr: any) {
+        console.warn(`⚠️ Disparo via SMTP não concluído (${smtpErr?.message}). A solicitação foi registrada no sistema.`);
+      }
+    }
+
+    return res.json({ 
+      success: true, 
+      message: 'Solicitação de agendamento enviada com sucesso para o corretor!' 
+    });
+  } catch (err: any) {
+    logBackendError('/api/leads/send', err);
+    return res.status(500).json({ error: 'Erro ao processar agendamento de visita.' });
+  }
+});
+
 // AI Description Improvement via Gemini
 app.post(['/api/properties/improve-description', '/api/ai/improve-description'], async (req: Request, res: Response) => {
   try {

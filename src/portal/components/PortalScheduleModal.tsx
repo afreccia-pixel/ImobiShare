@@ -8,6 +8,7 @@ import { X, User, Phone, Mail, MessageCircle } from 'lucide-react';
 import { PortalProperty } from '../types';
 import { formatCurrencyBRL } from '../data/mockPortalData';
 import { DbService } from '../../services/db';
+import { getApiUrl } from '../../utils/apiUrl';
 
 interface PortalScheduleModalProps {
   imovel: PortalProperty | null;
@@ -151,18 +152,30 @@ export function PortalScheduleModal({ imovel, isOpen, onClose }: PortalScheduleM
       `• E-mail: ${email.trim()}\n\n` +
       `Aguardo seu retorno para combinarmos a data e horário!`;
 
-    // 3. Envia por E-mail em segundo plano
-    if (brokerInfo.email) {
-      try {
-        const subject = encodeURIComponent(`[Agendamento de Visita] ${imovelNome} - ${nome.trim()}`);
-        const mailBody = encodeURIComponent(messageText);
-        const mailLink = document.createElement('a');
-        mailLink.href = `mailto:${brokerInfo.email}?subject=${subject}&body=${mailBody}`;
-        mailLink.click();
-      } catch {}
-    }
+    // 3. Envia por E-mail diretamente via servidor em segundo plano (SEM abrir aplicativo de e-mail)
+    try {
+      fetch(getApiUrl('/api/leads/send'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clienteNome: nome.trim(),
+          clienteTelefone: telefone.trim(),
+          clienteEmail: email.trim(),
+          corretorEmail: brokerInfo.email,
+          corretorNome: brokerInfo.nome,
+          imovelId: imovel.id,
+          imovelCodigo: imovel.codigo || imovel.id,
+          imovelTitulo: imovelNome,
+          imovelValor: formatCurrencyBRL(imovel.valor),
+          imovelEndereco: endereco,
+          mensagem: messageText,
+        }),
+      }).catch((err) => {
+        console.warn('Erro ao despachar lead por e-mail no backend:', err);
+      });
+    } catch {}
 
-    // 4. Abre o WhatsApp do corretor
+    // 4. Abre o WhatsApp do corretor para envio da mensagem
     const cleanPhone = (brokerInfo.telefone || '').replace(/\D/g, '');
     const phoneWithCountry = cleanPhone.startsWith('55')
       ? cleanPhone
@@ -173,9 +186,7 @@ export function PortalScheduleModal({ imovel, isOpen, onClose }: PortalScheduleM
     const encodedMsg = encodeURIComponent(messageText);
     const waUrl = `https://api.whatsapp.com/send?phone=${phoneWithCountry}&text=${encodedMsg}`;
     
-    setTimeout(() => {
-      window.open(waUrl, '_blank', 'noopener,noreferrer');
-    }, 150);
+    window.open(waUrl, '_blank', 'noopener,noreferrer');
 
     // Fecha o modal
     onClose();
@@ -269,14 +280,14 @@ export function PortalScheduleModal({ imovel, isOpen, onClose }: PortalScheduleM
             </div>
           </div>
 
-          {/* Botão Falar com corretor */}
+          {/* Botão Falar com corretor com cantos arredondados (rounded-full) */}
           <div className="pt-2">
             <button
               type="submit"
               id="btn-falar-com-corretor"
-              className="w-full h-12 px-6 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl shadow-sm transition-all duration-200 cursor-pointer active:scale-[0.99] flex items-center justify-center gap-2"
+              className="w-full h-12 px-6 bg-emerald-600 hover:bg-emerald-700 text-white text-[15px] font-bold rounded-full shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer active:scale-[0.98] flex items-center justify-center gap-2.5"
             >
-              <MessageCircle size={18} />
+              <MessageCircle size={20} className="stroke-[2.2]" />
               <span>Falar com corretor</span>
             </button>
           </div>

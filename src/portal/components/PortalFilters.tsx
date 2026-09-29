@@ -16,7 +16,6 @@ import {
   X,
   Check,
   Building2,
-  Sparkles,
 } from 'lucide-react';
 import { PortalFilterState } from '../types';
 import { PortalFilterDropdown } from './PortalFilterDropdown';
@@ -122,36 +121,12 @@ export function PortalFilters({
     return list.map((c) => ({ cidade: c, count: 0 }));
   }, [dbCities, availableCities, defaultCities]);
 
-  // Sugestões inteligentes de empreendimentos, bairros e características populares
-  const popularFeaturesSuggestions = useMemo(
-    () => [
-      { label: 'Frente mar', type: 'caracteristica', query: 'Frente mar' },
-      { label: 'Quadra mar', type: 'caracteristica', query: 'Quadra mar' },
-      { label: 'Mobiliado', type: 'caracteristica', query: 'Mobiliado' },
-      { label: 'Piscina', type: 'caracteristica', query: 'Piscina' },
-      { label: '3 suítes', type: 'caracteristica', query: '3 suítes' },
-      { label: 'Cobertura', type: 'caracteristica', query: 'Cobertura' },
-      { label: 'Brava', type: 'bairro', cidade: 'Itajaí', query: 'Brava' },
-      { label: 'One Tower', type: 'empreendimento', cidade: 'Balneário Camboriú', query: 'One Tower' },
-    ],
-    []
-  );
-
   // Filtragem dinâmica para o campo inteligente de Cidade
   const filteredCities = useMemo(() => {
     const q = cidadeSearchText.trim().toLowerCase();
     if (!q) return cityItems;
     return cityItems.filter((c) => c.cidade.toLowerCase().includes(q));
   }, [cityItems, cidadeSearchText]);
-
-  // Sugestões filtradas quando o usuário digita algo que pode ser empreendimento ou característica
-  const matchingSuggestions = useMemo(() => {
-    const q = cidadeSearchText.trim().toLowerCase();
-    if (!q) return [];
-    return popularFeaturesSuggestions.filter(
-      (s) => s.label.toLowerCase().includes(q) || s.query.toLowerCase().includes(q)
-    );
-  }, [popularFeaturesSuggestions, cidadeSearchText]);
 
   return (
     <nav
@@ -233,7 +208,7 @@ export function PortalFilters({
                   type="text"
                   value={cidadeSearchText}
                   onChange={(e) => setCidadeSearchText(e.target.value)}
-                  placeholder="Cidade, empreendimento, bairro ou característica..."
+                  placeholder="Buscar cidade..."
                   className="w-full h-10 pl-9 pr-8 bg-white border border-slate-200 rounded-xl text-[14px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#003366]/20 focus:border-[#003366] transition-all"
                 />
                 {cidadeSearchText && (
@@ -246,69 +221,10 @@ export function PortalFilters({
                   </button>
                 )}
               </div>
-
-              {/* Chips de busca rápida para características / bairros populares */}
-              {!cidadeSearchText && (
-                <div className="mt-2.5 flex flex-wrap gap-1.5">
-                  {popularFeaturesSuggestions.slice(0, 5).map((sug) => (
-                    <button
-                      key={sug.label}
-                      type="button"
-                      onClick={() => {
-                        if (sug.type === 'bairro' && sug.cidade) {
-                          onChangeFilters({ cidade: sug.cidade, bairro: sug.label, busca: '' });
-                        } else {
-                          onChangeFilters({ busca: sug.query });
-                        }
-                        setOpenDropdown(null);
-                      }}
-                      className="px-2.5 py-1 bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-full text-[12px] font-medium text-slate-600 hover:text-[#003366] transition-colors cursor-pointer flex items-center gap-1"
-                    >
-                      <Sparkles size={12} className="text-[#003366]" />
-                      <span>{sug.label}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
 
             {/* Lista rolável de opções */}
             <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5 max-h-64">
-              {/* Sugestões de empreendimentos ou características quando pesquisando */}
-              {cidadeSearchText.trim() && matchingSuggestions.length > 0 && (
-                <div className="mb-2 pb-1 border-b border-slate-100">
-                  <span className="px-3 py-1 text-[11px] font-semibold tracking-wider uppercase text-slate-400 block">
-                    Sugestões inteligentes
-                  </span>
-                  {matchingSuggestions.map((sug) => (
-                    <button
-                      key={sug.label}
-                      type="button"
-                      onClick={() => {
-                        if (sug.type === 'bairro' && sug.cidade) {
-                          onChangeFilters({ cidade: sug.cidade, bairro: sug.label, busca: '' });
-                        } else {
-                          onChangeFilters({ busca: sug.query });
-                        }
-                        setOpenDropdown(null);
-                      }}
-                      className="w-full text-left px-3 py-2 rounded-xl text-[13.5px] flex items-center justify-between hover:bg-blue-50/70 text-slate-700 hover:text-[#003366] transition-colors cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Sparkles size={15} className="text-[#003366] shrink-0" />
-                        <div>
-                          <span className="font-semibold text-slate-800">{sug.label}</span>
-                          <span className="text-[12px] text-slate-400 ml-1.5">
-                            {sug.type === 'empreendimento' ? '• Empreendimento' : sug.type === 'bairro' ? `• Bairro em ${sug.cidade}` : '• Característica'}
-                          </span>
-                        </div>
-                      </div>
-                      <span className="text-[12px] text-[#003366] font-medium">Buscar</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-
               {/* Botão de busca livre quando o texto digitado não é exatamente uma cidade */}
               {cidadeSearchText.trim() && (
                 <button
@@ -381,7 +297,7 @@ export function PortalFilters({
                 );
               })}
 
-              {filteredCities.length === 0 && matchingSuggestions.length === 0 && (
+              {filteredCities.length === 0 && (
                 <div className="p-4 text-center text-slate-400 text-[13px]">
                   Nenhuma cidade encontrada para "{cidadeSearchText}"
                 </div>

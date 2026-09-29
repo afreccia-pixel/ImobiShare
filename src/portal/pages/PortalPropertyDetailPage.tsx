@@ -109,10 +109,15 @@ export function PortalPropertyDetailPage({
 }: PortalPropertyDetailPageProps) {
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
   const [touchStartPos, setTouchStartPos] = useState<{ x: number; y: number } | null>(null);
-  const mobileThumbnailsRef = useRef<HTMLDivElement>(null);
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [showCopiedToast, setShowCopiedToast] = useState(false);
+
+  // Estados para arrasto com o dedo / mouse na galeria de fotos (passa para a próxima/anterior)
+  const [photoDragStartX, setPhotoDragStartX] = useState<number | null>(null);
+  const [photoDragStartY, setPhotoDragStartY] = useState<number | null>(null);
+  const [photoDragCurrentX, setPhotoDragCurrentX] = useState<number | null>(null);
+  const [hasPhotoDragged, setHasPhotoDragged] = useState(false);
 
   const [fullImovel, setFullImovel] = useState<Partial<PortalProperty> | null>(() => {
     return imovel.descricao ? imovel : null;
@@ -151,17 +156,6 @@ export function PortalPropertyDetailPage({
       // ignore
     }
   }, [imovel.id, imovel.titulo]);
-
-  // Rola suavemente para centralizar a miniatura selecionada (apenas no mobile)
-  useEffect(() => {
-    if (mobileThumbnailsRef.current && mobileThumbnailsRef.current.children[activePhotoIndex]) {
-      (mobileThumbnailsRef.current.children[activePhotoIndex] as HTMLElement).scrollIntoView({
-        behavior: 'smooth',
-        inline: 'center',
-        block: 'nearest',
-      });
-    }
-  }, [activePhotoIndex]);
 
   // Carrega detalhes completos do imóvel
   useEffect(() => {
@@ -214,22 +208,82 @@ export function PortalPropertyDetailPage({
     const diffX = endX - touchStartPos.x;
     const diffY = Math.abs(endY - touchStartPos.y);
 
-    // Gesto de voltar da borda no mobile
-    if ((touchStartPos.x < 75 && diffX > 35 && diffX > diffY * 0.8) || (diffX > 65 && diffX > diffY * 1.2)) {
+    // Gesto de voltar da borda no mobile (apenas nas extremidades laterais)
+    if (touchStartPos.x < 50 && diffX > 45 && diffX > diffY * 1.2) {
       onClose();
       setTouchStartPos(null);
       return;
     }
+    setTouchStartPos(null);
+  };
 
-    // Carrossel de fotos por gesto
-    if (Math.abs(diffX) > 35 && diffX > diffY * 0.8 && fotos.length > 1) {
-      if (diffX < 0) {
+  // Manipuladores de arrasto de fotos por toque ou mouse (passa para a próxima/anterior)
+  const handlePhotoTouchStart = (e: React.TouchEvent) => {
+    setPhotoDragStartX(e.touches[0].clientX);
+    setPhotoDragStartY(e.touches[0].clientY);
+    setPhotoDragCurrentX(e.touches[0].clientX);
+    setHasPhotoDragged(false);
+  };
+
+  const handlePhotoTouchMove = (e: React.TouchEvent) => {
+    if (photoDragStartX === null) return;
+    const currentX = e.touches[0].clientX;
+    const currentY = e.touches[0].clientY;
+    const diffX = currentX - photoDragStartX;
+    const diffY = currentY - (photoDragStartY || 0);
+
+    if (Math.abs(diffX) > 10 && Math.abs(diffX) > Math.abs(diffY)) {
+      setHasPhotoDragged(true);
+      setPhotoDragCurrentX(currentX);
+    }
+  };
+
+  const handlePhotoTouchEnd = () => {
+    if (photoDragStartX !== null && photoDragCurrentX !== null && hasPhotoDragged && fotos.length > 1) {
+      const diffX = photoDragCurrentX - photoDragStartX;
+      if (diffX < -30) {
+        // Desliza para esquerda: próxima foto
         setActivePhotoIndex((prev) => (prev + 1) % fotos.length);
-      } else if (activePhotoIndex > 0) {
-        setActivePhotoIndex((prev) => prev - 1);
+      } else if (diffX > 30) {
+        // Desliza para direita: foto anterior
+        setActivePhotoIndex((prev) => (prev - 1 + fotos.length) % fotos.length);
       }
     }
-    setTouchStartPos(null);
+    setPhotoDragStartX(null);
+    setPhotoDragStartY(null);
+    setPhotoDragCurrentX(null);
+    setTimeout(() => setHasPhotoDragged(false), 80);
+  };
+
+  const handlePhotoMouseDown = (e: React.MouseEvent) => {
+    setPhotoDragStartX(e.clientX);
+    setPhotoDragStartY(e.clientY);
+    setPhotoDragCurrentX(e.clientX);
+    setHasPhotoDragged(false);
+  };
+
+  const handlePhotoMouseMove = (e: React.MouseEvent) => {
+    if (photoDragStartX === null) return;
+    const diffX = e.clientX - photoDragStartX;
+    if (Math.abs(diffX) > 10) {
+      setHasPhotoDragged(true);
+      setPhotoDragCurrentX(e.clientX);
+    }
+  };
+
+  const handlePhotoMouseUp = () => {
+    if (photoDragStartX !== null && photoDragCurrentX !== null && hasPhotoDragged && fotos.length > 1) {
+      const diffX = photoDragCurrentX - photoDragStartX;
+      if (diffX < -30) {
+        setActivePhotoIndex((prev) => (prev + 1) % fotos.length);
+      } else if (diffX > 30) {
+        setActivePhotoIndex((prev) => (prev - 1 + fotos.length) % fotos.length);
+      }
+    }
+    setPhotoDragStartX(null);
+    setPhotoDragStartY(null);
+    setPhotoDragCurrentX(null);
+    setTimeout(() => setHasPhotoDragged(false), 80);
   };
 
   // Formatador de preço
