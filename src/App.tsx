@@ -279,6 +279,10 @@ export default function App() {
   // Foolproof synchronous public views loading directly from URL
   const [publicViewProperty, setPublicViewProperty] = useState<Imovel | null>(() => {
     const path = window.location.pathname;
+    // Se a rota for /imovel/..., o PortalApp gerencia a visualização exclusiva do imóvel
+    if (path.startsWith('/imovel/')) {
+      return null;
+    }
     const params = new URLSearchParams(window.location.search);
     const hash = window.location.hash;
 
@@ -819,6 +823,11 @@ export default function App() {
     const hash = window.location.hash;
 
     const corretorParam = params.get('corretor') || params.get('broker');
+
+    // Se a rota for /imovel/..., o PortalApp gerencia a visualização com o PortalPropertyDetailPage
+    if (path.startsWith('/imovel/')) {
+      return;
+    }
 
     // A. Check for single imovel via canonical URL (/imovel/CODIGO/compra/...), query param (?imovel=id), hash (#/imovel/id) or pathname (/imovel/id)
     let imovelId = params.get('imovel');
@@ -2354,7 +2363,7 @@ Toque abaixo para ver a seleção completa:
   }, [selectedPropertyId, allImoveis]);
 
   // If user is opening public property view (from selection, direct link or broker test)
-  if (publicViewProperty) {
+  if (publicViewProperty && appMode !== 'portal') {
     return (
       <PublicView 
         imovel={publicViewProperty}
