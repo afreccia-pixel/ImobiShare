@@ -1268,7 +1268,7 @@ async function loadHtmlTemplate(req: Request, vite?: any): Promise<string> {
 
 // Start Server and setup Vite middleware
 const startServer = async () => {
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
   await ServerDb.init();
 
   // Serve static folders (public, assets) directly

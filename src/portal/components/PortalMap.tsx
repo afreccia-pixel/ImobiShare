@@ -9,6 +9,7 @@ import 'leaflet/dist/leaflet.css';
 import { PortalProperty, MapPropertyMarker } from '../types';
 import { RefreshCw } from 'lucide-react';
 import { safePatchLeaflet } from '../../utils/leafletPatch';
+import { addBaseTileLayer } from '../../utils/mapTileUtils';
 
 interface PortalMapProps {
   imoveis: Array<PortalProperty | MapPropertyMarker>;
@@ -355,11 +356,8 @@ export function PortalMap({
       return;
     }
 
-    // Camada limpa estilo CartoDB Voyager
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-      maxZoom: 19,
-      subdomains: 'abcd',
-    }).addTo(map);
+    // Camada de mapa limpa e sem restrição/marca d'água
+    addBaseTileLayer(map);
 
     // Controle de zoom no canto inferior direito
     L.control.zoom({ position: 'bottomright' }).addTo(map);

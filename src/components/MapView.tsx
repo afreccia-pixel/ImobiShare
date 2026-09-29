@@ -11,6 +11,7 @@ import { MapPin, Bed, Car, Maximize, Check, X } from 'lucide-react';
 import { getValidImage } from '../utils/imageUtils';
 import { getCoordinatesForImovel } from '../utils/geoUtils';
 import { safePatchLeaflet } from '../utils/leafletPatch';
+import { addBaseTileLayer } from '../utils/mapTileUtils';
 
 interface MapViewProps {
   imoveis: (Imovel | any)[];
@@ -360,11 +361,8 @@ export function MapView({
       return;
     }
 
-    // Mesmo mapa limpo estilo CartoDB Voyager do Portal
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-      maxZoom: 19,
-      subdomains: 'abcd',
-    }).addTo(map);
+    // Camada de mapa limpa e sem restrição/marca d'água
+    addBaseTileLayer(map);
 
     // Zoom no canto inferior direito
     L.control.zoom({ position: 'bottomright' }).addTo(map);

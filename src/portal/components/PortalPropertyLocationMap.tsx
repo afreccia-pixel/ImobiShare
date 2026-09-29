@@ -8,6 +8,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MapPin } from 'lucide-react';
 import { safePatchLeaflet } from '../../utils/leafletPatch';
+import { addBaseTileLayer } from '../../utils/mapTileUtils';
 
 interface PortalPropertyLocationMapProps {
   latitude?: number;
@@ -69,13 +70,7 @@ export function PortalPropertyLocationMap({
       return;
     }
 
-    L.tileLayer(
-      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-      {
-        maxZoom: 19,
-        subdomains: 'abcd',
-      }
-    ).addTo(map);
+    addBaseTileLayer(map);
 
     // Pin de localização em vermelho como uma gota (teardrop)
     const pinHtml = `
